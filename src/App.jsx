@@ -1,0 +1,5281 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  adjustProductStock,
+  confirmDjomiPayment,
+  createAccountingEntry,
+  createDjomiPaymentSession,
+  createOrangeMoneyDeposit,
+  createProduct,
+  createProductImages,
+  createCheckoutOrder,
+  fetchAccountingEntries,
+  fetchAdminOrders,
+  fetchCustomerOrders,
+  fetchProducts,
+  fetchRolePermissions,
+  fetchStockMovements,
+  replaceProductOptions,
+  syncDjomiPayments,
+  updateProduct,
+  updateAdminOrderStatus,
+  updateRolePermission,
+  uploadOrangeMoneyReceipt,
+  uploadProductImage,
+} from "./services/shopApi.js";
+import {
+  fetchCustomerProfile,
+  getCurrentSession,
+  onAuthChange,
+  signInAdmin,
+  signOutAdmin,
+  signUpCustomer,
+  updateAccountMetadata,
+  updateCustomerPassword,
+  updateCustomerProfile,
+} from "./services/authApi.js";
+
+const formatMoney = (value) => `${Number(value || 0).toLocaleString("fr-FR")} GNF`;
+
+const clampQuantity = (value, max) => {
+  const stockLimit = Math.max(0, Number(max) || 0);
+  if (stockLimit <= 0) return 0;
+
+  const number = Number.parseInt(value, 10);
+  if (Number.isNaN(number)) return 1;
+  return Math.max(1, Math.min(number, stockLimit));
+};
+
+const getProductPrice = (product) => product.promoPrice ?? product.price;
+const getPurchasePrice = (product) =>
+  product.purchasePrice ?? Math.round(getProductPrice(product) * 0.65);
+const getCostPrice = (product) =>
+  product.costPrice ?? Math.round(getProductPrice(product) * 0.78);
+const DELIVERY_FEE_GNF = 0;
+
+const emptyCheckout = {
+  recipientName: "",
+  contactPhone: "",
+  city: "Conakry",
+  commune: "",
+  quartier: "",
+  landmark: "",
+  note: "",
+  latitude: "",
+  longitude: "",
+  mapLabel: "",
+};
+
+const emptyClientAuthForm = {
+  email: "",
+  password: "",
+  firstName: "",
+  lastName: "",
+  phone: "",
+  preferredAddress: "",
+  preferredCommune: "",
+  preferredQuartier: "",
+  latitude: "",
+  longitude: "",
+};
+
+const emptyClientSettingsForm = {
+  firstName: "",
+  lastName: "",
+  phone: "",
+  preferredAddress: "",
+  preferredCommune: "",
+  preferredQuartier: "",
+  latitude: "",
+  longitude: "",
+  newPassword: "",
+  passwordConfirm: "",
+};
+
+const emptyAdminAccountForm = {
+  fullName: "",
+  newPassword: "",
+  passwordConfirm: "",
+};
+
+const commonColorSwatches = {
+  Noir: "#111820",
+  Blanc: "#ffffff",
+  Bleu: "#2563eb",
+  Rouge: "#c94136",
+  Vert: "#0f8a5f",
+  Beige: "#d8c3a5",
+  Marron: "#7a4a28",
+  Jaune: "#f4c542",
+  Rose: "#ec4899",
+  Gris: "#667085",
+};
+
+function matchesStyleFilter(product, filter) {
+  if (filter === "all") return true;
+  if (filter === "promo") return Boolean(product.promoPrice);
+
+  const text = `${product.name} ${product.category} ${product.description ?? ""}`.toLowerCase();
+  const accessoryWords = ["accessoire", "sac", "bijou", "lunette", "ceinture", "montre", "chaussure"];
+  const outfitWords = ["robe", "ensemble", "chemise", "pantalon", "veste", "jupe", "haut", "t-shirt"];
+
+  if (filter === "accessories") {
+    return accessoryWords.some((word) => text.includes(word));
+  }
+
+  if (filter === "outfits") {
+    return outfitWords.some((word) => text.includes(word));
+  }
+
+  return true;
+}
+
+function getProductSizeOptions(product) {
+  return [...new Set((product.sizes ?? []).map((size) => String(size).trim()).filter(Boolean))];
+}
+
+function getProductColorOptions(product) {
+  const seen = new Set();
+
+  return (product.colors ?? [])
+    .map((color) => {
+      if (typeof color === "string") {
+        return { value: color.trim(), hex: commonColorSwatches[color.trim()] || "" };
+      }
+
+      return {
+        value: String(color?.value ?? "").trim(),
+        hex: color?.hex || commonColorSwatches[color?.value] || "",
+      };
+    })
+    .filter((color) => {
+      if (!color.value || seen.has(color.value)) return false;
+      seen.add(color.value);
+      return true;
+    });
+}
+
+function getColorSwatchStyle(color) {
+  const label = typeof color === "string" ? color : color?.value;
+  const hex = typeof color === "string" ? "" : color?.hex;
+  return { background: hex || commonColorSwatches[label] || "#d9e1ea" };
+}
+
+function getSessionProfile(session, profile = null) {
+  const metadata = session?.user?.user_metadata ?? {};
+  const firstName = profile?.firstName ?? metadata.first_name ?? "";
+  const lastName = profile?.lastName ?? metadata.last_name ?? "";
+  return {
+    firstName,
+    lastName,
+    fullName: profile?.fullName || metadata.full_name || [firstName, lastName].filter(Boolean).join(" "),
+    phone: profile?.phone ?? metadata.phone ?? "",
+    preferredAddress:
+      profile?.preferredAddress ?? metadata.preferred_delivery_address ?? "",
+    preferredCommune:
+      profile?.preferredCommune ?? metadata.preferred_delivery_commune ?? "",
+    preferredQuartier:
+      profile?.preferredQuartier ?? metadata.preferred_delivery_quartier ?? "",
+    latitude: profile?.latitude ?? metadata.preferred_latitude ?? "",
+    longitude: profile?.longitude ?? metadata.preferred_longitude ?? "",
+  };
+}
+
+function getSettingsFormFromProfile(profile) {
+  return {
+    ...emptyClientSettingsForm,
+    firstName: profile.firstName || "",
+    lastName: profile.lastName || "",
+    phone: profile.phone || "",
+    preferredAddress: profile.preferredAddress || "",
+    preferredCommune: profile.preferredCommune || "",
+    preferredQuartier: profile.preferredQuartier || "",
+    latitude: profile.latitude || "",
+    longitude: profile.longitude || "",
+  };
+}
+
+function splitOptionText(value) {
+  return [
+    ...new Set(
+      String(value ?? "")
+        .split(/[\n,;]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function parseColorText(value) {
+  return splitOptionText(value).map((entry) => {
+    const match = entry.match(/^(.+?)(?:\s*[:|]\s*|\s+)(#[0-9a-fA-F]{6})$/);
+    const label = (match ? match[1] : entry).trim();
+    const hex = match?.[2] || commonColorSwatches[label] || "";
+    return { value: label, hex };
+  });
+}
+
+function formatColorText(colors = []) {
+  return colors
+    .map((color) => {
+      const value = typeof color === "string" ? color : color.value;
+      const hex = typeof color === "string" ? "" : color.hex;
+      return [value, hex].filter(Boolean).join(" ");
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function formatCartVariant(row) {
+  return [
+    row.selectedSize ? `Taille ${row.selectedSize}` : null,
+    row.selectedColor ? `Couleur ${row.selectedColor}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function normalizePhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function getCustomerKey({ name, phone, userId }) {
+  const cleanPhone = normalizePhone(phone);
+  if (userId) return `user:${userId}`;
+  if (cleanPhone) return `phone:${cleanPhone}`;
+  return `name:${String(name || "client").trim().toLowerCase()}`;
+}
+
+function getWhatsappUrl(phone) {
+  const cleanPhone = normalizePhone(phone);
+  if (!cleanPhone) return "";
+  const internationalPhone =
+    cleanPhone.length === 9 ? `224${cleanPhone}` : cleanPhone.replace(/^00/, "");
+  return `https://wa.me/${internationalPhone}`;
+}
+
+function normalizeCoordinate(value) {
+  const number = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(number) ? number : null;
+}
+
+function getPaymentCallbackUrl(path) {
+  const configuredUrl = import.meta.env.VITE_PUBLIC_SITE_URL?.trim();
+  const baseUrl =
+    configuredUrl || (window.location.protocol === "https:" ? window.location.origin : "");
+
+  if (!baseUrl || !baseUrl.startsWith("https://")) return "";
+
+  return `${baseUrl.replace(/\/$/, "")}${path}`;
+}
+
+function getPaymentCallbackConfig() {
+  const returnUrl = getPaymentCallbackUrl("/payment-success");
+  const cancelUrl = getPaymentCallbackUrl("/payment-cancelled");
+
+  if (!returnUrl || !cancelUrl) {
+    return {
+      error:
+        "Djomi exige une URL de retour HTTPS. Configure VITE_PUBLIC_SITE_URL avec le domaine HTTPS public du site avant de lancer un paiement.",
+    };
+  }
+
+  return { returnUrl, cancelUrl, error: null };
+}
+
+function parseGnfInput(value, label, options = {}) {
+  const { required = false, fallback = null, allowZero = true } = options;
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    if (required) return { error: `${label} est obligatoire.` };
+    return { value: fallback };
+  }
+
+  const normalized = rawValue.replace(/\s/g, "").replace(",", ".");
+  const number = Number(normalized);
+  const minimum = allowZero ? 0 : 1;
+
+  if (!Number.isFinite(number) || number < minimum) {
+    return {
+      error: `${label} doit être un nombre ${allowZero ? "positif" : "supérieur à 0"}.`,
+    };
+  }
+
+  return { value: Math.round(number) };
+}
+
+function getFriendlyErrorMessage(error, context = "") {
+  const message = String(error?.message || error || "");
+  const details = String(error?.details || "");
+  const hint = String(error?.hint || "");
+  const code = String(error?.code || "");
+  const source = `${message} ${details} ${hint}`.toLowerCase();
+
+  if (code === "23505" || source.includes("duplicate key") || source.includes("already exists")) {
+    if (source.includes("orange_money_reference") || context === "orange_money_deposit") {
+      return "Cette référence Orange Money existe déjà. Utilise une autre référence.";
+    }
+
+    if (source.includes("receipt") || source.includes("reçu") || context === "receipt_upload") {
+      return "Ce reçu existe déjà. Renomme le fichier ou choisis un autre reçu.";
+    }
+
+    if (source.includes("order_number") || source.includes("accounting")) {
+      return "Cette référence de vente existe déjà. Change la référence.";
+    }
+
+    return "Cette information existe déjà. Vérifie la référence saisie.";
+  }
+
+  if (source.includes("row-level security") || source.includes("violates row-level security") || source.includes("rls")) {
+    if (context === "receipt_upload") {
+      return "Le reçu n'a pas pu être envoyé : les droits Storage ne sont pas encore ouverts.";
+    }
+
+    return "Action refusée par les droits Supabase. Vérifie le rôle du compte connecté.";
+  }
+
+  if (source.includes("bucket") || source.includes("storage")) {
+    return "Le stockage des reçus n'est pas encore configuré.";
+  }
+
+  if (source.includes("not found") || source.includes("introuvable")) {
+    return "Élément introuvable. Recharge la page puis réessaie.";
+  }
+
+  return message || "Action impossible pour le moment.";
+}
+
+function getTodayDateInput() {
+  return new Date().toLocaleDateString("fr-CA");
+}
+
+function getDraftAmount(value, fallback = 0) {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) return fallback;
+
+  const number = Number(rawValue.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : fallback;
+}
+
+function getAdminDisplayName(session) {
+  return (
+    session?.user?.user_metadata?.full_name ||
+    "Admin"
+  );
+}
+
+function getMarginRate(saleAmount, costAmount) {
+  if (!saleAmount) return 0;
+  return Math.round(((saleAmount - costAmount) / saleAmount) * 100);
+}
+
+function App() {
+  const host = window.location.hostname;
+  const path = window.location.pathname;
+  const isAdmin = host.startsWith("admin.") || path.startsWith("/admin");
+
+  return isAdmin ? <AdminPage /> : <ClientPage />;
+}
+
+function ClientPage() {
+  const [query, setQuery] = useState("");
+  const [styleFilter, setStyleFilter] = useState("all");
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogSource, setCatalogSource] = useState("connected");
+  const [catalogMessage, setCatalogMessage] = useState("");
+  const [customerSession, setCustomerSession] = useState(null);
+  const [customerProfileRecord, setCustomerProfileRecord] = useState(null);
+  const [clientAuthOpen, setClientAuthOpen] = useState(false);
+  const [clientAuthMode, setClientAuthMode] = useState("login");
+  const [clientAuthForm, setClientAuthForm] = useState(emptyClientAuthForm);
+  const [clientAuthMessage, setClientAuthMessage] = useState(null);
+  const [clientSettingsOpen, setClientSettingsOpen] = useState(false);
+  const [clientSettingsForm, setClientSettingsForm] = useState(emptyClientSettingsForm);
+  const [clientSettingsMessage, setClientSettingsMessage] = useState(null);
+  const [clientOrdersOpen, setClientOrdersOpen] = useState(false);
+  const [clientOrders, setClientOrders] = useState([]);
+  const [clientOrdersLoading, setClientOrdersLoading] = useState(false);
+  const [clientOrdersMessage, setClientOrdersMessage] = useState(null);
+  const [clientOrderPaymentId, setClientOrderPaymentId] = useState("");
+  const [clientLocationStatus, setClientLocationStatus] = useState("");
+  const [clientSettingsLocationStatus, setClientSettingsLocationStatus] = useState("");
+  const [checkoutLocationStatus, setCheckoutLocationStatus] = useState("");
+  const [sortMode, setSortMode] = useState("recent");
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [cart, setCart] = useState({});
+  const [cartOpen, setCartOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState("cart");
+  const [deliveryMode, setDeliveryMode] = useState("manual");
+  const [checkoutStatus, setCheckoutStatus] = useState(null);
+  const [isCheckoutSubmitting, setIsCheckoutSubmitting] = useState(false);
+  const [checkout, setCheckout] = useState(emptyCheckout);
+  const [paymentReturnStatus, setPaymentReturnStatus] = useState(null);
+  const paymentReturnHandledRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      setCatalogLoading(true);
+      const { data, error } = await fetchProducts();
+
+      if (cancelled) return;
+
+      setCatalogLoading(false);
+
+      if (error) {
+        setCatalogSource("error");
+        setCatalogProducts([]);
+        setCatalogMessage(`Impossible de charger les articles : ${error.message}`);
+        return;
+      }
+
+      const products = data ?? [];
+
+      if (!products.length) {
+        setCatalogSource("connected");
+        setCatalogProducts([]);
+        setCatalogMessage("");
+        return;
+      }
+
+      setCatalogProducts(products);
+      setCatalogSource("connected");
+      setCatalogMessage("");
+    }
+
+    loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getCurrentSession().then(({ session }) => {
+      if (!mounted) return;
+      setCustomerSession(session);
+    });
+
+    const subscription = onAuthChange((session) => {
+      setCustomerSession(session);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!customerSession) {
+      setCustomerProfileRecord(null);
+      setClientSettingsForm(emptyClientSettingsForm);
+      setClientOrders([]);
+      setClientOrdersOpen(false);
+      setClientOrdersMessage(null);
+      setClientOrderPaymentId("");
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadCustomerProfile() {
+      const fallbackProfile = getSessionProfile(customerSession);
+      const { data, error } = await fetchCustomerProfile();
+
+      if (cancelled) return;
+
+      const nextProfile = data ?? fallbackProfile;
+      setCustomerProfileRecord(nextProfile);
+      setClientSettingsForm(getSettingsFormFromProfile(nextProfile));
+
+      if (error) {
+        setClientSettingsMessage({
+          tone: "waiting",
+          text: `Profil client charge depuis la session. Execute le SQL customer_profiles si les reglages ne s'enregistrent pas : ${error.message}`,
+        });
+      }
+    }
+
+    loadCustomerProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerSession]);
+
+  async function loadClientOrders() {
+    if (!customerSession) {
+      setClientOrders([]);
+      return;
+    }
+
+    setClientOrdersLoading(true);
+    setClientOrdersMessage(null);
+
+    const { data, error } = await fetchCustomerOrders();
+
+    setClientOrdersLoading(false);
+
+    if (error) {
+      setClientOrders([]);
+      setClientOrdersMessage({
+        tone: "issue",
+        text: `Historique indisponible : ${error.message}`,
+      });
+      return;
+    }
+
+    setClientOrders(data ?? []);
+  }
+
+  useEffect(() => {
+    if (!customerSession) return undefined;
+
+    let cancelled = false;
+
+    async function loadOrders() {
+      setClientOrdersLoading(true);
+      setClientOrdersMessage(null);
+
+      const { data, error } = await fetchCustomerOrders();
+
+      if (cancelled) return;
+
+      setClientOrdersLoading(false);
+
+      if (error) {
+        setClientOrders([]);
+        setClientOrdersMessage({
+          tone: "issue",
+          text: `Historique indisponible : ${error.message}`,
+        });
+        return;
+      }
+
+      setClientOrders(data ?? []);
+    }
+
+    loadOrders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerSession]);
+
+  useEffect(() => {
+    const pathname = window.location.pathname;
+
+    if (pathname === "/payment-cancelled") {
+      setPaymentReturnStatus({
+        tone: "waiting",
+        text: "Paiement annulé. Tu peux reprendre la commande depuis Mes achats.",
+      });
+      window.history.replaceState({}, "", "/");
+      return undefined;
+    }
+
+    if (pathname !== "/payment-success" || paymentReturnHandledRef.current) {
+      return undefined;
+    }
+
+    paymentReturnHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const payload = {
+      order_id: params.get("order_id"),
+      transaction_ref: params.get("transaction_ref"),
+      amount: params.get("amount"),
+      token: params.get("token"),
+    };
+
+    if (!payload.order_id || !payload.transaction_ref || !payload.token) {
+      setPaymentReturnStatus({
+        tone: "issue",
+        text: "Paiement reçu, mais retour incomplet. Contacte BMA avec ta référence de commande.",
+      });
+      window.history.replaceState({}, "", "/");
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function confirmPayment() {
+      setPaymentReturnStatus({
+        tone: "waiting",
+        text: "Vérification du paiement...",
+      });
+
+      const { data, error } = await confirmDjomiPayment(payload);
+
+      if (cancelled) return;
+
+      if (error) {
+        setPaymentReturnStatus({
+          tone: "issue",
+          text: `Paiement non confirmé automatiquement : ${getFriendlyErrorMessage(error, "payment")}`,
+        });
+        window.history.replaceState({}, "", "/");
+        return;
+      }
+
+      if (data?.paid === false) {
+        setPaymentReturnStatus({
+          tone: "waiting",
+          text:
+            data.message ||
+            "Paiement en cours de verification. Reviens dans Mes achats pour reessayer.",
+        });
+        window.history.replaceState({}, "", "/");
+
+        if (customerSession) {
+          loadClientOrders();
+        }
+
+        return;
+      }
+
+      setPaymentReturnStatus({
+        tone: "paid",
+        text: "Paiement confirmé. Ta commande est maintenant marquée payée.",
+      });
+      setClientOrdersMessage({
+        tone: "paid",
+        text: "Paiement confirmé.",
+      });
+      window.history.replaceState({}, "", "/");
+
+      if (customerSession) {
+        loadClientOrders();
+      }
+    }
+
+    confirmPayment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerSession]);
+
+  const availableCatalogProducts = useMemo(
+    () => catalogProducts.filter((product) => Number(product.stock || 0) > 0),
+    [catalogProducts]
+  );
+
+  const visibleFilters = useMemo(() => {
+    const categories = [
+      ...new Set(
+        availableCatalogProducts
+          .map((product) => product.category)
+          .filter((category) => category && category !== "Produit")
+      ),
+    ];
+    const filters = [["all", "Tout"], ...categories.map((category) => [category, category])];
+
+    if (availableCatalogProducts.some((product) => product.promoPrice)) {
+      filters.push(["promo", "Promos"]);
+    }
+
+    return filters;
+  }, [availableCatalogProducts]);
+
+  useEffect(() => {
+    const activeFilterExists = visibleFilters.some(([value]) => value === styleFilter);
+
+    if (!activeFilterExists) {
+      setStyleFilter("all");
+    }
+  }, [styleFilter, visibleFilters]);
+
+  const filteredProducts = useMemo(() => {
+    const products = availableCatalogProducts.filter((product) => {
+      const text = `${product.name} ${product.category} ${product.description ?? ""}`.toLowerCase();
+      const matchesSearch = text.includes(query.toLowerCase());
+      const matchesFilter =
+        styleFilter === "all" ||
+        (styleFilter === "promo" ? Boolean(product.promoPrice) : product.category === styleFilter);
+
+      return matchesSearch && matchesFilter;
+    });
+
+    return [...products].sort((first, second) => {
+      if (sortMode === "price_asc") return getProductPrice(first) - getProductPrice(second);
+      if (sortMode === "price_desc") return getProductPrice(second) - getProductPrice(first);
+      if (sortMode === "stock") return Number(second.stock || 0) - Number(first.stock || 0);
+      return 0;
+    });
+  }, [availableCatalogProducts, query, styleFilter, sortMode]);
+
+  const cartRows = useMemo(() => {
+    return Object.values(cart).map((row) => ({
+      ...row,
+      total: getProductPrice(row) * row.quantity,
+    }));
+  }, [cart]);
+
+  const itemCount = cartRows.reduce((sum, row) => sum + row.quantity, 0);
+  const subtotal = cartRows.reduce((sum, row) => sum + row.total, 0);
+  const fulfillment = "delivery";
+  const deliveryFee = DELIVERY_FEE_GNF;
+  const total = subtotal + deliveryFee;
+  const customerProfile = useMemo(
+    () => getSessionProfile(customerSession, customerProfileRecord),
+    [customerSession, customerProfileRecord]
+  );
+
+  function addToCart(product, options = {}) {
+    const firstColor = getProductColorOptions(product)[0];
+    const selectedSize = options.size || getProductSizeOptions(product)[0] || "";
+    const selectedColor = options.color || firstColor?.value || "";
+    const requestedQuantity = clampQuantity(options.quantity ?? 1, product.stock);
+    const cartKey = `${product.id}|${selectedSize || "no-size"}|${selectedColor || "no-color"}`;
+
+    setCart((current) => {
+      const existing = current[cartKey];
+      const nextQuantity = clampQuantity(
+        (existing?.quantity ?? 0) + requestedQuantity,
+        product.stock
+      );
+
+      return {
+        ...current,
+        [cartKey]: {
+          ...product,
+          id: cartKey,
+          productId: product.id,
+          selectedSize,
+          selectedColor,
+          quantity: nextQuantity,
+        },
+      };
+    });
+
+    setCheckoutStep("cart");
+    setCheckoutStatus(null);
+    setSelectedProduct(null);
+  }
+
+  function setCartQuantity(productId, value) {
+    setCart((current) => {
+      const row = current[productId];
+      if (!row) return current;
+
+      return {
+        ...current,
+        [productId]: {
+          ...row,
+          quantity: clampQuantity(value, row.stock),
+        },
+      };
+    });
+  }
+
+  function removeFromCart(productId) {
+    setCart((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }
+
+  function updateCheckout(field, value) {
+    setCheckout((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateClientAuthForm(field, value) {
+    setClientAuthForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateClientSettingsForm(field, value) {
+    setClientSettingsForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleClientAuth(event) {
+    event.preventDefault();
+
+    if (!clientAuthForm.email || !clientAuthForm.password) {
+      setClientAuthMessage({ tone: "issue", text: "Email et mot de passe obligatoires." });
+      return;
+    }
+
+    if (
+      clientAuthMode === "signup" &&
+      (!clientAuthForm.firstName ||
+        !clientAuthForm.lastName ||
+        !clientAuthForm.phone ||
+        !clientAuthForm.preferredAddress)
+    ) {
+      setClientAuthMessage({
+        tone: "issue",
+        text: "Prénom, nom, téléphone et adresse préférée sont obligatoires.",
+      });
+      return;
+    }
+
+    const result =
+      clientAuthMode === "signup"
+        ? await signUpCustomer(clientAuthForm.email, clientAuthForm.password, clientAuthForm)
+        : await signInAdmin(clientAuthForm.email, clientAuthForm.password);
+
+    if (result.error) {
+      setClientAuthMessage({
+        tone: "issue",
+        text: `Connexion impossible : ${result.error.message}`,
+      });
+      return;
+    }
+
+    setClientAuthForm(emptyClientAuthForm);
+    setClientAuthMessage({
+      tone: "paid",
+      text:
+        clientAuthMode === "signup"
+          ? "Compte créé. Vérifie ton email si une confirmation est demandée."
+          : "Connexion réussie.",
+    });
+    setClientAuthOpen(false);
+  }
+
+  async function handleClientSignOut() {
+    await signOutAdmin();
+    setCustomerSession(null);
+    setCustomerProfileRecord(null);
+    setClientSettingsOpen(false);
+    setClientOrdersOpen(false);
+    setClientOrders([]);
+    setClientOrderPaymentId("");
+    setClientAuthMessage({ tone: "waiting", text: "Session fermée." });
+  }
+
+  async function handleClientSettingsSubmit(event) {
+    event.preventDefault();
+
+    if (!customerSession) {
+      setClientSettingsMessage({ tone: "issue", text: "Connecte-toi avant de modifier ton profil." });
+      return;
+    }
+
+    if (
+      !clientSettingsForm.firstName.trim() ||
+      !clientSettingsForm.lastName.trim() ||
+      !clientSettingsForm.phone.trim() ||
+      !clientSettingsForm.preferredAddress.trim()
+    ) {
+      setClientSettingsMessage({
+        tone: "issue",
+        text: "Prenom, nom, telephone et adresse preferee sont obligatoires.",
+      });
+      return;
+    }
+
+    if (clientSettingsForm.newPassword || clientSettingsForm.passwordConfirm) {
+      if (clientSettingsForm.newPassword.length < 6) {
+        setClientSettingsMessage({
+          tone: "issue",
+          text: "Le nouveau mot de passe doit contenir au moins 6 caracteres.",
+        });
+        return;
+      }
+
+      if (clientSettingsForm.newPassword !== clientSettingsForm.passwordConfirm) {
+        setClientSettingsMessage({
+          tone: "issue",
+          text: "Les deux mots de passe ne correspondent pas.",
+        });
+        return;
+      }
+    }
+
+    setClientSettingsMessage({ tone: "waiting", text: "Enregistrement du profil..." });
+
+    const profilePayload = {
+      firstName: clientSettingsForm.firstName.trim(),
+      lastName: clientSettingsForm.lastName.trim(),
+      phone: clientSettingsForm.phone.trim(),
+      preferredAddress: clientSettingsForm.preferredAddress.trim(),
+      preferredCommune: clientSettingsForm.preferredCommune.trim(),
+      preferredQuartier: clientSettingsForm.preferredQuartier.trim(),
+      latitude: clientSettingsForm.latitude,
+      longitude: clientSettingsForm.longitude,
+    };
+
+    const profileResult = await updateCustomerProfile(profilePayload);
+
+    if (profileResult.error) {
+      setClientSettingsMessage({
+        tone: "issue",
+        text: `Profil non enregistre : ${profileResult.error.message}`,
+      });
+      return;
+    }
+
+    if (clientSettingsForm.newPassword) {
+      const passwordResult = await updateCustomerPassword(clientSettingsForm.newPassword);
+
+      if (passwordResult.error) {
+        setClientSettingsMessage({
+          tone: "issue",
+          text: `Profil enregistre, mais mot de passe non modifie : ${passwordResult.error.message}`,
+        });
+        return;
+      }
+    }
+
+    const savedProfile = profileResult.data ?? profilePayload;
+    setCustomerProfileRecord(savedProfile);
+    setClientSettingsForm(getSettingsFormFromProfile(savedProfile));
+    setClientSettingsMessage({ tone: "paid", text: "Profil client enregistre." });
+  }
+
+  function requestBrowserLocation(onSuccess, onStatus) {
+    if (!navigator.geolocation) {
+      onStatus("La géolocalisation n'est pas disponible sur ce navigateur.");
+      return;
+    }
+
+    onStatus("Recherche de la position...");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude.toFixed(6);
+        const longitude = position.coords.longitude.toFixed(6);
+        onSuccess({ latitude, longitude });
+        onStatus("Position enregistrée.");
+      },
+      (error) => {
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? "Autorise la localisation dans le navigateur, puis réessaie."
+            : "Position introuvable. Vérifie le GPS ou la connexion.";
+        onStatus(message);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }
+
+  function useLocationForAccount() {
+    requestBrowserLocation(
+      ({ latitude, longitude }) => {
+        setClientAuthForm((current) => ({ ...current, latitude, longitude }));
+      },
+      setClientLocationStatus
+    );
+  }
+
+  function useLocationForSettings() {
+    requestBrowserLocation(
+      ({ latitude, longitude }) => {
+        setClientSettingsForm((current) => ({ ...current, latitude, longitude }));
+      },
+      setClientSettingsLocationStatus
+    );
+  }
+
+  function useLocationForCheckout() {
+    requestBrowserLocation(
+      ({ latitude, longitude }) => {
+        setCheckout((current) => ({
+          ...current,
+          latitude,
+          longitude,
+          mapLabel: "Position actuelle",
+        }));
+      },
+      setCheckoutLocationStatus
+    );
+  }
+
+  function changeDeliveryMode(nextMode) {
+    setDeliveryMode(nextMode);
+
+    if (nextMode === "current_location") {
+      setCheckout((current) => ({
+        ...current,
+        mapLabel: "Position actuelle",
+      }));
+      useLocationForCheckout();
+    }
+
+    if (nextMode === "manual") {
+      setCheckout((current) => ({
+        ...current,
+        latitude: "",
+        longitude: "",
+        mapLabel: "",
+      }));
+      setCheckoutLocationStatus("");
+    }
+  }
+
+  function useSavedCustomerInfo() {
+    setCheckout((current) => ({
+      ...current,
+      recipientName: customerProfile.fullName || current.recipientName,
+      contactPhone: customerProfile.phone || current.contactPhone,
+      commune: customerProfile.preferredCommune || current.commune,
+      quartier: customerProfile.preferredQuartier || current.quartier,
+      landmark: customerProfile.preferredAddress || current.landmark,
+      note: customerProfile.preferredAddress || current.note,
+      latitude: customerProfile.latitude || current.latitude,
+      longitude: customerProfile.longitude || current.longitude,
+      mapLabel:
+        customerProfile.latitude && customerProfile.longitude
+          ? "Adresse préférée"
+          : current.mapLabel,
+    }));
+  }
+
+  async function createTestOrder() {
+    if (isCheckoutSubmitting) return;
+
+    if (!cartRows.length) {
+      window.alert("Ajoute au moins un article au panier.");
+      return;
+    }
+
+    if (catalogSource !== "connected") {
+      setCheckoutStatus({
+        tone: "waiting",
+        text: "Les articles ne sont pas chargés. Recharge la page avant de créer une commande.",
+      });
+      return;
+    }
+
+    if (!checkout.recipientName.trim() || !checkout.contactPhone.trim()) {
+      setCheckoutStatus({
+        tone: "issue",
+        text: "Nom et téléphone sont obligatoires pour finaliser la commande.",
+      });
+      return;
+    }
+
+    if (deliveryMode === "manual" && !checkout.note.trim() && !checkout.landmark.trim()) {
+      setCheckoutStatus({
+        tone: "issue",
+        text: "Ajoute un repère clair pour guider la livraison.",
+      });
+      return;
+    }
+
+    const needsCoordinates = deliveryMode === "current_location";
+    const latitude = normalizeCoordinate(checkout.latitude);
+    const longitude = normalizeCoordinate(checkout.longitude);
+
+    if (needsCoordinates && (latitude === null || longitude === null)) {
+      setCheckoutStatus({
+        tone: "issue",
+        text: "Active la localisation avant de continuer.",
+      });
+      return;
+    }
+
+    const paymentCallbacks = getPaymentCallbackConfig();
+
+    if (paymentCallbacks.error) {
+      setCheckoutStatus({
+        tone: "issue",
+        text: paymentCallbacks.error,
+      });
+      return;
+    }
+
+    setIsCheckoutSubmitting(true);
+    setCheckoutStatus({ tone: "waiting", text: "Création de la commande..." });
+
+    const variantNotes = cartRows
+      .map((row) => {
+        const variant = formatCartVariant(row);
+        return variant ? `${row.name} : ${variant}, quantite ${row.quantity}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    const { data, error } = await createCheckoutOrder({
+      p_items: cartRows.map((row) => ({
+        product_id: row.productId ?? row.id,
+        quantity: row.quantity,
+        selected_size: row.selectedSize || null,
+        selected_color: row.selectedColor || null,
+      })),
+      p_fulfillment_type: fulfillment,
+      p_payment_provider: "djomi",
+      p_guest_name: checkout.recipientName,
+      p_guest_phone: checkout.contactPhone,
+      p_delivery_location_type: deliveryMode,
+      p_delivery_country: "Guinée",
+      p_delivery_city: checkout.city,
+      p_delivery_commune: checkout.commune,
+      p_delivery_quartier: checkout.quartier,
+      p_delivery_landmark: checkout.landmark,
+      p_delivery_address: checkout.landmark || checkout.note,
+      p_delivery_latitude: needsCoordinates ? latitude : null,
+      p_delivery_longitude: needsCoordinates ? longitude : null,
+      p_delivery_map_label: needsCoordinates ? checkout.mapLabel : null,
+      p_delivery_contact_phone: checkout.contactPhone,
+      p_delivery_recipient_name: checkout.recipientName,
+      p_delivery_notes: [checkout.note, variantNotes].filter(Boolean).join("\n\n"),
+      p_delivery_fee: deliveryFee,
+    });
+
+    if (error) {
+      setIsCheckoutSubmitting(false);
+      setCheckoutStatus({
+        tone: "issue",
+        text: `Commande non créée : ${error.message}`,
+      });
+      return;
+    }
+
+    setCheckoutStatus({
+      tone: "waiting",
+      text: "Commande créée. Redirection vers le paiement...",
+    });
+
+    const paymentResult = await createDjomiPaymentSession({
+      order_id: data.order_id ?? data.id,
+      order_number: data.order_number,
+      reference_id: data.order_number ?? data.order_id ?? data.id,
+      amount: total,
+      currency: "GNF",
+      phone: checkout.contactPhone,
+      customer_name: checkout.recipientName,
+      customer_phone: checkout.contactPhone,
+      return_url: paymentCallbacks.returnUrl,
+      cancel_url: paymentCallbacks.cancelUrl,
+    });
+
+    if (paymentResult.error) {
+      setIsCheckoutSubmitting(false);
+      setCheckoutStatus({
+        tone: "issue",
+        text: `Paiement non initialisé : ${getFriendlyErrorMessage(paymentResult.error, "payment")}`,
+      });
+      return;
+    }
+
+    window.location.assign(paymentResult.data.paymentUrl);
+  }
+
+  async function handlePayCustomerOrder(order) {
+    if (clientOrderPaymentId) return;
+
+    if (!order?.rawId) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: "Commande introuvable. Actualise tes achats puis reessaie.",
+      });
+      return;
+    }
+
+    if (order.paymentTone === "paid") {
+      setClientOrdersMessage({
+        tone: "paid",
+        text: "Cette commande est deja payee.",
+      });
+      return;
+    }
+
+    if (["cancelled", "delivery_failed"].includes(order.rawStatus)) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: "Cette commande ne peut plus etre payee. Contacte BMA si besoin.",
+      });
+      return;
+    }
+
+    const amount = Number(order.total || 0);
+    const phone = order.phone || customerProfile.phone;
+
+    if (!amount || amount <= 0) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: "Montant de commande invalide. Contacte BMA avant de payer.",
+      });
+      return;
+    }
+
+    if (!phone) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: "Ajoute ton numero dans ton compte avant de relancer le paiement.",
+      });
+      return;
+    }
+
+    const paymentCallbacks = getPaymentCallbackConfig();
+
+    if (paymentCallbacks.error) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: paymentCallbacks.error,
+      });
+      return;
+    }
+
+    setClientOrderPaymentId(order.rawId);
+    setClientOrdersMessage({
+      tone: "waiting",
+      text: "Redirection vers le paiement...",
+    });
+
+    const paymentResult = await createDjomiPaymentSession({
+      order_id: order.rawId,
+      order_number: order.id,
+      reference_id: order.id || order.rawId,
+      amount,
+      currency: "GNF",
+      phone,
+      customer_name: order.customer || customerProfile.fullName || "Client BMA",
+      customer_phone: phone,
+      return_url: paymentCallbacks.returnUrl,
+      cancel_url: paymentCallbacks.cancelUrl,
+    });
+
+    if (paymentResult.error) {
+      setClientOrderPaymentId("");
+      setClientOrdersMessage({
+        tone: "issue",
+        text: `Paiement non initialise : ${getFriendlyErrorMessage(paymentResult.error, "payment")}`,
+      });
+      return;
+    }
+
+    window.location.assign(paymentResult.data.paymentUrl);
+  }
+
+  async function handleVerifyCustomerOrderPayment(order) {
+    if (clientOrderPaymentId) return;
+
+    if (!order?.rawId) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: "Commande introuvable. Actualise tes achats puis reessaie.",
+      });
+      return;
+    }
+
+    setClientOrderPaymentId(order.rawId);
+    setClientOrdersMessage({
+      tone: "waiting",
+      text: "Verification du paiement...",
+    });
+
+    const { data, error } = await confirmDjomiPayment({ order_id: order.rawId });
+
+    setClientOrderPaymentId("");
+
+    if (error) {
+      setClientOrdersMessage({
+        tone: "issue",
+        text: `Paiement non verifie : ${getFriendlyErrorMessage(error, "payment")}`,
+      });
+      return;
+    }
+
+    if (data?.paid === false) {
+      setClientOrdersMessage({
+        tone: "waiting",
+        text:
+          data.message ||
+          "Djomi ne confirme pas encore ce paiement. Si tu n'as pas fini, relance le paiement.",
+      });
+      loadClientOrders();
+      return;
+    }
+
+    setClientOrdersMessage({
+      tone: "paid",
+      text: "Paiement confirme. Commande mise a jour.",
+    });
+    loadClientOrders();
+  }
+
+  return (
+    <div className="storefront">
+      <header className="store-header">
+        <button
+          className="store-logo"
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        >
+          <span className="brand-mark">BMA</span>
+          <span>Mode & accessoires</span>
+        </button>
+
+        <div className="store-actions">
+          <div className="store-search-wrap">
+            <input
+              className="search store-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Rechercher un article"
+            />
+          </div>
+          {customerSession ? (
+            <>
+              <button
+                className="btn secondary history-button"
+                type="button"
+                onClick={() => {
+                  setClientOrdersOpen(true);
+                  loadClientOrders();
+                }}
+              >
+                Mes achats
+                {clientOrders.length ? <span>{clientOrders.length}</span> : null}
+              </button>
+              <button
+                className="account-button"
+                type="button"
+                aria-label="Paramètres du compte"
+                title="Paramètres du compte"
+                onClick={() => setClientSettingsOpen(true)}
+              >
+                <span className="account-icon" aria-hidden="true" />
+              </button>
+              <button
+                className="logout-icon-button store-logout"
+                type="button"
+                aria-label="Déconnexion"
+                title="Déconnexion"
+                onClick={handleClientSignOut}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <button className="btn secondary" onClick={() => setClientAuthOpen(true)}>
+              Se connecter
+            </button>
+          )}
+          <button
+            className="cart-button"
+            type="button"
+            onClick={() => {
+              setCartOpen(true);
+              setCheckoutStep("cart");
+            }}
+          >
+            <span className="cart-symbol" aria-hidden="true" />
+            <span className="cart-label">Panier</span>
+            <span className="cart-count">{itemCount}</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="store-main">
+
+        {catalogSource === "error" ? (
+          <div className="checkout-status issue">{catalogMessage}</div>
+        ) : null}
+        {paymentReturnStatus ? (
+          <div className={`checkout-status ${paymentReturnStatus.tone}`}>
+            {paymentReturnStatus.text}
+          </div>
+        ) : null}
+        {clientAuthMessage ? (
+          <div className={`checkout-status ${clientAuthMessage.tone}`}>
+            {clientAuthMessage.text}
+          </div>
+        ) : null}
+        {clientAuthOpen ? (
+          <div className="auth-overlay">
+            <ClientAuthPanel
+              form={clientAuthForm}
+              locationStatus={clientLocationStatus}
+              mode={clientAuthMode}
+              onChange={updateClientAuthForm}
+              onClose={() => setClientAuthOpen(false)}
+              onModeChange={setClientAuthMode}
+              onSubmit={handleClientAuth}
+              onUseLocation={useLocationForAccount}
+            />
+          </div>
+        ) : null}
+        {clientSettingsOpen ? (
+          <div className="auth-overlay">
+            <ClientSettingsPanel
+              email={customerSession?.user?.email}
+              form={clientSettingsForm}
+              locationStatus={clientSettingsLocationStatus}
+              message={clientSettingsMessage}
+              onChange={updateClientSettingsForm}
+              onClose={() => setClientSettingsOpen(false)}
+              onSubmit={handleClientSettingsSubmit}
+              onUseLocation={useLocationForSettings}
+            />
+          </div>
+        ) : null}
+        {clientOrdersOpen ? (
+          <div className="auth-overlay">
+            <ClientOrdersPanel
+              loading={clientOrdersLoading}
+              message={clientOrdersMessage}
+              orders={clientOrders}
+              payingOrderId={clientOrderPaymentId}
+              onClose={() => setClientOrdersOpen(false)}
+              onPay={handlePayCustomerOrder}
+              onRefresh={loadClientOrders}
+              onVerifyPayment={handleVerifyCustomerOrderPayment}
+            />
+          </div>
+        ) : null}
+
+        <section className="fashion-hero">
+          <div>
+            <span>BMA</span>
+            <h1>Les looks BMA du moment.</h1>
+            <p>Habits et accessoires choisis pour sortir fort, commander vite et payer simplement en ligne.</p>
+            <div className="hero-stats">
+              <strong>Nouveautés mode</strong>
+              <strong>Paiement sécurisé</strong>
+              <strong>Livraison rapide</strong>
+            </div>
+          </div>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => document.querySelector("#articles")?.scrollIntoView({ behavior: "smooth" })}
+          >
+            Voir les articles
+          </button>
+        </section>
+
+        <section className="store-proof-strip" aria-label="Avantages BMA">
+          <div>
+            <strong>Photos réelles</strong>
+            <span>Tu vois l'article avant de commander</span>
+          </div>
+          <div>
+            <strong>Paiement Djomi</strong>
+            <span>Validation rapide et suivie</span>
+          </div>
+          <div>
+            <strong>Livraison simple</strong>
+            <span>Repère clair ou position GPS</span>
+          </div>
+          <div>
+            <strong>Compte optionnel</strong>
+            <span>Commande vite, crée un compte si tu veux</span>
+          </div>
+        </section>
+
+        <section className="store-catalog" id="articles">
+          <div className="catalog-toolbar">
+            <div>
+              <h2>Drop du moment</h2>
+              {!catalogLoading && filteredProducts.length ? (
+                <span>
+                  {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
+                </span>
+              ) : null}
+            </div>
+            <div className="catalog-controls">
+              <div className="style-filters">
+                {visibleFilters.map(([value, label]) => (
+                  <button
+                    className={styleFilter === value ? "active" : ""}
+                    key={value}
+                    type="button"
+                    onClick={() => setStyleFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select
+                className="catalog-sort"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value)}
+                aria-label="Trier les articles"
+              >
+                <option value="recent">Plus récents</option>
+                <option value="price_asc">Prix croissant</option>
+                <option value="price_desc">Prix décroissant</option>
+                <option value="stock">Stock disponible</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="catalog">
+            {catalogLoading ? null : filteredProducts.length ? (
+              filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onOpen={() => setSelectedProduct(product)}
+                />
+              ))
+            ) : (
+              <div className="empty-state">
+                Aucun article disponible.
+              </div>
+            )}
+          </div>
+        </section>
+
+        {selectedProduct ? (
+          <ProductDetailModal
+            product={selectedProduct}
+            onAdd={addToCart}
+            onClose={() => setSelectedProduct(null)}
+          />
+        ) : null}
+
+        <CartPanel
+          isOpen={cartOpen}
+          onClose={() => setCartOpen(false)}
+          checkoutStep={checkoutStep}
+          setCheckoutStep={setCheckoutStep}
+          rows={cartRows}
+          itemCount={itemCount}
+          subtotal={subtotal}
+          deliveryFee={deliveryFee}
+          total={total}
+          deliveryMode={deliveryMode}
+          setDeliveryMode={changeDeliveryMode}
+          checkout={checkout}
+          customerProfile={customerProfile}
+          locationStatus={checkoutLocationStatus}
+          updateCheckout={updateCheckout}
+          checkoutStatus={checkoutStatus}
+          isCheckoutSubmitting={isCheckoutSubmitting}
+          onUseCurrentLocation={useLocationForCheckout}
+          onUseSavedCustomerInfo={useSavedCustomerInfo}
+          onQuantityChange={setCartQuantity}
+          onRemove={removeFromCart}
+          onCheckout={createTestOrder}
+        />
+        {itemCount > 0 ? (
+          <button
+            className="mobile-cart-bar"
+            type="button"
+            onClick={() => {
+              setCartOpen(true);
+              setCheckoutStep("cart");
+            }}
+          >
+            <span>
+              {itemCount} article{itemCount > 1 ? "s" : ""}
+            </span>
+            <strong>{formatMoney(total)}</strong>
+            <span>Voir panier</span>
+          </button>
+        ) : null}
+      </main>
+    </div>
+  );
+}
+
+function ProductCard({ product, onOpen }) {
+  const price = getProductPrice(product);
+  const gallery = product.images?.length ? product.images : [product.image];
+  const [activeImage, setActiveImage] = useState(gallery[0]);
+  const hasOptions = Boolean(product.sizes?.length || product.colors?.length);
+  const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
+
+  return (
+    <article className="product" onClick={onOpen}>
+      <div className="product-media">
+        <div className="product-badges">
+          {product.promoPrice ? <span className="product-badge deal">Promo</span> : null}
+          {lowStock ? <span className="product-badge urgent">Stock limité</span> : null}
+          {!product.promoPrice && !lowStock && product.stock > 0 ? (
+            <span className="product-badge">Disponible</span>
+          ) : null}
+        </div>
+        <img
+          className="product-main-image"
+          src={activeImage}
+          alt={product.name}
+        />
+        {gallery.length > 1 ? (
+          <div className="product-thumbs">
+            {gallery.slice(0, 5).map((imageUrl, index) => (
+              <button
+                className={activeImage === imageUrl ? "active" : ""}
+                key={imageUrl}
+                type="button"
+                aria-label={`Voir photo ${index + 1}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setActiveImage(imageUrl);
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+        {product.stock <= 0 ? <span className="stock-badge">Rupture</span> : null}
+      </div>
+      <div className="product-body">
+        <h3>{product.name}</h3>
+        <div className="product-meta">
+          <span>{product.category}</span>
+          {gallery.length > 1 ? (
+            <span>{gallery.length} photos</span>
+          ) : null}
+        </div>
+        <div className="product-price-row">
+          <span className="price">{formatMoney(price)}</span>
+          {product.promoPrice ? <span className="old-price">{formatMoney(product.price)}</span> : null}
+        </div>
+        <div className="product-mini-facts">
+          {hasOptions ? (
+            <>
+              {product.sizes?.length ? <span>{product.sizes.slice(0, 4).join(", ")}</span> : null}
+              {product.colors?.length ? <span>{product.colors.length} couleur{product.colors.length > 1 ? "s" : ""}</span> : null}
+            </>
+          ) : (
+            <span>Prêt à commander</span>
+          )}
+        </div>
+        {product.stock > 0 ? (
+          <div className="product-buy-row">
+            <button
+              className="btn product-cta"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+            >
+              {hasOptions ? "Choisir" : "Voir"}
+            </button>
+          </div>
+        ) : (
+          <button className="btn product-cta" disabled>
+            Indisponible
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ProductDetailModal({ product, onAdd, onClose }) {
+  const gallery = product.images?.length ? product.images : [product.image];
+  const sizeOptions = getProductSizeOptions(product);
+  const colorOptions = getProductColorOptions(product);
+  const [activeImage, setActiveImage] = useState(gallery[0]);
+  const [selectedSize, setSelectedSize] = useState(sizeOptions[0] || "");
+  const [selectedColor, setSelectedColor] = useState(colorOptions[0]?.value || "");
+  const [quantity, setQuantity] = useState(1);
+  const price = getProductPrice(product);
+
+  useEffect(() => {
+    setActiveImage(gallery[0]);
+    setSelectedSize(sizeOptions[0] || "");
+    setSelectedColor(colorOptions[0]?.value || "");
+    setQuantity(1);
+  }, [product.id]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return (
+    <div
+      className="product-detail-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="product-detail" role="dialog" aria-modal="true" aria-label={product.name}>
+        <button className="detail-close" type="button" onClick={onClose}>
+          Fermer
+        </button>
+
+        <div className="detail-gallery">
+          <div className="detail-main-image">
+            <img src={activeImage} alt={product.name} />
+          </div>
+          {gallery.length > 1 ? (
+            <div className="detail-thumbs">
+              {gallery.slice(0, 6).map((imageUrl, index) => (
+                <button
+                  className={activeImage === imageUrl ? "active" : ""}
+                  key={imageUrl}
+                  type="button"
+                  onClick={() => setActiveImage(imageUrl)}
+                >
+                  <img src={imageUrl} alt={`Photo ${index + 1} ${product.name}`} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="detail-info">
+          <span className="detail-category">{product.category}</span>
+          <h2>{product.name}</h2>
+          <div className="detail-price-row">
+            <strong>{formatMoney(price)}</strong>
+            {product.promoPrice ? <span>{formatMoney(product.price)}</span> : null}
+          </div>
+          {product.description ? <p>{product.description}</p> : null}
+
+          {sizeOptions.length ? (
+            <div className="option-group">
+              <div className="option-head">
+                <strong>Taille</strong>
+                <span>{selectedSize}</span>
+              </div>
+              <div className="option-list">
+                {sizeOptions.map((size) => (
+                  <button
+                    className={selectedSize === size ? "active" : ""}
+                    key={size}
+                    type="button"
+                    onClick={() => setSelectedSize(size)}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {colorOptions.length ? (
+            <div className="option-group">
+              <div className="option-head">
+                <strong>Couleur</strong>
+                <span>{selectedColor}</span>
+              </div>
+              <div className="option-list color-list">
+                {colorOptions.map((color) => (
+                  <button
+                    className={selectedColor === color.value ? "active" : ""}
+                    key={color.value}
+                    type="button"
+                    onClick={() => setSelectedColor(color.value)}
+                  >
+                    <span className="color-dot" style={getColorSwatchStyle(color)} />
+                    <span>{color.value}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {!sizeOptions.length && !colorOptions.length ? (
+            <p className="variant-note">Cet article est vendu comme présenté, sans option spéciale.</p>
+          ) : null}
+
+          <div className="detail-actions">
+            <QuantityControl
+              value={quantity}
+              max={product.stock}
+              onChange={(value) => setQuantity(clampQuantity(value, product.stock))}
+            />
+            <button
+              className="btn"
+              type="button"
+              disabled={product.stock <= 0}
+              onClick={() =>
+                onAdd(product, {
+                  quantity,
+                  size: selectedSize,
+                  color: selectedColor,
+                })
+              }
+            >
+              Ajouter au panier
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ClientAuthPanel({
+  form,
+  locationStatus,
+  mode,
+  onChange,
+  onClose,
+  onModeChange,
+  onSubmit,
+  onUseLocation,
+}) {
+  return (
+    <section className="section client-auth-panel auth-card">
+      <div className="section-head">
+        <div>
+          <h2>Ton espace BMA</h2>
+          <span>Connecte-toi pour retrouver tes infos plus vite, ou continue sans compte.</span>
+        </div>
+        <button className="btn ghost" type="button" onClick={onClose}>
+          Fermer
+        </button>
+      </div>
+      <div className="auth-tabs">
+        <button
+          className={mode === "login" ? "active" : ""}
+          type="button"
+          onClick={() => onModeChange("login")}
+        >
+          Connexion
+        </button>
+        <button
+          className={mode === "signup" ? "active" : ""}
+          type="button"
+          onClick={() => onModeChange("signup")}
+        >
+          Créer un compte
+        </button>
+      </div>
+      <form className="admin-form auth-form" onSubmit={onSubmit}>
+        <Field
+          autoComplete="email"
+          label="Email"
+          type="email"
+          value={form.email}
+          onChange={(value) => onChange("email", value)}
+        />
+        <Field
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          label="Mot de passe"
+          type="password"
+          value={form.password}
+          onChange={(value) => onChange("password", value)}
+        />
+        {mode === "signup" ? (
+          <>
+            <Field
+              autoComplete="given-name"
+              label="Prénom"
+              value={form.firstName}
+              onChange={(value) => onChange("firstName", value)}
+            />
+            <Field
+              autoComplete="family-name"
+              label="Nom"
+              value={form.lastName}
+              onChange={(value) => onChange("lastName", value)}
+            />
+            <Field
+              autoComplete="tel"
+              label="Numéro"
+              value={form.phone}
+              onChange={(value) => onChange("phone", value)}
+            />
+            <div className="field full">
+              <label>Adresse de livraison préférée</label>
+              <textarea
+                placeholder="Ex : quartier, repère, couleur du portail..."
+                value={form.preferredAddress}
+                onChange={(event) => onChange("preferredAddress", event.target.value)}
+              />
+            </div>
+            <div className="location-box full">
+              <button className="btn secondary" type="button" onClick={onUseLocation}>
+                Utiliser ma position
+              </button>
+              <span>{locationStatus || "Optionnel : ajoute ta position GPS pour une livraison plus précise."}</span>
+              {form.latitude && form.longitude ? (
+                <span>Position prête pour les prochaines livraisons.</span>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+        <div className="inline-actions">
+          <button className="btn" type="submit">
+            {mode === "signup" ? "Créer mon compte" : "Me connecter"}
+          </button>
+          <button className="btn secondary" type="button" onClick={onClose}>
+            Continuer sans compte
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function ClientSettingsPanel({
+  email,
+  form,
+  locationStatus,
+  message,
+  onChange,
+  onClose,
+  onSubmit,
+  onUseLocation,
+}) {
+  return (
+    <section className="section client-auth-panel auth-card client-settings-panel">
+      <div className="section-head">
+        <div>
+          <h2>Paramètres du compte</h2>
+          <span>Infos, livraison et sécurité</span>
+        </div>
+        <button className="btn ghost" type="button" onClick={onClose}>
+          Fermer
+        </button>
+      </div>
+      {message ? (
+        <div className={`checkout-status ${message.tone}`}>
+          {message.text}
+        </div>
+      ) : null}
+      <form className="admin-form auth-form settings-form" onSubmit={onSubmit}>
+        <Field
+          autoComplete="given-name"
+          label="Prénom"
+          value={form.firstName}
+          onChange={(value) => onChange("firstName", value)}
+        />
+        <Field
+          autoComplete="family-name"
+          label="Nom"
+          value={form.lastName}
+          onChange={(value) => onChange("lastName", value)}
+        />
+        <Field
+          autoComplete="tel"
+          label="Téléphone"
+          value={form.phone}
+          onChange={(value) => onChange("phone", value)}
+        />
+        <Field
+          label="Commune"
+          value={form.preferredCommune}
+          onChange={(value) => onChange("preferredCommune", value)}
+        />
+        <Field
+          label="Quartier"
+          value={form.preferredQuartier}
+          onChange={(value) => onChange("preferredQuartier", value)}
+        />
+        <div className="field full">
+          <label>Adresse / repère de livraison préféré</label>
+          <textarea
+            placeholder="Ex : près de la pharmacie, portail noir, étage..."
+            value={form.preferredAddress}
+            onChange={(event) => onChange("preferredAddress", event.target.value)}
+          />
+        </div>
+        <div className="location-box full">
+          <button className="btn secondary" type="button" onClick={onUseLocation}>
+            Mettre à jour ma position GPS
+          </button>
+          <span>{locationStatus || "Optionnel : utile si tu veux livrer souvent au même endroit."}</span>
+          {form.latitude && form.longitude ? (
+            <div className="mini-grid">
+              <Field
+                label="Latitude"
+                value={form.latitude}
+                onChange={(value) => onChange("latitude", value)}
+              />
+              <Field
+                label="Longitude"
+                value={form.longitude}
+                onChange={(value) => onChange("longitude", value)}
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="field full settings-password-box">
+          <label>Nouveau mot de passe</label>
+          <div className="mini-grid">
+            <input
+              autoComplete="new-password"
+              placeholder="Laisser vide pour ne pas changer"
+              type="password"
+              value={form.newPassword}
+              onChange={(event) => onChange("newPassword", event.target.value)}
+            />
+            <input
+              autoComplete="new-password"
+              placeholder="Confirmer"
+              type="password"
+              value={form.passwordConfirm}
+              onChange={(event) => onChange("passwordConfirm", event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="inline-actions">
+          <button className="btn" type="submit">
+            Enregistrer
+          </button>
+          <button className="btn secondary" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function ClientOrdersPanel({
+  loading,
+  message,
+  orders,
+  payingOrderId,
+  onClose,
+  onPay,
+  onRefresh,
+  onVerifyPayment,
+}) {
+  const paidCount = orders.filter((order) => order.paymentTone === "paid").length;
+  const openCount = orders.filter(
+    (order) => !["delivered", "cancelled", "delivery_failed"].includes(order.rawStatus)
+  ).length;
+
+  return (
+    <section className="section client-auth-panel auth-card client-orders-panel">
+      <div className="section-head">
+        <div>
+          <h2>Mes achats</h2>
+          <span>Historique, paiement et suivi de commande</span>
+        </div>
+        <div className="client-orders-actions">
+          <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
+            Actualiser
+          </button>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+      </div>
+
+      <div className="client-order-stats">
+        <div>
+          <span>Commandes</span>
+          <strong>{orders.length}</strong>
+        </div>
+        <div>
+          <span>Payees</span>
+          <strong>{paidCount}</strong>
+        </div>
+        <div>
+          <span>En cours</span>
+          <strong>{openCount}</strong>
+        </div>
+      </div>
+
+      {message ? (
+        <div className={`checkout-status ${message.tone}`}>
+          {message.text}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="empty-state compact">Chargement de tes achats...</div>
+      ) : orders.length ? (
+        <div className="client-order-list">
+          {orders.map((order) => {
+            const canPay =
+              order.paymentTone !== "paid" &&
+              !["cancelled", "delivery_failed", "delivered"].includes(order.rawStatus);
+            const isPaying = payingOrderId === order.rawId;
+
+            return (
+              <article
+                className={`client-order-card ${canPay ? "payable" : ""}`}
+                key={order.rawId || order.id}
+              >
+                <div className="client-order-head">
+                  <div>
+                    <strong>{order.id}</strong>
+                    <span>
+                      {order.createdDate || order.createdAt?.slice(0, 10) || "Date non precisee"}
+                    </span>
+                  </div>
+                  <div className="client-order-statuses">
+                    <span className={`status ${order.paymentTone}`}>{order.payment}</span>
+                    <span className={`status ${order.statusTone}`}>{order.status}</span>
+                  </div>
+                </div>
+
+                <div className="client-order-summary">
+                  <span>{order.itemsCount || order.items || 0} article{(order.itemsCount || order.items || 0) > 1 ? "s" : ""}</span>
+                  <strong>{formatMoney(order.total)}</strong>
+                </div>
+
+                {order.landmark || order.zone ? (
+                  <p className="client-order-address">
+                    {[order.zone, order.landmark].filter(Boolean).join(" - ")}
+                  </p>
+                ) : null}
+
+                <OrderItemsList items={order.orderItems} />
+
+                {canPay ? (
+                  <div className="client-order-payment-actions">
+                    {order.hasDjomiTransaction ? (
+                      <button
+                        className={`btn secondary ${isPaying ? "loading" : ""}`}
+                        type="button"
+                        disabled={Boolean(payingOrderId)}
+                        onClick={() => onVerifyPayment(order)}
+                      >
+                        {isPaying ? "Verification..." : "Verifier le paiement"}
+                      </button>
+                    ) : null}
+                    <button
+                      className={`btn ${isPaying ? "loading" : ""}`}
+                      type="button"
+                      disabled={Boolean(payingOrderId)}
+                      onClick={() => onPay(order)}
+                    >
+                      {isPaying ? "Ouverture du paiement..." : "Payer cette commande"}
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state compact">
+          Aucun achat pour le moment. Tes commandes connectees apparaitront ici.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminAccountPanel({ email, form, message, onChange, onClose, onSubmit }) {
+  return (
+    <section className="section client-auth-panel auth-card client-settings-panel">
+      <div className="section-head">
+        <div>
+          <h2>Compte administrateur</h2>
+          <span>Nom affiché et mot de passe</span>
+        </div>
+        <button className="btn ghost" type="button" onClick={onClose}>
+          Fermer
+        </button>
+      </div>
+      {message ? (
+        <div className={`checkout-status ${message.tone}`}>
+          {message.text}
+        </div>
+      ) : null}
+      <form className="admin-form auth-form settings-form" onSubmit={onSubmit}>
+        <Field
+          label="Nom affiché"
+          value={form.fullName}
+          onChange={(value) => onChange("fullName", value)}
+        />
+        <div className="field full settings-password-box">
+          <label>Nouveau mot de passe</label>
+          <div className="mini-grid">
+            <input
+              autoComplete="new-password"
+              placeholder="Laisser vide pour ne pas changer"
+              type="password"
+              value={form.newPassword}
+              onChange={(event) => onChange("newPassword", event.target.value)}
+            />
+            <input
+              autoComplete="new-password"
+              placeholder="Confirmer"
+              type="password"
+              value={form.passwordConfirm}
+              onChange={(event) => onChange("passwordConfirm", event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="inline-actions">
+          <button className="btn" type="submit">
+            Enregistrer
+          </button>
+          <button className="btn secondary" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function CartPanel({
+  isOpen,
+  onClose,
+  checkoutStep,
+  setCheckoutStep,
+  rows,
+  itemCount,
+  subtotal,
+  deliveryFee,
+  total,
+  deliveryMode,
+  setDeliveryMode,
+  checkout,
+  customerProfile,
+  locationStatus,
+  updateCheckout,
+  checkoutStatus,
+  isCheckoutSubmitting,
+  onUseCurrentLocation,
+  onUseSavedCustomerInfo,
+  onQuantityChange,
+  onRemove,
+  onCheckout,
+}) {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const showCheckout = checkoutStep === "checkout" && rows.length > 0;
+
+  return (
+    <div
+      className="cart-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside className="cart-drawer" role="dialog" aria-modal="true" aria-label="Panier BMA">
+        <div className="drawer-head">
+          <div>
+            <h2>{showCheckout ? "Finaliser la commande" : "Panier"}</h2>
+            <span>
+              {itemCount} article{itemCount > 1 ? "s" : ""}
+            </span>
+          </div>
+          <button className="icon-btn" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+
+        <div className={`cart-list ${showCheckout ? "summary-list" : ""}`}>
+          {rows.length ? (
+            rows.map((row) => (
+              <div className={`cart-row ${showCheckout ? "summary-row" : ""}`} key={row.id}>
+                <div className="row-main">
+                  <div className="cart-product-title">
+                    <strong>{row.name}</strong>
+                    {formatCartVariant(row) ? (
+                      <span className="cart-variant">{formatCartVariant(row)}</span>
+                    ) : null}
+                  </div>
+                  <span>{formatMoney(row.total)}</span>
+                </div>
+                {showCheckout ? (
+                  <span className="cart-summary-meta">
+                    {row.quantity} x {formatMoney(getProductPrice(row))}
+                  </span>
+                ) : (
+                  <div className="row-main cart-row-actions">
+                    <QuantityControl
+                      compact
+                      value={row.quantity}
+                      max={row.stock}
+                      onChange={(value) => onQuantityChange(row.id, value)}
+                    />
+                    <button className="btn ghost" onClick={() => onRemove(row.id)}>
+                      Supprimer
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <span className="empty">Aucun article ajouté.</span>
+          )}
+        </div>
+
+        {showCheckout ? (
+          <div className="checkout">
+            {customerProfile?.fullName || customerProfile?.phone || customerProfile?.preferredAddress ? (
+              <button className="btn secondary" type="button" onClick={onUseSavedCustomerInfo}>
+                Utiliser mes infos de compte
+              </button>
+            ) : null}
+            <div className="tabs two checkout-choice">
+              <button
+                className={deliveryMode === "manual" ? "active" : ""}
+                onClick={() => setDeliveryMode("manual")}
+              >
+                Donner un repère
+              </button>
+              <button
+                className={deliveryMode === "current_location" ? "active" : ""}
+                onClick={() => setDeliveryMode("current_location")}
+              >
+                Utiliser mon GPS
+              </button>
+            </div>
+
+            
+                <div className="field-grid">
+                  <Field
+                    label="Nom complet"
+                    value={checkout.recipientName}
+                    onChange={(value) => updateCheckout("recipientName", value)}
+                  />
+                  <Field
+                    label="Téléphone"
+                    value={checkout.contactPhone}
+                    onChange={(value) => updateCheckout("contactPhone", value)}
+                  />
+                  {deliveryMode === "manual" ? (
+                    <div className="field full">
+                      <label>Où doit-on te livrer ?</label>
+                      <textarea
+                        placeholder="Ex : Lambanyi, près de la pharmacie, portail noir."
+                        value={checkout.note}
+                        onChange={(event) => {
+                          updateCheckout("note", event.target.value);
+                          updateCheckout("landmark", event.target.value);
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                    <div className="location-box full">
+                      <button
+                        className="btn secondary"
+                        type="button"
+                        onClick={onUseCurrentLocation}
+                      >
+                        Utiliser ma position actuelle
+                      </button>
+                      <span>
+                        {locationStatus ||
+                          "Autorise la localisation, puis ajoute une petite indication si besoin."}
+                      </span>
+                    </div>
+                    <div className="field full">
+                      <label>Petit repère en plus</label>
+                      <textarea
+                        placeholder="Optionnel : portail, étage, boutique proche..."
+                        value={checkout.note}
+                        onChange={(event) => updateCheckout("note", event.target.value)}
+                      />
+                    </div>
+                    </>
+                  )}
+                </div>
+          </div>
+        ) : null}
+
+        <div className="cart-total">
+          {deliveryFee > 0 ? (
+            <>
+              <div className="total-line muted-line">
+                <span>Sous-total</span>
+                <span>{formatMoney(subtotal)}</span>
+              </div>
+              <div className="total-line muted-line">
+                <span>Livraison</span>
+                <span>{formatMoney(deliveryFee)}</span>
+              </div>
+            </>
+          ) : null}
+          <div className="total-line">
+            <span>Total</span>
+            <span>{formatMoney(total)}</span>
+          </div>
+          {checkoutStatus ? (
+            <div className={`checkout-status ${checkoutStatus.tone}`}>
+              {checkoutStatus.text}
+            </div>
+          ) : null}
+          <div className="cart-actions">
+            {showCheckout ? (
+              <>
+                <button
+                  className={`btn ${isCheckoutSubmitting ? "loading" : ""}`}
+                  onClick={onCheckout}
+                  disabled={!rows.length || isCheckoutSubmitting}
+                >
+                  {isCheckoutSubmitting ? "Préparation du paiement..." : "Payer maintenant"}
+                </button>
+                <button className="btn ghost" type="button" onClick={() => setCheckoutStep("cart")}>
+                  Retour au panier
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!rows.length}
+                  onClick={() => setCheckoutStep("checkout")}
+                >
+                  Valider mon panier
+                </button>
+                <button className="btn ghost" type="button" onClick={onClose}>
+                  Continuer mes achats
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function AdminPage() {
+  const [activeSection, setActiveSection] = useState("dashboard");
+  const [adminNavOpen, setAdminNavOpen] = useState(false);
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [adminOrders, setAdminOrders] = useState([]);
+  const [adminProducts, setAdminProducts] = useState([]);
+  const [accountingRecords, setAccountingRecords] = useState([]);
+  const [stockMovements, setStockMovements] = useState([]);
+  const [rolePermissions, setRolePermissions] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
+  const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
+  const [adminToast, setAdminToast] = useState(null);
+  const [adminAccountOpen, setAdminAccountOpen] = useState(false);
+  const [adminAccountForm, setAdminAccountForm] = useState(emptyAdminAccountForm);
+  const [adminAccountMessage, setAdminAccountMessage] = useState(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState("");
+  const [isDepositSubmitting, setIsDepositSubmitting] = useState(false);
+  const [depositMessage, setDepositMessage] = useState(null);
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [productEditorOpen, setProductEditorOpen] = useState(false);
+  const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [depositPanelOpen, setDepositPanelOpen] = useState(false);
+  const [productStockView, setProductStockView] = useState("available");
+  const [productForm, setProductForm] = useState({
+    name: "",
+    category: "",
+    description: "",
+    sizes: "",
+    colors: "",
+    price: "",
+    purchasePrice: "",
+    extraCost: "",
+    stock: "",
+    imageFiles: [],
+    imagePreviews: [],
+  });
+  const [accountingForm, setAccountingForm] = useState({
+    orderId: "",
+    saleProductId: "",
+    saleQuantity: "1",
+    date: getTodayDateInput(),
+    customer: "",
+    saleAmount: "",
+    purchaseAmount: "",
+    extraCost: "",
+    discountAmount: "",
+    note: "",
+    paymentMethod: "Liquide",
+  });
+  const [depositForm, setDepositForm] = useState({
+    recordId: "",
+    orangeMoneyRef: "",
+    receiptName: "",
+    receiptFile: null,
+  });
+
+  useEffect(() => {
+    let mounted = true;
+
+    getCurrentSession().then(({ session: currentSession }) => {
+      if (!mounted) return;
+      setSession(currentSession);
+      setAuthReady(true);
+    });
+
+    const subscription = onAuthChange((nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return undefined;
+
+    let cancelled = false;
+    async function loadAdminData() {
+      if (!session) {
+        setAdminProducts([]);
+        setAdminOrders([]);
+        setAccountingRecords([]);
+        setStockMovements([]);
+        setSelectedOrder(null);
+        setAdminMessage("Connecte-toi avec ton compte admin pour gérer BMA.");
+        return;
+      }
+
+      const syncResult = await syncDjomiPayments({ limit: 50 });
+      const productsResult = await fetchProducts();
+      const ordersResult = await fetchAdminOrders();
+      const accountingResult = await fetchAccountingEntries();
+      const stockMovementsResult = await fetchStockMovements();
+      const permissionsResult = await fetchRolePermissions();
+
+      if (cancelled) return;
+
+      if (productsResult.error) {
+        setAdminProducts([]);
+      } else {
+        setAdminProducts(
+          productsResult.data.map((product) => ({
+            ...product,
+            purchasePrice: getPurchasePrice(product),
+            costPrice: getCostPrice(product),
+          }))
+        );
+      }
+
+      if (accountingResult.error) {
+        setAccountingRecords([]);
+      } else {
+        setAccountingRecords(accountingResult.data);
+        setDepositForm((current) => ({
+          ...current,
+          recordId: accountingResult.data[0]?.id ?? "",
+        }));
+      }
+
+      setStockMovements(stockMovementsResult.error ? [] : stockMovementsResult.data);
+
+      if (permissionsResult.error) {
+        setRolePermissions([]);
+      } else {
+        setRolePermissions(permissionsResult.data);
+      }
+
+      if (ordersResult.error) {
+        setAdminMessage(
+          `Articles chargés. Commandes non chargées : ${ordersResult.error.message}`
+        );
+        return;
+      }
+
+      if (!ordersResult.data.length) {
+        setAdminOrders([]);
+        setSelectedOrder(null);
+        setAdminMessage(
+          accountingResult.error
+            ? `Comptabilité non chargée : ${accountingResult.error.message}`
+            : ""
+        );
+        return;
+      }
+
+      setAdminOrders(ordersResult.data);
+      setSelectedOrder(null);
+      setAdminMessage(
+        accountingResult.error
+          ? `Commandes chargées. Comptabilité non chargée : ${accountingResult.error.message}`
+          : syncResult.data?.updated
+            ? `${syncResult.data.updated} paiement(s) Djomi confirmÃ©(s) automatiquement.`
+            : ""
+      );
+    }
+
+    loadAdminData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, session]);
+
+  useEffect(() => {
+    if (!session) return undefined;
+
+    let cancelled = false;
+
+    async function syncPendingDjomiOrders() {
+      const { data, error } = await syncDjomiPayments({ limit: 50 });
+
+      if (cancelled || error || !data?.updated) return;
+
+      const ordersResult = await fetchAdminOrders();
+      if (cancelled || ordersResult.error) return;
+
+      setAdminOrders(ordersResult.data);
+      setSelectedOrder((current) =>
+        current
+          ? ordersResult.data.find((order) => order.rawId === current.rawId) ?? current
+          : current
+      );
+      setAdminMessage(`${data.updated} paiement(s) Djomi confirmes automatiquement.`);
+    }
+
+    syncPendingDjomiOrders();
+    const intervalId = window.setInterval(syncPendingDjomiOrders, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      setAdminAccountOpen(false);
+      setAdminAccountForm(emptyAdminAccountForm);
+      return;
+    }
+
+    setAdminAccountForm({
+      ...emptyAdminAccountForm,
+      fullName: session.user.user_metadata?.full_name || "",
+    });
+  }, [session]);
+
+  useEffect(() => {
+    const hasBlockingPanel =
+      adminAccountOpen || productEditorOpen || manualSaleOpen || depositPanelOpen;
+
+    if (!hasBlockingPanel) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeOnEscape(event) {
+      if (event.key !== "Escape") return;
+      setAdminAccountOpen(false);
+      setProductEditorOpen(false);
+      setManualSaleOpen(false);
+      setDepositPanelOpen(false);
+      setDepositMessage(null);
+      setEditingProductId(null);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [adminAccountOpen, productEditorOpen, manualSaleOpen, depositPanelOpen]);
+
+  const totalRevenue = accountingRecords.reduce(
+    (sum, record) => sum + Number(record.saleAmount || 0),
+    0
+  );
+  const totalCost = accountingRecords.reduce(
+    (sum, record) => sum + Number(record.costAmount || 0),
+    0
+  );
+  const totalCash = accountingRecords
+    .filter((record) => record.paymentMethod === "Liquide")
+    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
+  const depositedCash = accountingRecords
+    .filter((record) => record.paymentMethod === "Liquide" && record.orangeMoneyRef)
+    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
+  const cashToDeposit = Math.max(0, totalCash - depositedCash);
+  const pendingCashRecords = accountingRecords.filter(
+    (record) => record.paymentMethod === "Liquide" && !record.orangeMoneyRef
+  );
+  const adminDisplayName = getAdminDisplayName(session);
+  const productSalePreview = getDraftAmount(productForm.price);
+  const productPurchasePreview = getDraftAmount(productForm.purchasePrice);
+  const productExtraCostPreview = getDraftAmount(productForm.extraCost);
+  const productCostPreview = productPurchasePreview + productExtraCostPreview;
+  const productMarginPreview = productSalePreview - productCostPreview;
+  const accountingSalePreview = getDraftAmount(accountingForm.saleAmount);
+  const accountingPurchasePreview = getDraftAmount(accountingForm.purchaseAmount);
+  const accountingExtraCostPreview = getDraftAmount(accountingForm.extraCost);
+  const accountingDiscountPreview = getDraftAmount(accountingForm.discountAmount);
+  const accountingCostPreview = accountingPurchasePreview + accountingExtraCostPreview;
+  const selectedSaleProduct = adminProducts.find(
+    (product) => product.id === accountingForm.saleProductId
+  );
+  const availableAdminProducts = adminProducts.filter((product) => Number(product.stock || 0) > 0);
+  const outOfStockProducts = adminProducts.filter((product) => Number(product.stock || 0) <= 0);
+  const displayedAdminProducts =
+    productStockView === "out_of_stock" ? outOfStockProducts : availableAdminProducts;
+  const saleQuantity = Math.max(1, getDraftAmount(accountingForm.saleQuantity, 1));
+  const selectedSaleBaseAmount = selectedSaleProduct
+    ? getProductPrice(selectedSaleProduct) * saleQuantity
+    : accountingSalePreview;
+  const selectedPurchaseAmount = selectedSaleProduct
+    ? getPurchasePrice(selectedSaleProduct) * saleQuantity
+    : accountingPurchasePreview;
+  const selectedCostAmount = selectedSaleProduct
+    ? getCostPrice(selectedSaleProduct) * saleQuantity
+    : accountingCostPreview;
+  const selectedExtraCostAmount = Math.max(0, selectedCostAmount - selectedPurchaseAmount);
+  const selectedSaleAmount = Math.max(0, selectedSaleBaseAmount - accountingDiscountPreview);
+  const selectedMarginAmount = selectedSaleAmount - selectedCostAmount;
+  const openOrders = adminOrders.filter(
+    (order) => !["delivered", "cancelled"].includes(order.rawStatus)
+  );
+  const unpaidOrders = adminOrders.filter((order) => order.payment !== "Payé");
+  const lowStockProducts = adminProducts.filter((product) => {
+    const stock = Number(product.stock || 0);
+    return stock > 0 && stock <= 3;
+  });
+  const customerGroups = useMemo(() => {
+    const groups = new Map();
+    const existingOrderRefs = new Set(adminOrders.map((order) => order.id));
+
+    adminOrders.forEach((order) => {
+      const key = getCustomerKey({
+        name: order.customer,
+        phone: order.phone,
+        userId: order.userId,
+      });
+      const current = groups.get(key) ?? {
+        key,
+        name: order.customer || "Client",
+        phone: order.phone || "-",
+        orders: [],
+        totalSpent: 0,
+        lastOrderDate: "",
+        paidOrders: 0,
+      };
+
+      current.orders.push(order);
+      current.totalSpent += Number(order.total || 0);
+      if (order.payment === "Payé") current.paidOrders += 1;
+      current.lastOrderDate =
+        !current.lastOrderDate || order.createdAt > current.lastOrderDate
+          ? order.createdAt
+          : current.lastOrderDate;
+      groups.set(key, current);
+    });
+
+    accountingRecords.forEach((record) => {
+      if (!record.customer) return;
+      if (existingOrderRefs.has(record.orderId)) return;
+
+      const fallbackKey = getCustomerKey({ name: record.customer, phone: "" });
+      const normalizedCustomerName = String(record.customer || "")
+        .trim()
+        .toLowerCase();
+      const existingCustomer = [...groups.values()].find(
+        (customer) =>
+          String(customer.name || "").trim().toLowerCase() === normalizedCustomerName
+      );
+      const key = existingCustomer?.key || fallbackKey;
+      const current = existingCustomer ?? groups.get(fallbackKey) ?? {
+        key,
+        name: record.customer,
+        phone: "-",
+        orders: [],
+        totalSpent: 0,
+        lastOrderDate: "",
+        paidOrders: 0,
+      };
+
+      current.orders.push({
+        id: record.orderId,
+        rawId: record.id,
+        customer: record.customer,
+        phone: current.phone,
+        zone: record.paymentMethod,
+        addressType: "Vente manuelle",
+        payment: record.paymentMethod,
+        status: "Vente manuelle",
+        tone: "paid",
+        total: Number(record.saleAmount || 0),
+        createdAt: record.date,
+        createdDate: record.date,
+        isManualSale: true,
+      });
+      current.totalSpent += Number(record.saleAmount || 0);
+      current.paidOrders += record.paymentMethod ? 1 : 0;
+      current.lastOrderDate =
+        !current.lastOrderDate || record.date > current.lastOrderDate
+          ? record.date
+          : current.lastOrderDate;
+      groups.set(key, {
+        ...current,
+        key,
+      });
+    });
+
+    return [...groups.values()]
+      .map((customer) => ({
+        ...customer,
+        orders: [...customer.orders].sort((first, second) =>
+          String(second.createdAt || "").localeCompare(String(first.createdAt || ""))
+        ),
+      }))
+      .sort((first, second) => Number(second.totalSpent) - Number(first.totalSpent));
+  }, [accountingRecords, adminOrders]);
+  const selectedCustomer =
+    customerGroups.find((customer) => customer.key === selectedCustomerKey) ??
+    customerGroups[0] ??
+    null;
+
+  useEffect(() => {
+    if (!customerGroups.length) {
+      setSelectedCustomerKey("");
+      return;
+    }
+
+    if (!customerGroups.some((customer) => customer.key === selectedCustomerKey)) {
+      setSelectedCustomerKey(customerGroups[0].key);
+    }
+  }, [customerGroups, selectedCustomerKey]);
+
+  const marginAmount = totalRevenue - totalCost;
+  const marginRate = getMarginRate(totalRevenue, totalCost);
+  const financeHealth =
+    marginAmount < 0 ? "À vérifier" : cashToDeposit > 0 ? "Dépôt à faire" : "Stable";
+  const djomiRevenue = accountingRecords
+    .filter((record) => record.paymentMethod === "Djomi")
+    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
+  const orangeMoneyRevenue = accountingRecords
+    .filter((record) => record.paymentMethod === "Orange Money")
+    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
+  const inventoryCostValue = adminProducts.reduce(
+    (sum, product) => sum + Number(product.stock || 0) * getCostPrice(product),
+    0
+  );
+  const inventorySaleValue = adminProducts.reduce(
+    (sum, product) => sum + Number(product.stock || 0) * getProductPrice(product),
+    0
+  );
+  const deliveredUnpaidOrders = adminOrders.filter(
+    (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
+  );
+  const negativeMarginRecords = accountingRecords.filter(
+    (record) => Number(record.saleAmount || 0) - Number(record.costAmount || 0) < 0
+  );
+  const auditIssues = [
+    cashToDeposit > 0
+      ? {
+          tone: "warning",
+          title: "Liquide à déposer",
+          text: `${formatMoney(cashToDeposit)} doivent encore aller sur le compte Orange Money général.`,
+        }
+      : null,
+    deliveredUnpaidOrders.length
+      ? {
+          tone: "danger",
+          title: "Commandes livrées non payées",
+          text: `${deliveredUnpaidOrders.length} commande(s) marquées livrées ont encore un paiement en attente.`,
+        }
+      : null,
+    negativeMarginRecords.length
+      ? {
+          tone: "danger",
+          title: "Marge négative",
+          text: `${negativeMarginRecords.length} ligne(s) comptables vendent sous le prix de revient.`,
+        }
+      : null,
+    outOfStockProducts.length
+      ? {
+          tone: "warning",
+          title: "Stock épuisé",
+          text: `${outOfStockProducts.length} article(s) ne sont plus disponibles à la vente.`,
+        }
+      : null,
+    lowStockProducts.length
+      ? {
+          tone: "info",
+          title: "Stock faible",
+          text: `${lowStockProducts.length} article(s) sont presque épuisés.`,
+        }
+      : null,
+  ].filter(Boolean);
+
+  const navItems = [
+    { id: "dashboard", label: "Accueil", hint: "Aujourd'hui" },
+    { id: "orders", label: "Commandes", hint: "A préparer" },
+    { id: "customers", label: "Clients", hint: "Historique" },
+    { id: "products", label: "Articles", hint: "Stock & photos" },
+    { id: "accounting", label: "Ventes & caisse", hint: "Manuel + dépôts" },
+    { id: "audit", label: "Audit", hint: "Argent + stock" },
+    { id: "settings", label: "Réglages", hint: "Permissions" },
+  ];
+  const sectionMeta = {
+    dashboard: {
+      title: "Accueil",
+      description: "Les priorités du jour, sans doublon.",
+    },
+    products: {
+      title: "Articles",
+      description: "Créer, modifier, gérer les variantes et le stock.",
+    },
+    orders: {
+      title: "Commandes",
+      description: "Suivre les commandes client jusqu'à livraison.",
+    },
+    customers: {
+      title: "Clients",
+      description: "Regrouper les commandes par client et repérer les fidèles.",
+    },
+    accounting: {
+      title: "Ventes & caisse",
+      description: "Vente manuelle, marge, liquide encaissé et dépôts Orange Money.",
+    },
+    audit: {
+      title: "Audit",
+      description: "Contrôler où sont l'argent, le stock et les incohérences.",
+    },
+    settings: {
+      title: "Réglages",
+      description: "Modifier les permissions de l'équipe.",
+    },
+  }[activeSection];
+
+  function navigateAdmin(sectionId) {
+    setActiveSection(sectionId);
+    setAdminNavOpen(false);
+  }
+
+  function showToast(text, tone = "paid") {
+    setAdminToast({ text, tone });
+  }
+
+  function updateLoginForm(field, value) {
+    setLoginForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateAdminAccountForm(field, value) {
+    setAdminAccountForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleAdminLogin(event) {
+    event.preventDefault();
+
+    if (!loginForm.email || !loginForm.password) {
+      showToast("Email et mot de passe admin obligatoires.", "issue");
+      return;
+    }
+
+    const { error } = await signInAdmin(loginForm.email, loginForm.password);
+
+    if (error) {
+      showToast(`Connexion admin refusée : ${error.message}`, "issue");
+      return;
+    }
+
+    setLoginForm({ email: "", password: "" });
+    setAdminToast(null);
+  }
+
+  async function handleAdminSignOut() {
+    const { error } = await signOutAdmin();
+
+    if (error) {
+      showToast(`Déconnexion impossible : ${error.message}`, "issue");
+      return;
+    }
+
+    setSession(null);
+    setAdminAccountOpen(false);
+    showToast("Session admin fermée.", "waiting");
+  }
+
+  async function handleAdminAccountSubmit(event) {
+    event.preventDefault();
+
+    if (!session) return;
+
+    if (adminAccountForm.newPassword || adminAccountForm.passwordConfirm) {
+      if (adminAccountForm.newPassword.length < 6) {
+        setAdminAccountMessage({
+          tone: "issue",
+          text: "Le nouveau mot de passe doit contenir au moins 6 caracteres.",
+        });
+        return;
+      }
+
+      if (adminAccountForm.newPassword !== adminAccountForm.passwordConfirm) {
+        setAdminAccountMessage({
+          tone: "issue",
+          text: "Les deux mots de passe ne correspondent pas.",
+        });
+        return;
+      }
+    }
+
+    setAdminAccountMessage({ tone: "waiting", text: "Mise a jour du compte..." });
+
+    const metadataResult = await updateAccountMetadata({
+      fullName: adminAccountForm.fullName.trim(),
+    });
+
+    if (metadataResult.error) {
+      setAdminAccountMessage({
+        tone: "issue",
+        text: `Compte non modifie : ${metadataResult.error.message}`,
+      });
+      return;
+    }
+
+    if (adminAccountForm.newPassword) {
+      const passwordResult = await updateCustomerPassword(adminAccountForm.newPassword);
+
+      if (passwordResult.error) {
+        setAdminAccountMessage({
+          tone: "issue",
+          text: `Nom mis a jour, mais mot de passe non modifie : ${passwordResult.error.message}`,
+        });
+        return;
+      }
+    }
+
+    setSession((current) =>
+      current && metadataResult.data?.user
+        ? { ...current, user: metadataResult.data.user }
+        : current
+    );
+    setAdminAccountForm((current) => ({
+      ...current,
+      newPassword: "",
+      passwordConfirm: "",
+    }));
+    setAdminAccountMessage({ tone: "paid", text: "Compte admin mis a jour." });
+  }
+
+  function updateProductForm(field, value) {
+    setProductForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateProductImages(files) {
+    const imageFiles = Array.from(files ?? []).slice(0, 6);
+    setProductForm((current) => ({
+      ...current,
+      imageFiles,
+      imagePreviews: imageFiles.map((file) => URL.createObjectURL(file)),
+    }));
+  }
+
+  function updateAccountingForm(field, value) {
+    setAccountingForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetProductForm() {
+    setEditingProductId(null);
+    setProductForm({
+      name: "",
+      category: "",
+      description: "",
+      sizes: "",
+      colors: "",
+      price: "",
+      purchasePrice: "",
+      extraCost: "",
+      stock: "",
+      imageFiles: [],
+      imagePreviews: [],
+    });
+  }
+
+  function openProductCreator() {
+    resetProductForm();
+    setProductEditorOpen(true);
+  }
+
+  function closeProductEditor() {
+    resetProductForm();
+    setProductEditorOpen(false);
+  }
+
+  function openManualSalePanel() {
+    setManualSaleOpen(true);
+  }
+
+  function closeManualSalePanel() {
+    setManualSaleOpen(false);
+  }
+
+  function openDepositPanel() {
+    setDepositMessage(null);
+    setDepositPanelOpen(true);
+  }
+
+  function closeDepositPanel() {
+    setDepositMessage(null);
+    setDepositPanelOpen(false);
+  }
+
+  function startProductEdit(product) {
+    setEditingProductId(product.id);
+    setProductForm({
+      name: product.name || "",
+      category: product.category || "",
+      description: product.description || "",
+      sizes: (product.sizes ?? []).join(", "),
+      colors: formatColorText(product.colors ?? []),
+      price: String(getProductPrice(product) || ""),
+      purchasePrice: String(getPurchasePrice(product) || ""),
+      extraCost: String(Math.max(0, getCostPrice(product) - getPurchasePrice(product)) || ""),
+      stock: String(product.stock ?? ""),
+      imageFiles: [],
+      imagePreviews: product.images ?? [],
+    });
+    setProductEditorOpen(true);
+  }
+
+  async function addLocalProduct(event) {
+    event.preventDefault();
+
+    if (!session) {
+      showToast("Connecte-toi en admin avant d'ajouter un article.", "issue");
+      return;
+    }
+
+    if (!productForm.name.trim()) {
+      showToast("Le nom de l'article est obligatoire.", "issue");
+      return;
+    }
+
+    const salePriceResult = parseGnfInput(productForm.price, "Prix de vente", {
+      required: true,
+      allowZero: false,
+    });
+
+    if (salePriceResult.error) {
+      showToast(salePriceResult.error, "issue");
+      return;
+    }
+
+    const purchasePriceResult = parseGnfInput(productForm.purchasePrice, "Prix d'achat", {
+      required: true,
+    });
+
+    if (purchasePriceResult.error) {
+      showToast(purchasePriceResult.error, "issue");
+      return;
+    }
+
+    const extraCostResult = parseGnfInput(productForm.extraCost, "Frais annexes", {
+      fallback: 0,
+    });
+
+    if (extraCostResult.error) {
+      showToast(extraCostResult.error, "issue");
+      return;
+    }
+
+    const costPrice = purchasePriceResult.value + extraCostResult.value;
+    const sizes = splitOptionText(productForm.sizes);
+    const colors = parseColorText(productForm.colors);
+
+    const stockResult = parseGnfInput(productForm.stock, "Stock", {
+      required: true,
+    });
+
+    if (stockResult.error) {
+      showToast(stockResult.error, "issue");
+      return;
+    }
+
+    const imageUrls = [];
+
+    for (const imageFile of productForm.imageFiles) {
+      const uploadResult = await uploadProductImage(imageFile);
+
+      if (uploadResult.error) {
+        showToast(
+          `Photo non ajoutée : ${uploadResult.error.message}. Vérifie le bucket product-images.`,
+          "issue"
+        );
+        return;
+      }
+
+      if (uploadResult.data) imageUrls.push(uploadResult.data);
+    }
+
+    const productPayload = {
+      name: productForm.name.trim(),
+      category: productForm.category.trim(),
+      description: productForm.description.trim(),
+      price: salePriceResult.value,
+      promoPrice: null,
+      purchasePrice: purchasePriceResult.value,
+      costPrice,
+      stock: stockResult.value,
+      image: imageUrls[0] ?? "",
+      sizes,
+      colors,
+    };
+
+    const existingProduct = adminProducts.find((product) => product.id === editingProductId);
+    const productResult = editingProductId
+      ? await updateProduct(editingProductId, productPayload)
+      : await createProduct(productPayload);
+    const { data, error } = productResult;
+
+    if (error) {
+      showToast(
+        `Article non enregistré : ${error.message}. Vérifie les colonnes et les droits admin.`,
+        "issue"
+      );
+      return;
+    }
+
+    const optionsResult = await replaceProductOptions(data.id, { sizes, colors });
+
+    if (optionsResult.error) {
+      showToast(
+        `Article enregistré, mais options non enregistrées : ${optionsResult.error.message}`,
+        "waiting"
+      );
+      return;
+    }
+
+    const galleryResult = imageUrls.length
+      ? await createProductImages(data.id, imageUrls)
+      : { error: null };
+
+    if (galleryResult.error) {
+      showToast(
+        `Article enregistré, mais galerie incomplète : ${galleryResult.error.message}`,
+        "waiting"
+      );
+    }
+
+    const savedProduct = {
+      ...data,
+      images: imageUrls.length
+        ? [...new Set([...imageUrls, ...(existingProduct?.images ?? [])])]
+        : existingProduct?.images ?? data.images,
+      purchasePrice: purchasePriceResult.value,
+      costPrice,
+      sizes,
+      colors,
+    };
+
+    setAdminProducts((current) =>
+      editingProductId
+        ? current.map((product) => (product.id === editingProductId ? savedProduct : product))
+        : [savedProduct, ...current]
+    );
+    resetProductForm();
+    setProductEditorOpen(false);
+    if (!galleryResult.error) {
+      showToast(editingProductId ? "Article modifié." : "Article ajouté.");
+    }
+  }
+
+  async function adjustStock(productId, quantityChange) {
+    const currentProduct = adminProducts.find((product) => product.id === productId);
+    if (!currentProduct) return;
+
+    const nextStock = Math.max(0, Number(currentProduct.stock || 0) + quantityChange);
+    const { error } = await adjustProductStock({
+      productId,
+      quantityDelta: nextStock - Number(currentProduct.stock || 0),
+      reason: quantityChange > 0 ? "restock" : "admin_adjustment",
+      referenceType: "admin_products",
+      referenceId: productId,
+      note: `Ajustement par ${adminDisplayName}`,
+    });
+
+    if (error) {
+      showToast(`Stock non enregistré : ${error.message}`, "issue");
+      return;
+    }
+
+    setAdminProducts((current) =>
+      current.map((product) =>
+        product.id === productId ? { ...product, stock: nextStock } : product
+      )
+    );
+    setStockMovements((current) => [
+      {
+        id: `local-${Date.now()}`,
+        productId,
+        productName: currentProduct.name,
+        image: currentProduct.image,
+        delta: nextStock - Number(currentProduct.stock || 0),
+        stockBefore: Number(currentProduct.stock || 0),
+        stockAfter: nextStock,
+        reason: quantityChange > 0 ? "restock" : "admin_adjustment",
+        actor: adminDisplayName,
+        createdDate: getTodayDateInput(),
+      },
+      ...current,
+    ]);
+    showToast("Stock enregistré.");
+  }
+
+  async function updateOrderStatus(orderOrId, nextStatus) {
+    const targetOrder =
+      typeof orderOrId === "string"
+        ? adminOrders.find((order) => order.id === orderOrId || order.rawId === orderOrId)
+        : orderOrId;
+
+    if (!targetOrder?.rawId) {
+      showToast("Commande introuvable.", "issue");
+      return;
+    }
+
+    setUpdatingOrderId(targetOrder.id);
+
+    const { data, error } = await updateAdminOrderStatus(targetOrder.rawId, nextStatus);
+
+    setUpdatingOrderId("");
+
+    if (error) {
+      showToast(`Statut non enregistré : ${error.message}`, "issue");
+      return;
+    }
+
+    const patch = {
+      rawStatus: data.rawStatus,
+      status: data.status,
+      statusTone: data.statusTone,
+      paymentTone: data.paymentTone,
+      tone: data.statusTone,
+    };
+
+    setAdminOrders((current) =>
+      current.map((order) =>
+        order.id === targetOrder.id ? { ...order, ...patch } : order
+      )
+    );
+    setSelectedOrder((current) =>
+      current?.id === targetOrder.id ? { ...current, ...patch } : current
+    );
+    showToast(`Commande ${targetOrder.id} : ${data.status}.`);
+  }
+
+  async function addAccountingRecord(event) {
+    event.preventDefault();
+
+    if (!accountingForm.date) {
+      showToast("La date est obligatoire.", "issue");
+      return;
+    }
+
+    if (!selectedSaleProduct && !accountingForm.saleAmount) {
+      showToast("Choisis un article ou saisis un montant manuel.", "issue");
+      return;
+    }
+
+    if (selectedSaleProduct && saleQuantity > Number(selectedSaleProduct.stock || 0)) {
+      showToast(
+        `Stock insuffisant : il reste ${selectedSaleProduct.stock} article(s).`,
+        "issue"
+      );
+      return;
+    }
+
+    const saleAmountResult = selectedSaleProduct
+      ? { value: selectedSaleBaseAmount }
+      : parseGnfInput(accountingForm.saleAmount, "Prix de vente", {
+          required: true,
+          allowZero: false,
+        });
+    const purchaseAmountResult = selectedSaleProduct
+      ? { value: selectedPurchaseAmount }
+      : parseGnfInput(accountingForm.purchaseAmount, "Prix d'achat", { fallback: 0 });
+    const extraCostResult = selectedSaleProduct
+      ? { value: selectedExtraCostAmount }
+      : parseGnfInput(accountingForm.extraCost, "Frais annexes", {
+          fallback: 0,
+        });
+    const discountAmountResult = parseGnfInput(accountingForm.discountAmount, "Remise", {
+      fallback: 0,
+    });
+
+    const validationError =
+      saleAmountResult.error ||
+      purchaseAmountResult.error ||
+      extraCostResult.error ||
+      discountAmountResult.error;
+
+    if (validationError) {
+      showToast(validationError, "issue");
+      return;
+    }
+
+    if (discountAmountResult.value > saleAmountResult.value) {
+      showToast("La remise ne peut pas dépasser le prix de vente.", "issue");
+      return;
+    }
+
+    const finalSaleAmount = saleAmountResult.value - discountAmountResult.value;
+    const costAmount = purchaseAmountResult.value + extraCostResult.value;
+
+    const generatedSaleReference = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
+    const saleNotes = [
+      accountingForm.note?.trim(),
+      selectedSaleProduct ? `Article : ${selectedSaleProduct.name}` : "Vente libre",
+      `Quantité : ${saleQuantity}`,
+      discountAmountResult.value ? `Remise : ${formatMoney(discountAmountResult.value)}` : "",
+    ].filter(Boolean);
+
+    const record = {
+      orderId: accountingForm.orderId || generatedSaleReference,
+      productId: selectedSaleProduct?.id || "",
+      quantity: saleQuantity,
+      date: accountingForm.date,
+      customer:
+        accountingForm.customer ||
+        (selectedSaleProduct ? `Vente ${selectedSaleProduct.name}` : "Client"),
+      saleAmount: finalSaleAmount,
+      purchaseAmount: purchaseAmountResult.value,
+      extraCost: extraCostResult.value,
+      costAmount,
+      paymentMethod: accountingForm.paymentMethod,
+      collectedBy: adminDisplayName,
+      depositedBy: "",
+      orangeMoneyRef: "",
+      receiptName: "",
+      depositedAt: "",
+      note: saleNotes.join("\n"),
+    };
+
+    const { data, error } = await createAccountingEntry(record);
+
+    if (error && !data) {
+      showToast(
+        `Ligne comptable non enregistrée : ${getFriendlyErrorMessage(error, "accounting_entry")}`,
+        "issue"
+      );
+      return;
+    }
+
+    setAccountingRecords((current) => (data ? [data, ...current] : current));
+    if (selectedSaleProduct && !error) {
+      const nextStock = Math.max(0, Number(selectedSaleProduct.stock || 0) - saleQuantity);
+      setAdminProducts((current) =>
+        current.map((product) =>
+          product.id === selectedSaleProduct.id
+            ? { ...product, stock: Math.max(0, Number(product.stock || 0) - saleQuantity) }
+            : product
+        )
+      );
+      setStockMovements((current) => [
+        {
+          id: `local-${Date.now()}`,
+          productId: selectedSaleProduct.id,
+          productName: selectedSaleProduct.name,
+          image: selectedSaleProduct.image,
+          delta: -saleQuantity,
+          stockBefore: Number(selectedSaleProduct.stock || 0),
+          stockAfter: nextStock,
+          reason: "manual_sale",
+          referenceId: data?.id || record.orderId,
+          actor: adminDisplayName,
+          createdDate: accountingForm.date,
+        },
+        ...current,
+      ]);
+    }
+    setDepositForm((current) => ({ ...current, recordId: data?.id || current.recordId }));
+    setAccountingForm({
+      orderId: "",
+      saleProductId: "",
+      saleQuantity: "1",
+      date: getTodayDateInput(),
+      customer: "",
+      saleAmount: "",
+      purchaseAmount: "",
+      extraCost: "",
+      discountAmount: "",
+      note: "",
+      paymentMethod: "Liquide",
+    });
+    setManualSaleOpen(false);
+    showToast(
+      error
+        ? `Vente enregistrée, mais stock à vérifier : ${getFriendlyErrorMessage(error, "stock")}`
+        : "Vente enregistrée et stock mis à jour.",
+      error ? "waiting" : "paid"
+    );
+  }
+
+  async function saveOrangeMoneyDeposit(event) {
+    event.preventDefault();
+    if (isDepositSubmitting) return;
+
+    const selectedDepositRecordId = depositForm.recordId || pendingCashRecords[0]?.id || "";
+
+    if (!selectedDepositRecordId || !depositForm.orangeMoneyRef) {
+      const message = "Choisis une ligne et la référence Orange Money.";
+      setDepositMessage({ tone: "issue", text: message });
+      showToast(message, "issue");
+      return;
+    }
+
+    const selectedRecord = accountingRecords.find(
+      (record) => record.id === selectedDepositRecordId
+    );
+
+    if (!selectedRecord) {
+      const message = "Ligne comptable introuvable.";
+      setDepositMessage({ tone: "issue", text: message });
+      showToast(message, "issue");
+      return;
+    }
+
+    if (selectedRecord.paymentMethod !== "Liquide") {
+      const message = "Seuls les encaissements en liquide peuvent être déposés ici.";
+      setDepositMessage({ tone: "issue", text: message });
+      showToast(message, "issue");
+      return;
+    }
+
+    setIsDepositSubmitting(true);
+    setDepositMessage({ tone: "waiting", text: "Enregistrement du dépôt..." });
+
+    try {
+      const receiptUpload = await uploadOrangeMoneyReceipt(depositForm.receiptFile);
+      const receiptUploadFailed = Boolean(receiptUpload.error);
+
+      const { data, error } = await createOrangeMoneyDeposit({
+        record: selectedRecord,
+        reference: depositForm.orangeMoneyRef,
+        receiptName: receiptUpload.data?.name || depositForm.receiptName,
+        receiptPath: receiptUpload.data?.path || "",
+        depositedBy: adminDisplayName,
+      });
+
+      if (error) {
+        const message = `Dépôt non enregistré : ${getFriendlyErrorMessage(
+          error,
+          "orange_money_deposit"
+        )}`;
+        setDepositMessage({ tone: "issue", text: message });
+        showToast(message, "issue");
+        return;
+      }
+
+      setAccountingRecords((current) =>
+        current.map((record) =>
+          record.id === selectedDepositRecordId
+            ? {
+                ...record,
+                depositedBy: data.depositedBy,
+                orangeMoneyRef: data.orangeMoneyRef,
+                receiptName: data.receiptName,
+                receiptPath: data.receiptPath,
+                receiptUrl: data.receiptUrl,
+                depositedAt: data.depositedAt,
+              }
+            : record
+        )
+      );
+      setDepositForm({
+        recordId: "",
+        orangeMoneyRef: "",
+        receiptName: "",
+        receiptFile: null,
+      });
+
+      const successMessage = receiptUploadFailed
+        ? `Dépôt enregistré. ${getFriendlyErrorMessage(receiptUpload.error, "receipt_upload")}`
+        : "Dépôt Orange Money enregistré avec reçu.";
+      setDepositMessage({
+        tone: receiptUploadFailed ? "waiting" : "paid",
+        text: successMessage,
+      });
+      if (!receiptUploadFailed) {
+        setDepositPanelOpen(false);
+      }
+      showToast(successMessage, receiptUploadFailed ? "waiting" : "paid");
+    } finally {
+      setIsDepositSubmitting(false);
+    }
+  }
+
+  async function toggleRolePermission(permission) {
+    const nextValue = !permission.is_enabled;
+    const { data, error } = await updateRolePermission(
+      permission.role,
+      permission.permission_key,
+      nextValue
+    );
+
+    if (error) {
+      showToast(
+        `Permission non modifiée : ${error.message}. Seul le owner peut changer ces réglages.`,
+        "issue"
+      );
+      return;
+    }
+
+    setRolePermissions((current) =>
+      current.map((row) =>
+        row.role === data.role && row.permission_key === data.permission_key
+          ? data
+          : row
+      )
+    );
+    showToast("Permission mise à jour.");
+  }
+
+  function renderDashboard() {
+    return (
+      <>
+        <div className="stats admin-stats">
+          <Stat label="Commandes ouvertes" value={openOrders.length} />
+          <Stat label="Clients suivis" value={customerGroups.length} />
+          <Stat label="Articles disponibles" value={availableAdminProducts.length} />
+          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
+        </div>
+
+        <div className="admin-overview">
+          <section className="section priority-panel">
+            <div className="section-head">
+              <div>
+                <h2>À traiter maintenant</h2>
+                <span>Les points importants avant de vendre plus</span>
+              </div>
+            </div>
+            <div className="priority-grid">
+              <button className="priority-card" type="button" onClick={() => navigateAdmin("orders")}>
+                <span>Commandes à gérer</span>
+                <strong>{openOrders.length}</strong>
+                <small>Préparation, livraison, annulation si besoin</small>
+              </button>
+              <button className="priority-card" type="button" onClick={() => navigateAdmin("accounting")}>
+                <span>Ventes à vérifier</span>
+                <strong>{unpaidOrders.length}</strong>
+                <small>Paiements, liquide et lignes manuelles</small>
+              </button>
+              <button className="priority-card" type="button" onClick={() => navigateAdmin("accounting")}>
+                <span>Liquide non déposé</span>
+                <strong>{formatCompact(cashToDeposit)}</strong>
+                <small>À verser sur le compte Orange Money général</small>
+              </button>
+              <button className="priority-card" type="button" onClick={() => navigateAdmin("customers")}>
+                <span>Clients à suivre</span>
+                <strong>{customerGroups.length}</strong>
+                <small>Historique, fidélité et contact direct</small>
+              </button>
+            </div>
+          </section>
+
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>Stock à surveiller</h2>
+                <span>Articles bientôt en rupture</span>
+              </div>
+            </div>
+            {lowStockProducts.length ? (
+              <div className="watch-list">
+                {lowStockProducts.slice(0, 5).map((product) => (
+                  <button
+                    className="watch-row"
+                    key={product.id}
+                    type="button"
+                    onClick={() => navigateAdmin("products")}
+                  >
+                    <img src={product.image} alt="" />
+                    <span>
+                      <strong>{product.name}</strong>
+                      <small>{product.category}</small>
+                    </span>
+                    <b>{product.stock}</b>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state compact">Aucun stock critique.</div>
+            )}
+          </section>
+        </div>
+      </>
+    );
+  }
+
+  function renderProducts() {
+    return (
+      <div className="admin-stack product-admin-grid">
+        <section className="section">
+          <div className="section-head action-head">
+            <div>
+              <h2>Articles</h2>
+              <span>Vêtements, accessoires, photos, prix et stock</span>
+            </div>
+            <button
+              className="product-add-button"
+              type="button"
+              aria-label="Ajouter un article"
+              title="Ajouter un article"
+              onClick={openProductCreator}
+            >
+              <span aria-hidden="true">+</span>
+              <b>Ajouter</b>
+            </button>
+          </div>
+          <div className="stock-tabs" role="tablist" aria-label="Filtrer les articles">
+            <button
+              className={productStockView === "available" ? "active" : ""}
+              type="button"
+              onClick={() => setProductStockView("available")}
+            >
+              Disponibles <span>{availableAdminProducts.length}</span>
+            </button>
+            <button
+              className={productStockView === "out_of_stock" ? "active warning" : "warning"}
+              type="button"
+              onClick={() => setProductStockView("out_of_stock")}
+            >
+              Stock épuisé <span>{outOfStockProducts.length}</span>
+            </button>
+          </div>
+          <div className="table-wrap">
+            <table className="table products-table">
+              <thead>
+                <tr>
+                  <th>Article</th>
+                  <th>Catégorie</th>
+                  <th>Vente</th>
+                  <th>Achat</th>
+                  <th>Revient</th>
+                  <th>Stock</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedAdminProducts.length ? (
+                  displayedAdminProducts.map((product) => (
+                    <tr key={product.id}>
+                      <td>
+                        <div className="product-cell">
+                          <img src={product.image} alt="" />
+                          <span>
+                            <strong>{product.name}</strong>
+                            <small>
+                              {[
+                                product.sizes?.length ? `${product.sizes.length} tailles` : null,
+                                product.colors?.length ? `${product.colors.length} couleurs` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "Options non définies"}
+                            </small>
+                          </span>
+                        </div>
+                      </td>
+                      <td>{product.category}</td>
+                      <td>{formatMoney(getProductPrice(product))}</td>
+                      <td>{formatMoney(getPurchasePrice(product))}</td>
+                      <td>{formatMoney(getCostPrice(product))}</td>
+                      <td>
+                        <span className={`stock-pill ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}>
+                          {product.stock}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="inline-actions">
+                          <button
+                            className="btn secondary"
+                            type="button"
+                            onClick={() => startProductEdit(product)}
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            className="btn secondary"
+                            type="button"
+                            onClick={() => adjustStock(product.id, 1)}
+                          >
+                            + stock
+                          </button>
+                          <button
+                            className="btn ghost"
+                            type="button"
+                            onClick={() => adjustStock(product.id, -1)}
+                          >
+                            - stock
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="7">
+                      <div className="empty-state compact">
+                        {productStockView === "out_of_stock"
+                          ? "Aucun article en rupture."
+                          : "Aucun article disponible."}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {productEditorOpen ? (
+          <div
+            className="product-editor-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeProductEditor();
+            }}
+          >
+        <section className="section product-editor-panel" role="dialog" aria-modal="true">
+          <div className="section-head action-head">
+            <div>
+              <h2>{editingProductId ? "Modifier article" : "Ajouter article"}</h2>
+              <span>Photos, variantes, prix de revient et stock</span>
+            </div>
+            <button className="icon-btn" type="button" onClick={closeProductEditor}>
+              Fermer
+            </button>
+          </div>
+          <form className="admin-form product-editor" onSubmit={addLocalProduct}>
+            <div className="field photo-drop">
+              <label>Photos de l'article</label>
+              <input
+                accept="image/*"
+                multiple
+                type="file"
+                onChange={(event) => updateProductImages(event.target.files)}
+              />
+              {productForm.imagePreviews.length ? (
+                <div className="image-preview-grid">
+                  {productForm.imagePreviews.map((imageUrl) => (
+                    <img
+                      className="image-preview"
+                      src={imageUrl}
+                      alt="Aperçu article"
+                      key={imageUrl}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <span className="muted">Jusqu'à 6 photos pour montrer matière, coupe et détails.</span>
+              )}
+            </div>
+            <Field
+              label="Nom"
+              value={productForm.name}
+              onChange={(value) => updateProductForm("name", value)}
+            />
+            <Field
+              label="Catégorie"
+              value={productForm.category}
+              onChange={(value) => updateProductForm("category", value)}
+            />
+            <div className="field">
+              <label>Description courte</label>
+              <textarea
+                placeholder="Coupe, taille, matière, style..."
+                value={productForm.description}
+                onChange={(event) => updateProductForm("description", event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label>Tailles disponibles</label>
+              <textarea
+                placeholder="Vetement : S, M, L, XL. Chaussure : 39, 40, 41. Accessoire : laisser vide si taille unique."
+                value={productForm.sizes}
+                onChange={(event) => updateProductForm("sizes", event.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label>Couleurs disponibles</label>
+              <textarea
+                placeholder="Ex : Noir #111820, Bleu #2563eb, Beige #d8c3a5"
+                value={productForm.colors}
+                onChange={(event) => updateProductForm("colors", event.target.value)}
+              />
+            </div>
+            <div className="price-form-grid">
+            <Field
+              label="Prix de vente GNF"
+              value={productForm.price}
+              type="number"
+              min="1"
+              step="1"
+              onChange={(value) => updateProductForm("price", value)}
+            />
+            <Field
+              label="Prix d'achat GNF"
+              value={productForm.purchasePrice}
+              type="number"
+              min="0"
+              step="1"
+              onChange={(value) => updateProductForm("purchasePrice", value)}
+            />
+            <Field
+              label="Frais annexes GNF"
+              value={productForm.extraCost}
+              type="number"
+              min="0"
+              step="1"
+              onChange={(value) => updateProductForm("extraCost", value)}
+            />
+            <Field
+              label="Stock"
+              value={productForm.stock}
+              type="number"
+              min="0"
+              step="1"
+              onChange={(value) => updateProductForm("stock", value)}
+            />
+            </div>
+            <div className="calc-preview">
+              <div>
+                <span>Revient calculé</span>
+                <strong>{formatMoney(productCostPreview)}</strong>
+              </div>
+              <div>
+                <span>Marge estimée</span>
+                <strong className={productMarginPreview < 0 ? "negative" : ""}>
+                  {formatMoney(productMarginPreview)}
+                </strong>
+              </div>
+              <div>
+                <span>Taux marge</span>
+                <strong>{getMarginRate(productSalePreview, productCostPreview)}%</strong>
+              </div>
+            </div>
+            <button className="btn" type="submit">
+              {editingProductId ? "Enregistrer les modifications" : "Ajouter"}
+            </button>
+          </form>
+        </section>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderOrders() {
+    return (
+      <div className="admin-stack">
+        <div className="admin-columns">
+          <OrdersTable
+            orders={adminOrders}
+            onSelect={setSelectedOrder}
+            selectedOrderId={selectedOrder?.id}
+            updatingOrderId={updatingOrderId}
+          />
+          <div
+            className={`order-detail-shell ${selectedOrder ? "open" : ""}`}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setSelectedOrder(null);
+            }}
+          >
+          <DetailPanel
+            title="Détail commande"
+            emptyText="Clique sur une commande."
+            onClose={selectedOrder ? () => setSelectedOrder(null) : null}
+          >
+            {selectedOrder ? (
+              <>
+                <strong>{selectedOrder.id}</strong>
+                <span className="muted">
+                  {selectedOrder.customer} - {selectedOrder.phone}
+                </span>
+                <span className="muted">
+                  {selectedOrder.zone} - {selectedOrder.addressType}
+                </span>
+                {selectedOrder.landmark ? (
+                  <span className="muted">{selectedOrder.landmark}</span>
+                ) : null}
+                <div className="order-detail-summary">
+                  <span>Total</span>
+                  <strong>{formatMoney(selectedOrder.total)}</strong>
+                  <span>Paiement</span>
+                  <strong>{selectedOrder.payment}</strong>
+                </div>
+                <OrderItemsList items={selectedOrder.orderItems} />
+                <div className="inline-actions vertical">
+                  <button
+                    className="btn secondary"
+                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "preparing"}
+                    onClick={() => updateOrderStatus(selectedOrder, "preparing")}
+                  >
+                    Mettre en préparation
+                  </button>
+                  <button
+                    className="btn secondary"
+                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "delivered"}
+                    onClick={() => updateOrderStatus(selectedOrder, "delivered")}
+                  >
+                    Marquer livrée
+                  </button>
+                  <button
+                    className="btn ghost"
+                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "cancelled"}
+                    onClick={() => updateOrderStatus(selectedOrder, "cancelled")}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </DetailPanel>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderAccounting() {
+    return (
+      <div className="admin-stack">
+        <div className="stats">
+          <Stat label="CA total" value={formatCompact(totalRevenue)} />
+          <Stat label="Coût revient" value={formatCompact(totalCost)} />
+          <Stat label="Marge brute" value={formatCompact(totalRevenue - totalCost)} />
+          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
+        </div>
+
+        <AccountingCharts
+          depositedCash={depositedCash}
+          records={accountingRecords}
+          totalCash={totalCash}
+          totalCost={totalCost}
+          totalRevenue={totalRevenue}
+        />
+
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>Historique comptable</h2>
+              <span>Commandes, achats, revient, encaissement et dépôt Orange Money</span>
+            </div>
+            <div className="accounting-actions">
+              <button
+                className="product-add-button"
+                type="button"
+                onClick={openManualSalePanel}
+              >
+                <span aria-hidden="true">+</span>
+                <b>Vente</b>
+              </button>
+              <button
+                className="product-add-button secondary-action deposit-action"
+                type="button"
+                onClick={openDepositPanel}
+              >
+                <span aria-hidden="true">OM</span>
+                <b>Dépôt</b>
+              </button>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="table accounting-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Commande</th>
+                  <th>Client</th>
+                  <th>Vente</th>
+                  <th>Achat</th>
+                  <th>Frais</th>
+                  <th>Revient</th>
+                  <th>Marge</th>
+                  <th>Encaissement</th>
+                  <th>Dépôt OM</th>
+                  <th>Reçu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accountingRecords.length ? (
+                  accountingRecords.map((record) => (
+                    <tr key={record.id}>
+                      <td>{record.date}</td>
+                      <td>
+                        <strong>{record.orderId}</strong>
+                        {record.note ? (
+                          <>
+                            <br />
+                            <span className="muted">{record.note.split("\n")[0]}</span>
+                          </>
+                        ) : null}
+                      </td>
+                      <td>{record.customer}</td>
+                      <td>{formatMoney(record.saleAmount)}</td>
+                      <td>{formatMoney(record.purchaseAmount)}</td>
+                      <td>{formatMoney(record.extraCost)}</td>
+                      <td>{formatMoney(record.costAmount)}</td>
+                      <td>{formatMoney(record.saleAmount - record.costAmount)}</td>
+                      <td>
+                        {record.paymentMethod}
+                        <br />
+                        <span className="muted">Par: {record.collectedBy}</span>
+                      </td>
+                      <td>
+                        {record.orangeMoneyRef ? (
+                          <>
+                            <span className="status paid">Déposé</span>
+                            <br />
+                            <span className="muted">
+                              {record.orangeMoneyRef} - {record.depositedBy}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="status waiting">À déposer</span>
+                        )}
+                      </td>
+                      <td>
+                        {record.receiptUrl ? (
+                          <a
+                            className="receipt-link"
+                            href={record.receiptUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Voir le reçu
+                          </a>
+                        ) : record.receiptName ? (
+                          <span className="muted">{record.receiptName}</span>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="11">
+                      <div className="empty-state compact">Aucune ligne comptable enregistrée.</div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {manualSaleOpen ? (
+          <div
+            className="admin-action-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeManualSalePanel();
+            }}
+          >
+          <section className="section admin-action-panel">
+            <div className="section-head">
+              <div>
+                <h2>Enregistrer une vente manuelle</h2>
+                <span>Le manager choisit un article existant ou saisit une vente libre</span>
+              </div>
+              <button className="icon-btn" type="button" onClick={closeManualSalePanel}>
+                Fermer
+              </button>
+            </div>
+            <form className="admin-form form-grid" onSubmit={addAccountingRecord}>
+              <div className="field full">
+                <label>Article vendu</label>
+                <select
+                  value={accountingForm.saleProductId}
+                  onChange={(event) =>
+                    updateAccountingForm("saleProductId", event.target.value)
+                  }
+                >
+                  <option value="">Vente libre sans article</option>
+                  {availableAdminProducts.map((product) => (
+                    <option value={product.id} key={product.id}>
+                      {product.name} - {formatMoney(getProductPrice(product))} - stock {product.stock}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedSaleProduct ? (
+                <div className="trace-box full">
+                  <span>Montants repris depuis la base BMA</span>
+                  <strong>
+                    {selectedSaleProduct.name} - {formatMoney(getProductPrice(selectedSaleProduct))} / article
+                  </strong>
+                </div>
+              ) : null}
+              <Field
+                label="Quantité"
+                value={accountingForm.saleQuantity}
+                type="number"
+                min="1"
+                step="1"
+                onChange={(value) => updateAccountingForm("saleQuantity", value)}
+              />
+              <Field
+                label="Référence vente / commande"
+                value={accountingForm.orderId}
+                onChange={(value) => updateAccountingForm("orderId", value)}
+              />
+              <Field
+                label="Date"
+                value={accountingForm.date}
+                type="date"
+                onChange={(value) => updateAccountingForm("date", value)}
+              />
+              <Field
+                label="Client"
+                value={accountingForm.customer}
+                onChange={(value) => updateAccountingForm("customer", value)}
+              />
+              <Field
+                label="Prix vente total avant remise"
+                value={selectedSaleProduct ? selectedSaleBaseAmount : accountingForm.saleAmount}
+                type="number"
+                min="1"
+                step="1"
+                disabled={Boolean(selectedSaleProduct)}
+                onChange={(value) => updateAccountingForm("saleAmount", value)}
+              />
+              <Field
+                label="Prix achat total"
+                value={selectedSaleProduct ? selectedPurchaseAmount : accountingForm.purchaseAmount}
+                type="number"
+                min="0"
+                step="1"
+                disabled={Boolean(selectedSaleProduct)}
+                onChange={(value) => updateAccountingForm("purchaseAmount", value)}
+              />
+              <Field
+                label="Frais annexes total"
+                value={selectedSaleProduct ? selectedExtraCostAmount : accountingForm.extraCost}
+                type="number"
+                min="0"
+                step="1"
+                disabled={Boolean(selectedSaleProduct)}
+                onChange={(value) => updateAccountingForm("extraCost", value)}
+              />
+              <Field
+                label="Remise GNF"
+                value={accountingForm.discountAmount}
+                type="number"
+                min="0"
+                step="1"
+                onChange={(value) => updateAccountingForm("discountAmount", value)}
+              />
+              <div className="field">
+                <label>Encaissement</label>
+                <select
+                  value={accountingForm.paymentMethod}
+                  onChange={(event) =>
+                    updateAccountingForm("paymentMethod", event.target.value)
+                  }
+                >
+                  <option>Liquide</option>
+                  <option>Djomi</option>
+                  <option>Orange Money</option>
+                </select>
+              </div>
+              <div className="field full">
+                <label>Note vente</label>
+                <textarea
+                  value={accountingForm.note}
+                  placeholder="Ex : 2 articles vendus, remise fidélité, paiement reçu par Alpha..."
+                  onChange={(event) => updateAccountingForm("note", event.target.value)}
+                />
+              </div>
+              <div className="calc-preview full">
+                <div>
+                  <span>Total encaissé</span>
+                  <strong>{formatMoney(selectedSaleAmount)}</strong>
+                </div>
+                <div>
+                  <span>Revient calculé</span>
+                  <strong>{formatMoney(selectedCostAmount)}</strong>
+                </div>
+                <div>
+                  <span>Marge</span>
+                  <strong className={selectedMarginAmount < 0 ? "negative" : ""}>
+                    {formatMoney(selectedMarginAmount)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Encaissé par</span>
+                  <strong>{adminDisplayName}</strong>
+                </div>
+              </div>
+              <button className="btn" type="submit">
+                Ajouter la ligne
+              </button>
+            </form>
+          </section>
+          </div>
+        ) : null}
+
+        {depositPanelOpen ? (
+          <div
+            className="admin-action-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeDepositPanel();
+            }}
+          >
+          <section className="section admin-action-panel">
+            <div className="section-head">
+              <div>
+                <h2>Dépôt Orange Money général</h2>
+                <span>Chaque manager joint son reçu</span>
+              </div>
+              <button className="icon-btn" type="button" onClick={closeDepositPanel}>
+                Fermer
+              </button>
+            </div>
+            <form className="admin-form" onSubmit={saveOrangeMoneyDeposit}>
+              <label>Ligne liquide</label>
+              {pendingCashRecords.length ? (
+                <select
+                  value={depositForm.recordId || pendingCashRecords[0].id}
+                  onChange={(event) =>
+                    {
+                      setDepositMessage(null);
+                    setDepositForm((current) => ({
+                      ...current,
+                      recordId: event.target.value,
+                    }));
+                    }
+                  }
+                >
+                  {pendingCashRecords.map((record) => (
+                      <option value={record.id} key={record.id}>
+                        {record.orderId} - {formatMoney(record.saleAmount)}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <div className="empty-state compact">
+                  Aucun encaissement liquide en attente de dépôt.
+                </div>
+              )}
+              <Field
+                label="Référence Orange Money"
+                value={depositForm.orangeMoneyRef}
+                disabled={!pendingCashRecords.length || isDepositSubmitting}
+                onChange={(value) =>
+                  {
+                    setDepositMessage(null);
+                  setDepositForm((current) => ({
+                    ...current,
+                    orangeMoneyRef: value,
+                  }));
+                  }
+                }
+              />
+              <div className="field">
+                <label>Reçu du dépôt</label>
+                <label
+                  className={`file-picker ${!pendingCashRecords.length || isDepositSubmitting ? "disabled" : ""}`}
+                >
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    disabled={!pendingCashRecords.length || isDepositSubmitting}
+                    onChange={(event) =>
+                      {
+                        setDepositMessage(null);
+                      setDepositForm((current) => ({
+                        ...current,
+                        receiptFile: event.target.files?.[0] ?? null,
+                        receiptName: event.target.files?.[0]?.name ?? "",
+                      }));
+                      }
+                    }
+                  />
+                  <span>Choisir un reçu</span>
+                  <strong>{depositForm.receiptName || "Image ou PDF"}</strong>
+                </label>
+                <span className="muted">
+                  {depositForm.receiptName || "Aucun reçu sélectionné"}
+                </span>
+              </div>
+              <div className="trace-box">
+                <span>Dépôt enregistré par</span>
+                <strong>{adminDisplayName}</strong>
+              </div>
+              {depositMessage ? (
+                <div className={`checkout-status ${depositMessage.tone}`}>
+                  {depositMessage.text}
+                </div>
+              ) : null}
+              <button
+                className={`btn ${isDepositSubmitting ? "loading" : ""}`}
+                disabled={!pendingCashRecords.length || isDepositSubmitting}
+                type="submit"
+              >
+                {isDepositSubmitting ? "Enregistrement..." : "Enregistrer le dépôt"}
+              </button>
+            </form>
+          </section>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderAudit() {
+    const productsToAudit = [...outOfStockProducts, ...lowStockProducts].slice(0, 8);
+
+    return (
+      <div className="admin-stack">
+        <div className="stats audit-stats">
+          <Stat label="Argent suivi" value={formatCompact(totalRevenue)} />
+          <Stat label="Liquide dehors" value={formatCompact(cashToDeposit)} />
+          <Stat label="Valeur stock" value={formatCompact(inventoryCostValue)} />
+          <Stat label="Ruptures" value={outOfStockProducts.length} />
+        </div>
+
+        <div className="audit-grid">
+          <section className="section audit-panel">
+            <div className="section-head">
+              <div>
+                <h2>Où est l'argent</h2>
+                <span>Encaissements, dépôts et argent à justifier</span>
+              </div>
+            </div>
+            <div className="audit-list">
+              <AuditRow label="Liquide encaissé" value={formatMoney(totalCash)} />
+              <AuditRow label="Déjà déposé OM" value={formatMoney(depositedCash)} tone="paid" />
+              <AuditRow label="Liquide à déposer" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
+              <AuditRow label="Djomi suivi" value={formatMoney(djomiRevenue)} />
+              <AuditRow label="Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
+            </div>
+          </section>
+
+          <section className="section audit-panel">
+            <div className="section-head">
+              <div>
+                <h2>Où sont les produits</h2>
+                <span>Stock disponible, valeur d'achat et potentiel de vente</span>
+              </div>
+            </div>
+            <div className="audit-list">
+              <AuditRow label="Articles disponibles" value={availableAdminProducts.length} tone="paid" />
+              <AuditRow label="Articles épuisés" value={outOfStockProducts.length} tone={outOfStockProducts.length ? "warning" : "paid"} />
+              <AuditRow label="Stock faible" value={lowStockProducts.length} tone={lowStockProducts.length ? "warning" : "paid"} />
+              <AuditRow label="Valeur prix de revient" value={formatMoney(inventoryCostValue)} />
+              <AuditRow label="Potentiel vente" value={formatMoney(inventorySaleValue)} />
+            </div>
+          </section>
+
+          <section className="section audit-panel">
+            <div className="section-head">
+              <div>
+                <h2>Incohérences</h2>
+                <span>Ce qui mérite une vérification rapide</span>
+              </div>
+            </div>
+            <div className="audit-issues">
+              {auditIssues.length ? (
+                auditIssues.map((issue) => (
+                  <div className={`audit-issue ${issue.tone}`} key={issue.title}>
+                    <strong>{issue.title}</strong>
+                    <span>{issue.text}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state compact">Aucune incohérence évidente.</div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <section className="section">
+          <div className="section-head action-head">
+            <div>
+              <h2>Articles à contrôler</h2>
+              <span>Ruptures et stocks bas, accessibles en un clic</span>
+            </div>
+            <button className="btn secondary" type="button" onClick={() => navigateAdmin("products")}>
+              Voir articles
+            </button>
+          </div>
+          {productsToAudit.length ? (
+            <div className="audit-products">
+              {productsToAudit.map((product) => (
+                <button
+                  className="audit-product-row"
+                  key={product.id}
+                  type="button"
+                  onClick={() => {
+                    setProductStockView(Number(product.stock || 0) <= 0 ? "out_of_stock" : "available");
+                    navigateAdmin("products");
+                  }}
+                >
+                  <img src={product.image} alt="" />
+                  <span>
+                    <strong>{product.name}</strong>
+                    <small>{product.category}</small>
+                  </span>
+                  <b className={Number(product.stock || 0) <= 0 ? "danger" : ""}>
+                    {product.stock}
+                  </b>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state compact">Aucun stock à contrôler.</div>
+          )}
+        </section>
+
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>Mouvements de stock</h2>
+              <span>Dernières sorties, entrées et corrections</span>
+            </div>
+          </div>
+          {stockMovements.length ? (
+            <div className="stock-movement-list">
+              {stockMovements.slice(0, 10).map((movement) => (
+                <div className="stock-movement-row" key={movement.id}>
+                  <img src={movement.image} alt="" />
+                  <span>
+                    <strong>{movement.productName}</strong>
+                    <small>
+                      {movement.reason} · {movement.createdDate || movement.createdAt?.slice(0, 10)}
+                    </small>
+                  </span>
+                  <b className={movement.delta < 0 ? "negative" : "positive"}>
+                    {movement.delta > 0 ? "+" : ""}
+                    {movement.delta}
+                  </b>
+                  <em>
+                    {movement.stockBefore} → {movement.stockAfter}
+                  </em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state compact">
+              Aucun mouvement chargé. Exécute le patch SQL stock/audit pour activer l'historique.
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderCustomers() {
+    return (
+      <div className="admin-columns customer-admin-grid">
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>Clients</h2>
+              <span>Commandes groupées par nom, téléphone ou compte connecté</span>
+            </div>
+          </div>
+          <div className="customer-list">
+            {customerGroups.length ? (
+              customerGroups.map((customer) => (
+                <button
+                  className={`customer-card ${selectedCustomer?.key === customer.key ? "active" : ""}`}
+                  key={customer.key}
+                  type="button"
+                  onClick={() => setSelectedCustomerKey(customer.key)}
+                >
+                  <span>
+                    <strong>{customer.name}</strong>
+                    <small>{customer.phone}</small>
+                  </span>
+                  <span>
+                    <strong>{formatCompact(customer.totalSpent)}</strong>
+                    <small>
+                      {customer.orders.length} commande{customer.orders.length > 1 ? "s" : ""}
+                    </small>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="empty-state compact">Aucun client à afficher pour l'instant.</div>
+            )}
+          </div>
+        </section>
+
+        <section className="section customer-detail">
+          <div className="section-head">
+            <div>
+              <h2>{selectedCustomer?.name || "Client"}</h2>
+              <span>{selectedCustomer?.phone || "Aucun téléphone enregistré"}</span>
+            </div>
+            {selectedCustomer?.phone && selectedCustomer.phone !== "-" ? (
+              <a className="btn secondary" href={getWhatsappUrl(selectedCustomer.phone)} target="_blank" rel="noreferrer">
+                Contacter
+              </a>
+            ) : null}
+          </div>
+
+          {selectedCustomer ? (
+            <div className="customer-detail-body">
+              <div className="stats compact-stats">
+                <Stat label="Total client" value={formatMoney(selectedCustomer.totalSpent)} />
+                <Stat label="Commandes" value={selectedCustomer.orders.length} />
+                <Stat label="Payées" value={selectedCustomer.paidOrders} />
+              </div>
+
+              <div className="customer-order-list">
+                {selectedCustomer.orders.length ? (
+                  selectedCustomer.orders.map((order) => (
+                    <button
+                    className="customer-order-row"
+                    key={order.id}
+                    type="button"
+                    onClick={() => {
+                      if (order.isManualSale) {
+                        navigateAdmin("accounting");
+                        return;
+                      }
+                      setSelectedOrder(order);
+                      navigateAdmin("orders");
+                    }}
+                  >
+                      <span>
+                        <strong>{order.id}</strong>
+                        <small>{order.createdDate || order.zone}</small>
+                      </span>
+                      <span>{formatMoney(order.total)}</span>
+                      <span className={`status ${order.statusTone || order.tone}`}>{order.status}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="empty-state compact">
+                    Client issu d'une vente manuelle. Les commandes site apparaîtront ici.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">Sélectionne un client.</div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderSettings() {
+    return (
+      <section className="section">
+        <div className="section-head">
+          <div>
+            <h2>Permissions équipe</h2>
+            <span>Changer qui voit quoi sans modifier le code</span>
+          </div>
+        </div>
+        {rolePermissions.length ? (
+          <div className="permission-grid">
+            {rolePermissions.map((permission) => (
+              <div className="permission-row" key={`${permission.role}-${permission.permission_key}`}>
+                <div>
+                  <strong>{permission.label}</strong>
+                  <span>{permission.role}</span>
+                </div>
+                <button
+                  className={`toggle ${permission.is_enabled ? "on" : ""}`}
+                  type="button"
+                  onClick={() => toggleRolePermission(permission)}
+                >
+                  {permission.is_enabled ? "Visible" : "Masqué"}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            Les réglages d'équipe ne sont pas encore créés. Exécute le SQL de permissions.
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderActiveSection() {
+    if (activeSection === "products") return renderProducts();
+    if (activeSection === "orders") return renderOrders();
+    if (activeSection === "customers") return renderCustomers();
+    if (activeSection === "accounting") return renderAccounting();
+    if (activeSection === "audit") return renderAudit();
+    if (activeSection === "settings") return renderSettings();
+    return renderDashboard();
+  }
+
+  if (!session) {
+    return (
+      <div className="admin-login-screen">
+        <AdminLogin
+          authReady={authReady}
+          loginForm={loginForm}
+          message={adminToast}
+          onChange={updateLoginForm}
+          onSubmit={handleAdminLogin}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app admin-shell">
+      <aside className="sidebar">
+        <div className="sidebar-head">
+          <Brand subtitle="Administration" />
+          <div className="sidebar-mobile-actions">
+            <button
+              className="account-button"
+              type="button"
+              aria-label="Réglages du compte"
+              title="Réglages du compte"
+              onClick={() => setAdminAccountOpen(true)}
+            >
+              <span className="account-icon" aria-hidden="true" />
+            </button>
+            <button
+              className="logout-icon-button"
+              type="button"
+              aria-label="Déconnexion"
+              title="Déconnexion"
+              onClick={handleAdminSignOut}
+            >
+              <span aria-hidden="true" />
+            </button>
+          </div>
+          <button
+            className={`admin-menu-button ${adminNavOpen ? "open" : ""}`}
+            type="button"
+            aria-expanded={adminNavOpen}
+            aria-controls="admin-mobile-nav"
+            aria-label="Ouvrir le menu administration"
+            onClick={() => setAdminNavOpen((current) => !current)}
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
+        <nav
+          className={`nav ${adminNavOpen ? "open" : ""}`}
+          id="admin-mobile-nav"
+          aria-label="Navigation administration"
+        >
+          {navItems.map((item) => (
+            <button
+              aria-current={activeSection === item.id ? "page" : undefined}
+              className={activeSection === item.id ? "active" : ""}
+              key={item.id}
+              onClick={() => navigateAdmin(item.id)}
+            >
+              <span>{item.label}</span>
+              <small>{item.hint}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-desktop-actions" aria-label="Compte administrateur">
+          <button
+            className="account-button"
+            type="button"
+            aria-label="Reglages du compte"
+            title="Compte"
+            onClick={() => setAdminAccountOpen(true)}
+          >
+            <span className="account-icon" aria-hidden="true" />
+            <span>Compte</span>
+          </button>
+          <button
+            className="logout-icon-button"
+            type="button"
+            aria-label="Deconnexion"
+            title="Sortir"
+            onClick={handleAdminSignOut}
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
+      </aside>
+
+      <main className="admin-main">
+        {adminMessage.includes("non charg") ? (
+          <div className="checkout-status waiting">{adminMessage}</div>
+        ) : null}
+        {adminToast ? (
+          <div className={`checkout-status ${adminToast.tone}`}>
+            {adminToast.text}
+          </div>
+        ) : null}
+        {adminAccountOpen ? (
+          <div className="auth-overlay">
+            <AdminAccountPanel
+              email={session?.user?.email}
+              form={adminAccountForm}
+              message={adminAccountMessage}
+              onChange={updateAdminAccountForm}
+              onClose={() => setAdminAccountOpen(false)}
+              onSubmit={handleAdminAccountSubmit}
+            />
+          </div>
+        ) : null}
+
+        {renderActiveSection()}
+      </main>
+    </div>
+  );
+}
+
+function AdminSectionHeader({ activeSection, meta, onNavigate }) {
+  const quickActions = [
+    ["orders", "Voir commandes"],
+    ["accounting", "Vente manuelle"],
+    ["customers", "Clients fidèles"],
+    ["products", "Ajouter article"],
+  ].filter(([id]) => id !== activeSection);
+
+  return (
+    <section className="admin-section-header">
+      <div>
+        <h2>{meta.title}</h2>
+        <p>{meta.description}</p>
+      </div>
+      <div className="admin-section-actions">
+        {quickActions.slice(0, 3).map(([id, label]) => (
+          <button className="btn secondary" type="button" key={id} onClick={() => onNavigate(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdminLogin({ authReady, loginForm, message, onChange, onSubmit }) {
+  return (
+    <div className="admin-login-layout">
+      <section className="section auth-panel admin-login-card">
+        <div className="login-card-head">
+          <div className="brand-mark">BMA</div>
+          <h1>Connexion</h1>
+        </div>
+        {message?.tone === "issue" ? (
+          <div className="checkout-status issue">{message.text}</div>
+        ) : null}
+        <form className="admin-form" onSubmit={onSubmit}>
+          <Field
+            autoComplete="email"
+            label="Email"
+            type="email"
+            value={loginForm.email}
+            onChange={(value) => onChange("email", value)}
+          />
+          <Field
+            autoComplete="current-password"
+            label="Mot de passe"
+            type="password"
+            value={loginForm.password}
+            onChange={(value) => onChange("password", value)}
+          />
+          <button className="btn" disabled={!authReady} type="submit">
+            {authReady ? "Se connecter" : "Chargement..."}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function AdminHero({
+  cashToDeposit,
+  financeHealth,
+  marginAmount,
+  marginRate,
+  meta,
+  onNavigate,
+  openOrders,
+  totalRevenue,
+}) {
+  return (
+    <section className="admin-hero-panel">
+      <div className="admin-hero-copy">
+        <span>{meta.kicker}</span>
+        <h2>{meta.title}</h2>
+        <p>{meta.description}</p>
+        <div className="admin-quick-actions">
+          <button type="button" onClick={() => onNavigate("products")}>
+            Nouvel article
+          </button>
+          <button type="button" onClick={() => onNavigate("orders")}>
+            Voir commandes
+          </button>
+          <button type="button" onClick={() => onNavigate("accounting")}>
+            Caisse
+          </button>
+        </div>
+      </div>
+      <div className="admin-hero-metrics" aria-label="Résumé administration">
+        <div>
+          <span>Commandes ouvertes</span>
+          <strong>{openOrders}</strong>
+        </div>
+        <div>
+          <span>Ventes suivies</span>
+          <strong>{formatCompact(totalRevenue)}</strong>
+        </div>
+        <div>
+          <span>Marge</span>
+          <strong className={marginAmount < 0 ? "negative" : ""}>
+            {formatCompact(marginAmount)}
+          </strong>
+          <small>{marginRate}%</small>
+        </div>
+        <div>
+          <span>État caisse</span>
+          <strong>{financeHealth}</strong>
+          <small>{formatCompact(cashToDeposit)}</small>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccountingCharts({ records, totalRevenue, totalCost, totalCash, depositedCash }) {
+  const margin = totalRevenue - totalCost;
+  const pendingCash = Math.max(0, totalCash - depositedCash);
+  const maxMainValue = Math.max(totalRevenue, totalCost, Math.abs(margin), 1);
+  const methodRows = ["Liquide", "Djomi", "Orange Money"].map((method) => ({
+    label: method,
+    value: records
+      .filter((record) => record.paymentMethod === method)
+      .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0),
+  }));
+  const maxMethodValue = Math.max(...methodRows.map((row) => row.value), 1);
+
+  const mainRows = [
+    { label: "Chiffre d'affaires", value: totalRevenue, tone: "revenue" },
+    { label: "Prix de revient", value: totalCost, tone: "cost" },
+    { label: "Marge brute", value: margin, tone: margin < 0 ? "danger" : "profit" },
+    { label: "Liquide non déposé", value: pendingCash, tone: "cash" },
+  ];
+
+  return (
+    <div className="chart-grid">
+      <section className="section chart-panel">
+        <div className="section-head">
+          <div>
+            <h2>Vue comptable</h2>
+            <span>Ventes, revient, marge et liquide restant</span>
+          </div>
+        </div>
+        <div className="bar-chart">
+          {mainRows.map((row) => (
+            <BarRow
+              key={row.label}
+              label={row.label}
+              max={maxMainValue}
+              tone={row.tone}
+              value={row.value}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="section chart-panel">
+        <div className="section-head">
+          <div>
+            <h2>Encaissements</h2>
+            <span>Répartition par mode de paiement</span>
+          </div>
+        </div>
+        <div className="bar-chart">
+          {methodRows.map((row) => (
+            <BarRow
+              key={row.label}
+              label={row.label}
+              max={maxMethodValue}
+              tone="method"
+              value={row.value}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BarRow({ label, value, max, tone }) {
+  const width = `${Math.min(100, Math.round((Math.abs(value) / max) * 100))}%`;
+
+  return (
+    <div className="bar-row">
+      <div className="bar-label">
+        <span>{label}</span>
+        <strong className={value < 0 ? "negative" : ""}>{formatMoney(value)}</strong>
+      </div>
+      <div className="bar-track" aria-hidden="true">
+        <div className={`bar-fill ${tone}`} style={{ width }} />
+      </div>
+    </div>
+  );
+}
+
+function formatOrderVariant(item) {
+  return [
+    item.selectedSize ? `Taille ${item.selectedSize}` : null,
+    item.selectedColor ? `Couleur ${item.selectedColor}` : null,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function OrderItemsPreview({ items = [] }) {
+  const visibleItems = items.slice(0, 3);
+
+  if (!items.length) {
+    return <span className="muted order-item-empty">Articles non chargés</span>;
+  }
+
+  return (
+    <div className="order-items-preview" aria-label="Articles commandés">
+      <div className="order-preview-images">
+        {visibleItems.map((item) => (
+          <img src={item.image} alt="" key={item.id} />
+        ))}
+      </div>
+      <span>
+        {items[0].name}
+        {formatOrderVariant(items[0]) ? <small>{formatOrderVariant(items[0])}</small> : null}
+      </span>
+      {items.length > 1 ? <small>+{items.length - 1}</small> : null}
+    </div>
+  );
+}
+
+function OrderItemsList({ items = [] }) {
+  if (!items.length) {
+    return <div className="empty-state compact">Articles de cette commande non chargés.</div>;
+  }
+
+  return (
+    <div className="order-items-list">
+      {items.map((item) => {
+        const variant = formatOrderVariant(item);
+
+        return (
+          <div className="order-item-detail" key={item.id}>
+            <img src={item.image} alt="" />
+            <div>
+              <strong>{item.name}</strong>
+              <span>
+                Qté {item.quantity} - {formatMoney(item.unitPrice)}
+              </span>
+              <div className="order-option-list">
+                {item.selectedSize ? (
+                  <span className="order-option-pill">Taille {item.selectedSize}</span>
+                ) : null}
+                {item.selectedColor ? (
+                  <span className="order-option-pill">Couleur {item.selectedColor}</span>
+                ) : null}
+                {!variant ? <small>Option non précisée</small> : null}
+              </div>
+            </div>
+            <b>{formatMoney(item.total)}</b>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function OrdersTable({ orders, onSelect, selectedOrderId = "", updatingOrderId = "" }) {
+  return (
+    <section className="section">
+      <div className="section-head">
+        <div>
+          <h2>Commandes récentes</h2>
+          <span>Historique des commandes du site</span>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="table orders-table">
+          <thead>
+            <tr>
+              <th>Commande</th>
+              <th>Client</th>
+              <th>Zone</th>
+              <th>Total</th>
+              <th>Paiement</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.length ? (
+              orders.map((order) => (
+                <tr
+                  className={selectedOrderId === order.id ? "selected-row" : ""}
+                  key={order.id}
+                  onClick={() => onSelect(order)}
+                  tabIndex="0"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(order);
+                    }
+                  }}
+                >
+                  <td>
+                    <strong>{order.id}</strong>
+                    <br />
+                    <span className="muted">
+                      {order.itemsCount || order.items || 0} article
+                      {(order.itemsCount || order.items || 0) > 1 ? "s" : ""}
+                    </span>
+                    <OrderItemsPreview items={order.orderItems} />
+                  </td>
+                  <td>
+                    {order.customer}
+                    <br />
+                    <span className="muted">{order.phone}</span>
+                  </td>
+                  <td>
+                    {order.zone}
+                    <br />
+                    <span className="muted">{order.addressType}</span>
+                  </td>
+                  <td>{formatMoney(order.total)}</td>
+                  <td>
+                    <span className={`status ${order.paymentTone || order.tone}`}>
+                      {order.payment}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`status ${order.statusTone || order.tone}`}>
+                      {order.status}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">
+                  <div className="empty-state compact">Aucune commande pour le moment.</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function QuantityControl({ value, max, onChange, compact = false }) {
+  const currentValue = clampQuantity(value, max);
+  const maxValue = Math.max(0, Number(max) || 0);
+
+  return (
+    <div className={`quantity-control ${compact ? "compact" : ""}`}>
+      <button
+        type="button"
+        aria-label="Diminuer la quantite"
+        disabled={currentValue <= 1 || maxValue <= 0}
+        onClick={() => onChange(currentValue - 1)}
+      >
+        -
+      </button>
+      <input
+        aria-label="Quantite"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        type="text"
+        value={currentValue || ""}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, ""))}
+      />
+      <button
+        type="button"
+        aria-label="Augmenter la quantite"
+        disabled={currentValue >= maxValue || maxValue <= 0}
+        onClick={() => onChange(currentValue + 1)}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  min,
+  step,
+  autoComplete,
+  disabled = false,
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <input
+        autoComplete={autoComplete}
+        min={min}
+        step={step}
+        type={type}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function DetailPanel({ title, emptyText, children, onClose }) {
+  return (
+    <section className="section">
+      <div className="section-head">
+        <div>
+          <h2>{title}</h2>
+          <span>{emptyText}</span>
+        </div>
+        {onClose ? (
+          <button className="icon-btn order-detail-close" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        ) : null}
+      </div>
+      <div className="detail-panel">{children}</div>
+    </section>
+  );
+}
+
+function Brand({ subtitle }) {
+  return (
+    <div className="brand">
+      <div className="brand-mark">BMA</div>
+      <div>
+        <strong>BMA</strong>
+        <span>{subtitle}</span>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function AuditRow({ label, value, tone = "" }) {
+  return (
+    <div className={`audit-row ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function formatCompact(value) {
+  const number = Number(value || 0);
+
+  if (number >= 1000000) {
+    return `${(number / 1000000).toFixed(1)}M`;
+  }
+
+  if (number >= 1000) {
+    return `${Math.round(number / 1000)}K`;
+  }
+
+  return number.toString();
+}
+
+export default App;
