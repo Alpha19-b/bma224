@@ -108,6 +108,30 @@ async function verifyDjomiPayment(transactionId) {
   return result.data ?? result;
 }
 
+function isMissingAccountingSync(error) {
+  const source = `${error?.code ?? ""} ${error?.message ?? ""} ${error?.details ?? ""}`;
+  return /PGRST202|42883|sync_order_accounting_entry|Could not find the function/i.test(source);
+}
+
+async function syncAccountingEntry(supabase, orderId) {
+  const { error } = await supabase.rpc("sync_order_accounting_entry", {
+    p_order_id: orderId,
+  });
+
+  if (!error) {
+    return { synced: true, warning: "" };
+  }
+
+  if (isMissingAccountingSync(error)) {
+    return {
+      synced: false,
+      warning: "Fonction SQL sync_order_accounting_entry non installee.",
+    };
+  }
+
+  return { synced: false, warning: error.message || "Comptabilite non synchronisee." };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -257,6 +281,8 @@ Deno.serve(async (request) => {
       throw updateError;
     }
 
+    const accountingSync = await syncAccountingEntry(supabase, orderId);
+
     return Response.json(
       {
         success: true,
@@ -267,6 +293,8 @@ Deno.serve(async (request) => {
         order_status: nextOrderStatus,
         djomi_status: djomiStatus,
         transaction_ref: transactionRef,
+        accounting_synced: accountingSync.synced,
+        accounting_warning: accountingSync.warning,
       },
       { headers: corsHeaders }
     );

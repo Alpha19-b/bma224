@@ -2611,6 +2611,23 @@ function AdminPage() {
       const ordersResult = await fetchAdminOrders();
       if (cancelled || ordersResult.error) return;
 
+      const accountingResult = await fetchAccountingEntries();
+      if (!cancelled && !accountingResult.error) {
+        setAccountingRecords(accountingResult.data);
+        setDepositForm((current) => ({
+          ...current,
+          recordId:
+            current.recordId && accountingResult.data.some((record) => record.id === current.recordId)
+              ? current.recordId
+              : accountingResult.data[0]?.id ?? "",
+        }));
+      }
+
+      const stockMovementsResult = await fetchStockMovements();
+      if (!cancelled && !stockMovementsResult.error) {
+        setStockMovements(stockMovementsResult.data);
+      }
+
       setAdminOrders(ordersResult.data);
       setSelectedOrder((current) =>
         current
