@@ -3999,6 +3999,24 @@ function AdminPage() {
                 {selectedOrder.landmark ? (
                   <span className="muted">{selectedOrder.landmark}</span>
                 ) : null}
+                {selectedOrder.mapsUrl ? (
+                  <div className="order-location-card">
+                    <div>
+                      <strong>Position client</strong>
+                      <span className="muted">
+                        {selectedOrder.mapLabel || "GPS enregistre pour cette livraison"}
+                      </span>
+                    </div>
+                    <a
+                      className="maps-action"
+                      href={selectedOrder.mapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Ouvrir dans Maps
+                    </a>
+                  </div>
+                ) : null}
                 <div className="order-detail-summary">
                   <span>Total</span>
                   <strong>{formatMoney(selectedOrder.total)}</strong>

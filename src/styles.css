@@ -1601,6 +1601,37 @@ main {
   font-weight: 800;
 }
 
+.order-location-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+  background: #f8fafc;
+}
+
+.order-location-card > div {
+  display: grid;
+  gap: 3px;
+}
+
+.maps-action {
+  min-height: 42px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.maps-action:hover {
+  background: var(--green-dark);
+}
+
 .order-detail-shell {
   min-width: 0;
 }

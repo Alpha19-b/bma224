@@ -83,6 +83,20 @@ function getPaymentTone(order) {
   return order.payment_status === "paid" ? "paid" : "waiting";
 }
 
+function normalizeCoordinateValue(value) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+}
+
+function buildMapsDirectionsUrl(latitude, longitude) {
+  const lat = normalizeCoordinateValue(latitude);
+  const lng = normalizeCoordinateValue(longitude);
+
+  if (lat === null || lng === null) return "";
+
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
 async function createReceiptSignedUrl(pathOrUrl) {
   if (!pathOrUrl || !supabase) return "";
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
@@ -689,6 +703,9 @@ export async function fetchAdminOrders() {
         delivery_quartier,
         delivery_landmark,
         delivery_address,
+        delivery_latitude,
+        delivery_longitude,
+        delivery_map_label,
         fulfillment_type,
         payment_provider,
         payment_status,
@@ -705,7 +722,7 @@ export async function fetchAdminOrders() {
 
   if (
     error &&
-    /delivery_recipient_name|delivery_contact_phone|delivery_landmark|delivery_address|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
+    /delivery_recipient_name|delivery_contact_phone|delivery_landmark|delivery_address|delivery_latitude|delivery_longitude|delivery_map_label|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
       error.message || ""
     )
   ) {
@@ -836,6 +853,9 @@ export async function fetchAdminOrders() {
       );
       const statusTone = getOrderStatusTone(order.order_status);
       const paymentTone = getPaymentTone(order);
+      const latitude = normalizeCoordinateValue(order.delivery_latitude);
+      const longitude = normalizeCoordinateValue(order.delivery_longitude);
+      const mapsUrl = buildMapsDirectionsUrl(latitude, longitude);
 
       return {
         id: order.order_number,
@@ -848,8 +868,12 @@ export async function fetchAdminOrders() {
             ? "Retrait"
             : [order.delivery_commune, order.delivery_quartier]
                 .filter(Boolean)
-                .join(", ") || order.delivery_city || "Zone non précisée",
+                .join(", ") || order.delivery_city || (mapsUrl ? "Position GPS" : "Zone non précisée"),
         landmark: order.delivery_landmark || order.delivery_address || "",
+        latitude,
+        longitude,
+        mapLabel: order.delivery_map_label ?? "",
+        mapsUrl,
         addressType: order.fulfillment_type === "pickup" ? "Retrait" : "Livraison",
         items: orderItems.length,
         itemsCount: orderItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
