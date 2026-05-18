@@ -7,6 +7,36 @@
 -- - Les anciennes commandes Djomi deja payees sont aussi rattrapees.
 -- - La fonction est idempotente: elle ne cree pas deux lignes pour la meme commande.
 
+do $bma_collection_method_enum$
+begin
+  create type public.collection_method as enum (
+    'cash',
+    'djomi',
+    'orange_money',
+    'other'
+  );
+exception when duplicate_object then null;
+end;
+$bma_collection_method_enum$;
+
+create table if not exists public.accounting_entries (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid references public.orders(id) on delete set null,
+  order_number text,
+  entry_date date not null default current_date,
+  customer_name text,
+  sale_amount bigint not null default 0 check (sale_amount >= 0),
+  purchase_amount bigint not null default 0 check (purchase_amount >= 0),
+  cost_amount bigint not null default 0 check (cost_amount >= 0),
+  collection_method public.collection_method not null default 'cash',
+  collected_by uuid references auth.users(id) on delete set null,
+  collected_by_name text,
+  collected_at timestamptz,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.accounting_entries
 add column if not exists order_id uuid references public.orders(id) on delete set null;
 
@@ -25,8 +55,26 @@ add column if not exists selected_size text;
 alter table public.order_items
 add column if not exists selected_color text;
 
+alter table public.order_items
+add column if not exists product_name_snapshot text;
+
+alter table public.products
+add column if not exists purchase_price bigint not null default 0;
+
+alter table public.products
+add column if not exists cost_price bigint not null default 0;
+
 alter table public.orders
 add column if not exists djomi_transaction_id text;
+
+alter table public.orders
+add column if not exists delivery_recipient_name text;
+
+alter table public.orders
+add column if not exists guest_name text;
+
+alter table public.orders
+add column if not exists payment_provider text;
 
 alter table public.orders
 add column if not exists djomi_merchant_reference text;
@@ -120,7 +168,7 @@ begin
     0,
     coalesce(
       nullif(v_order.djomi_paid_amount, 0),
-      round(coalesce(v_order.total_amount, 0))::bigint,
+      round(coalesce(v_order.total_amount, 0)::numeric)::bigint,
       0
     )
   );
