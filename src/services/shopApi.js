@@ -1157,9 +1157,50 @@ function mapAccountingEntry(entry, deposit = null) {
   };
 }
 
+async function mapAccountingEntryFromRpc(entry) {
+  return mapAccountingEntry(
+    {
+      id: entry.id,
+      order_number: entry.order_number,
+      product_id: entry.product_id,
+      quantity: entry.quantity,
+      entry_date: entry.entry_date,
+      customer_name: entry.customer_name,
+      sale_amount: entry.sale_amount,
+      purchase_amount: entry.purchase_amount,
+      cost_amount: entry.cost_amount,
+      collection_method: entry.collection_method,
+      collected_by_name: entry.collected_by_name,
+      collected_at: entry.collected_at,
+      note: entry.note,
+    },
+    {
+      orange_money_reference: entry.deposit_orange_money_reference,
+      deposited_by_name: entry.deposit_deposited_by_name,
+      receipt_url: entry.deposit_receipt_url,
+      receipt_file_name: entry.deposit_receipt_file_name,
+      deposited_at: entry.deposit_deposited_at,
+      receipt_signed_url: await createReceiptSignedUrl(entry.deposit_receipt_url),
+    }
+  );
+}
+
 export async function fetchAccountingEntries() {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const rpcResult = await supabase.rpc("get_admin_accounting_entries");
+
+  if (!rpcResult.error) {
+    return {
+      data: await Promise.all((rpcResult.data ?? []).map(mapAccountingEntryFromRpc)),
+      error: null,
+    };
+  }
+
+  if (!isMissingRpc(rpcResult.error)) {
+    return { data: [], error: rpcResult.error };
   }
 
   let { data, error } = await supabase
