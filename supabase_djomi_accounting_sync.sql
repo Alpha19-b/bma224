@@ -176,7 +176,7 @@ begin
   select
     coalesce(sum(oi.quantity), 0)::integer,
     case
-      when count(distinct oi.product_id) = 1 then min(oi.product_id)
+      when count(distinct oi.product_id) = 1 then min(oi.product_id::text)::uuid
       else null
     end,
     coalesce(sum(coalesce(p.purchase_price, 0)::bigint * oi.quantity), 0)::bigint,
