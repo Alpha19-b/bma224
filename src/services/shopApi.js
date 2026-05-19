@@ -653,6 +653,18 @@ export async function updateProductStock(productId, stock) {
   return { data, error };
 }
 
+export async function deleteProductAsOwner(productId) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase.rpc("bma_delete_product", {
+    p_product_id: productId,
+  });
+
+  return { data, error };
+}
+
 export async function createProductImages(productId, imageUrls) {
   const uniqueImageUrls = [...new Set((imageUrls ?? []).filter(Boolean))];
 
@@ -680,6 +692,64 @@ export async function createProductImages(productId, imageUrls) {
   }
 
   return { data: data ?? [], error };
+}
+
+export async function fetchCurrentAdminContext() {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const rpcResult = await supabase.rpc("get_current_admin_context");
+
+  if (!rpcResult.error) {
+    const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+    return {
+      data: row
+        ? {
+            userId: row.user_id,
+            email: row.email ?? "",
+            role: row.role ?? "",
+            isOwner: Boolean(row.is_owner),
+            isInternal: Boolean(row.is_internal),
+          }
+        : null,
+      error: null,
+    };
+  }
+
+  if (!isMissingRpc(rpcResult.error)) {
+    return { data: null, error: rpcResult.error };
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+
+  if (userError || !userId) {
+    return { data: null, error: userError ?? new Error("Session admin introuvable.") };
+  }
+
+  const { data, error } = await supabase
+    .from("admin_users")
+    .select("id, role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  return {
+    data: data
+      ? {
+          userId: data.id,
+          email: userData.user.email ?? "",
+          role: data.role ?? "",
+          isOwner: data.role === "owner",
+          isInternal: ["owner", "manager", "staff", "admin"].includes(data.role),
+        }
+      : null,
+    error: null,
+  };
 }
 
 export async function fetchAdminOrders() {
@@ -1154,6 +1224,18 @@ export async function updateAdminOrderStatus(orderId, nextStatus) {
   };
 }
 
+export async function deleteOrderAsOwner(orderId) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase.rpc("bma_delete_order", {
+    p_order_id: orderId,
+  });
+
+  return { data, error };
+}
+
 function mapAccountingEntry(entry, deposit = null) {
   return {
     id: entry.id,
@@ -1324,6 +1406,18 @@ export async function fetchAccountingEntries() {
     data: data.map((entry) => mapAccountingEntry(entry, depositsByEntryId[entry.id])),
     error: null,
   };
+}
+
+export async function deleteAccountingEntryAsOwner(entryId) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase.rpc("bma_delete_accounting_entry", {
+    p_entry_id: entryId,
+  });
+
+  return { data, error };
 }
 
 export async function fetchStockMovements() {

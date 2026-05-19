@@ -8,8 +8,12 @@ import {
   createProduct,
   createProductImages,
   createCheckoutOrder,
+  deleteAccountingEntryAsOwner,
+  deleteOrderAsOwner,
+  deleteProductAsOwner,
   fetchAccountingEntries,
   fetchAdminOrders,
+  fetchCurrentAdminContext,
   fetchCustomerOrders,
   fetchProducts,
   fetchRolePermissions,
@@ -335,6 +339,10 @@ function getFriendlyErrorMessage(error, context = "") {
     return "Action refusée par les droits Supabase. Vérifie le rôle du compte connecté.";
   }
 
+  if (source.includes("acces refuse") || source.includes("accès refusé")) {
+    return "Action réservée au super admin.";
+  }
+
   if (source.includes("bucket") || source.includes("storage")) {
     return "Le stockage des reçus n'est pas encore configuré.";
   }
@@ -344,6 +352,76 @@ function getFriendlyErrorMessage(error, context = "") {
   }
 
   return message || "Action impossible pour le moment.";
+}
+
+function escapeExcelValue(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function downloadExcelWorkbook(fileName, sheets) {
+  const safeSheets = sheets.filter((sheet) => sheet.rows?.length);
+
+  if (!safeSheets.length) {
+    window.alert("Aucune donnee a exporter pour le moment.");
+    return;
+  }
+
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <style>
+          body { font-family: Arial, sans-serif; }
+          h2 { color: #111820; }
+          table { border-collapse: collapse; width: 100%; margin-bottom: 28px; }
+          th { background: #111820; color: #ffffff; }
+          th, td { border: 1px solid #cfd8e3; padding: 8px; mso-number-format:"\\@"; }
+        </style>
+      </head>
+      <body>
+        ${safeSheets
+          .map((sheet) => {
+            const headers = Object.keys(sheet.rows[0] ?? {});
+            return `
+              <h2>${escapeExcelValue(sheet.name)}</h2>
+              <table>
+                <thead>
+                  <tr>${headers.map((header) => `<th>${escapeExcelValue(header)}</th>`).join("")}</tr>
+                </thead>
+                <tbody>
+                  ${sheet.rows
+                    .map(
+                      (row) =>
+                        `<tr>${headers
+                          .map((header) => `<td>${escapeExcelValue(row[header])}</td>`)
+                          .join("")}</tr>`
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            `;
+          })
+          .join("")}
+      </body>
+    </html>
+  `;
+
+  const blob = new Blob(["\ufeff", html], {
+    type: "application/vnd.ms-excel;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${fileName}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function getTodayDateInput() {
@@ -2433,6 +2511,7 @@ function AdminPage() {
   const [activeSection, setActiveSection] = useState("dashboard");
   const [adminNavOpen, setAdminNavOpen] = useState(false);
   const [session, setSession] = useState(null);
+  const [adminContext, setAdminContext] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [adminOrders, setAdminOrders] = useState([]);
@@ -2448,6 +2527,7 @@ function AdminPage() {
   const [adminAccountForm, setAdminAccountForm] = useState(emptyAdminAccountForm);
   const [adminAccountMessage, setAdminAccountMessage] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState("");
+  const [deletingActionId, setDeletingActionId] = useState("");
   const [isDepositSubmitting, setIsDepositSubmitting] = useState(false);
   const [depositMessage, setDepositMessage] = useState(null);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -2514,6 +2594,7 @@ function AdminPage() {
     let cancelled = false;
     async function loadAdminData() {
       if (!session) {
+        setAdminContext(null);
         setAdminProducts([]);
         setAdminOrders([]);
         setAccountingRecords([]);
@@ -2523,6 +2604,7 @@ function AdminPage() {
         return;
       }
 
+      const contextResult = await fetchCurrentAdminContext();
       const syncResult = await syncDjomiPayments({ limit: 50 });
       const productsResult = await fetchProducts();
       const ordersResult = await fetchAdminOrders();
@@ -2531,6 +2613,8 @@ function AdminPage() {
       const permissionsResult = await fetchRolePermissions();
 
       if (cancelled) return;
+
+      setAdminContext(contextResult.error ? null : contextResult.data);
 
       if (productsResult.error) {
         setAdminProducts([]);
@@ -2705,6 +2789,7 @@ function AdminPage() {
     (record) => record.paymentMethod === "Liquide" && !record.orangeMoneyRef
   );
   const adminDisplayName = getAdminDisplayName(session);
+  const isSuperAdmin = Boolean(adminContext?.isOwner);
   const productSalePreview = getDraftAmount(productForm.price);
   const productPurchasePreview = getDraftAmount(productForm.purchasePrice);
   const productExtraCostPreview = getDraftAmount(productForm.extraCost);
@@ -2959,6 +3044,299 @@ function AdminPage() {
     setAdminToast({ text, tone });
   }
 
+  async function refreshAdminLists({ keepSelected = true } = {}) {
+    const [productsResult, ordersResult, accountingResult, stockMovementsResult] = await Promise.all([
+      fetchProducts(),
+      fetchAdminOrders(),
+      fetchAccountingEntries(),
+      fetchStockMovements(),
+    ]);
+
+    if (!productsResult.error) {
+      setAdminProducts(
+        productsResult.data.map((product) => ({
+          ...product,
+          purchasePrice: getPurchasePrice(product),
+          costPrice: getCostPrice(product),
+        }))
+      );
+    }
+
+    if (!ordersResult.error) {
+      setAdminOrders(ordersResult.data);
+      setSelectedOrder((current) =>
+        keepSelected && current
+          ? ordersResult.data.find((order) => order.rawId === current.rawId) ?? null
+          : null
+      );
+    }
+
+    if (!accountingResult.error) {
+      setAccountingRecords(accountingResult.data);
+      setDepositForm((current) => ({
+        ...current,
+        recordId:
+          current.recordId && accountingResult.data.some((record) => record.id === current.recordId)
+            ? current.recordId
+            : accountingResult.data[0]?.id ?? "",
+      }));
+    }
+
+    if (!stockMovementsResult.error) {
+      setStockMovements(stockMovementsResult.data);
+    }
+  }
+
+  function exportProductsToExcel() {
+    downloadExcelWorkbook(`bma-articles-${getTodayDateInput()}`, [
+      {
+        name: "Articles",
+        rows: adminProducts.map((product) => ({
+          Article: product.name,
+          Categorie: product.category,
+          Prix_vente_GNF: getProductPrice(product),
+          Prix_achat_GNF: getPurchasePrice(product),
+          Prix_revient_GNF: getCostPrice(product),
+          Marge_GNF: getProductPrice(product) - getCostPrice(product),
+          Stock: product.stock,
+          Tailles: (product.sizes ?? []).join(", "),
+          Couleurs: (product.colors ?? [])
+            .map((color) => (typeof color === "string" ? color : color.value))
+            .filter(Boolean)
+            .join(", "),
+          Image: product.image,
+        })),
+      },
+    ]);
+  }
+
+  function exportOrdersToExcel() {
+    downloadExcelWorkbook(`bma-commandes-${getTodayDateInput()}`, [
+      {
+        name: "Commandes",
+        rows: adminOrders.map((order) => ({
+          Commande: order.id,
+          Date: order.createdDate,
+          Client: order.customer,
+          Telephone: order.phone,
+          Zone: order.zone,
+          Adresse: order.landmark,
+          Total_GNF: order.total,
+          Paiement: order.payment,
+          Statut: order.status,
+          Articles: order.itemsSummary,
+          Position_Maps: order.mapsUrl || "",
+        })),
+      },
+    ]);
+  }
+
+  function exportAccountingToExcel() {
+    downloadExcelWorkbook(`bma-comptabilite-${getTodayDateInput()}`, [
+      {
+        name: "Comptabilite",
+        rows: accountingRecords.map((record) => ({
+          Date: record.date,
+          Commande: record.orderId,
+          Client: record.customer,
+          Vente_GNF: record.saleAmount,
+          Achat_GNF: record.purchaseAmount,
+          Frais_GNF: record.extraCost,
+          Revient_GNF: record.costAmount,
+          Marge_GNF: record.saleAmount - record.costAmount,
+          Encaissement: record.paymentMethod,
+          Encaisse_par: record.collectedBy,
+          Depot_Orange_Money: record.orangeMoneyRef || "A deposer",
+          Recu: record.receiptUrl || record.receiptName || "",
+          Note: record.note || "",
+        })),
+      },
+    ]);
+  }
+
+  function exportAuditToExcel() {
+    downloadExcelWorkbook(`bma-audit-${getTodayDateInput()}`, [
+      {
+        name: "Audit",
+        rows: [
+          { Indicateur: "CA total", Valeur: totalRevenue },
+          { Indicateur: "Prix de revient", Valeur: totalCost },
+          { Indicateur: "Marge brute", Valeur: totalRevenue - totalCost },
+          { Indicateur: "Liquide a deposer", Valeur: cashToDeposit },
+          { Indicateur: "Valeur stock au revient", Valeur: inventoryCostValue },
+          { Indicateur: "Valeur stock vente", Valeur: inventorySaleValue },
+          { Indicateur: "Articles epuises", Valeur: outOfStockProducts.length },
+          { Indicateur: "Stock faible", Valeur: lowStockProducts.length },
+        ],
+      },
+      {
+        name: "Mouvements stock",
+        rows: stockMovements.map((movement) => ({
+          Date: movement.createdAt,
+          Article: movement.productName,
+          Variation: movement.delta,
+          Stock_avant: movement.stockBefore,
+          Stock_apres: movement.stockAfter,
+          Raison: movement.reason,
+          Reference: [movement.referenceType, movement.referenceId].filter(Boolean).join(" - "),
+          Par: movement.actor,
+          Note: movement.note,
+        })),
+      },
+    ]);
+  }
+
+  function exportCustomersToExcel() {
+    downloadExcelWorkbook(`bma-clients-${getTodayDateInput()}`, [
+      {
+        name: "Clients",
+        rows: customerGroups.map((customer) => ({
+          Client: customer.name,
+          Telephone: customer.phone,
+          Commandes: customer.orders.length,
+          Commandes_payees: customer.paidOrders,
+          Total_GNF: customer.totalSpent,
+          Derniere_commande: customer.lastOrderDate,
+          Historique: customer.orders.map((order) => `${order.id} (${formatMoney(order.total)})`).join(" | "),
+        })),
+      },
+    ]);
+  }
+
+  function exportAllAdminData() {
+    downloadExcelWorkbook(`bma-export-complet-${getTodayDateInput()}`, [
+      {
+        name: "Articles",
+        rows: adminProducts.map((product) => ({
+          Article: product.name,
+          Categorie: product.category,
+          Vente_GNF: getProductPrice(product),
+          Achat_GNF: getPurchasePrice(product),
+          Revient_GNF: getCostPrice(product),
+          Stock: product.stock,
+          Tailles: (product.sizes ?? []).join(", "),
+          Couleurs: (product.colors ?? [])
+            .map((color) => (typeof color === "string" ? color : color.value))
+            .filter(Boolean)
+            .join(", "),
+        })),
+      },
+      {
+        name: "Commandes",
+        rows: adminOrders.map((order) => ({
+          Commande: order.id,
+          Date: order.createdDate,
+          Client: order.customer,
+          Telephone: order.phone,
+          Total_GNF: order.total,
+          Paiement: order.payment,
+          Statut: order.status,
+          Articles: order.itemsSummary,
+        })),
+      },
+      {
+        name: "Comptabilite",
+        rows: accountingRecords.map((record) => ({
+          Date: record.date,
+          Commande: record.orderId,
+          Client: record.customer,
+          Vente_GNF: record.saleAmount,
+          Revient_GNF: record.costAmount,
+          Marge_GNF: record.saleAmount - record.costAmount,
+          Encaissement: record.paymentMethod,
+          Depot_OM: record.orangeMoneyRef || "",
+        })),
+      },
+      {
+        name: "Clients",
+        rows: customerGroups.map((customer) => ({
+          Client: customer.name,
+          Telephone: customer.phone,
+          Commandes: customer.orders.length,
+          Commandes_payees: customer.paidOrders,
+          Total_GNF: customer.totalSpent,
+          Derniere_commande: customer.lastOrderDate,
+        })),
+      },
+      {
+        name: "Stock",
+        rows: stockMovements.map((movement) => ({
+          Date: movement.createdAt,
+          Article: movement.productName,
+          Variation: movement.delta,
+          Stock_avant: movement.stockBefore,
+          Stock_apres: movement.stockAfter,
+          Raison: movement.reason,
+        })),
+      },
+    ]);
+  }
+
+  async function deleteProductOwnerOnly(product) {
+    if (!isSuperAdmin) {
+      showToast("Suppression reservee au super admin.", "issue");
+      return;
+    }
+
+    if (!window.confirm(`Supprimer "${product.name}" de la boutique ?`)) return;
+
+    setDeletingActionId(`product:${product.id}`);
+    const { error } = await deleteProductAsOwner(product.id);
+    setDeletingActionId("");
+
+    if (error) {
+      showToast(`Article non supprime : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+      return;
+    }
+
+    showToast("Article retire de la vente.");
+    await refreshAdminLists({ keepSelected: true });
+  }
+
+  async function deleteOrderOwnerOnly(order) {
+    if (!isSuperAdmin) {
+      showToast("Suppression reservee au super admin.", "issue");
+      return;
+    }
+
+    if (!window.confirm(`Supprimer la commande ${order.id} ? Cette action nettoie aussi sa ligne comptable.`)) {
+      return;
+    }
+
+    setDeletingActionId(`order:${order.rawId}`);
+    const { error } = await deleteOrderAsOwner(order.rawId);
+    setDeletingActionId("");
+
+    if (error) {
+      showToast(`Commande non supprimee : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+      return;
+    }
+
+    showToast("Commande supprimee.");
+    await refreshAdminLists({ keepSelected: false });
+  }
+
+  async function deleteAccountingOwnerOnly(record) {
+    if (!isSuperAdmin) {
+      showToast("Suppression reservee au super admin.", "issue");
+      return;
+    }
+
+    if (!window.confirm(`Supprimer la ligne comptable ${record.orderId} ?`)) return;
+
+    setDeletingActionId(`accounting:${record.id}`);
+    const { error } = await deleteAccountingEntryAsOwner(record.id);
+    setDeletingActionId("");
+
+    if (error) {
+      showToast(`Ligne non supprimee : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+      return;
+    }
+
+    showToast("Ligne comptable supprimee.");
+    await refreshAdminLists({ keepSelected: true });
+  }
+
   function updateLoginForm(field, value) {
     setLoginForm((current) => ({ ...current, [field]: value }));
   }
@@ -2995,6 +3373,7 @@ function AdminPage() {
     }
 
     setSession(null);
+    setAdminContext(null);
     setAdminAccountOpen(false);
     showToast("Session admin fermée.", "waiting");
   }
@@ -3636,6 +4015,11 @@ function AdminPage() {
   function renderDashboard() {
     return (
       <>
+        <div className="section-tools">
+          <button className="btn secondary compact-btn" type="button" onClick={exportAllAdminData}>
+            Export complet Excel
+          </button>
+        </div>
         <div className="stats admin-stats">
           <Stat label="Commandes ouvertes" value={openOrders.length} />
           <Stat label="Clients suivis" value={customerGroups.length} />
@@ -3718,16 +4102,21 @@ function AdminPage() {
               <h2>Articles</h2>
               <span>Vêtements, accessoires, photos, prix et stock</span>
             </div>
-            <button
-              className="product-add-button"
-              type="button"
-              aria-label="Ajouter un article"
-              title="Ajouter un article"
-              onClick={openProductCreator}
-            >
-              <span aria-hidden="true">+</span>
-              <b>Ajouter</b>
-            </button>
+            <div className="accounting-actions">
+              <button className="btn secondary compact-btn" type="button" onClick={exportProductsToExcel}>
+                Excel
+              </button>
+              <button
+                className="product-add-button"
+                type="button"
+                aria-label="Ajouter un article"
+                title="Ajouter un article"
+                onClick={openProductCreator}
+              >
+                <span aria-hidden="true">+</span>
+                <b>Ajouter</b>
+              </button>
+            </div>
           </div>
           <div className="stock-tabs" role="tablist" aria-label="Filtrer les articles">
             <button
@@ -3810,6 +4199,16 @@ function AdminPage() {
                           >
                             - stock
                           </button>
+                          {isSuperAdmin ? (
+                            <button
+                              className="btn danger"
+                              type="button"
+                              disabled={deletingActionId === `product:${product.id}`}
+                              onClick={() => deleteProductOwnerOnly(product)}
+                            >
+                              Supprimer
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -3969,6 +4368,11 @@ function AdminPage() {
   function renderOrders() {
     return (
       <div className="admin-stack">
+        <div className="section-tools">
+          <button className="btn secondary compact-btn" type="button" onClick={exportOrdersToExcel}>
+            Exporter commandes Excel
+          </button>
+        </div>
         <div className="admin-columns">
           <OrdersTable
             orders={adminOrders}
@@ -4046,6 +4450,15 @@ function AdminPage() {
                   >
                     Annuler
                   </button>
+                  {isSuperAdmin ? (
+                    <button
+                      className="btn danger"
+                      disabled={deletingActionId === `order:${selectedOrder.rawId}`}
+                      onClick={() => deleteOrderOwnerOnly(selectedOrder)}
+                    >
+                      Supprimer commande
+                    </button>
+                  ) : null}
                 </div>
               </>
             ) : null}
@@ -4081,6 +4494,9 @@ function AdminPage() {
               <span>Commandes, achats, revient, encaissement et dépôt Orange Money</span>
             </div>
             <div className="accounting-actions">
+              <button className="btn secondary compact-btn" type="button" onClick={exportAccountingToExcel}>
+                Excel
+              </button>
               <button
                 className="product-add-button"
                 type="button"
@@ -4112,6 +4528,7 @@ function AdminPage() {
                   <th>Revient</th>
                   <th>Marge</th>
                   <th>Encaissement</th>
+                  {isSuperAdmin ? <th>Admin</th> : null}
                   <th>Dépôt OM</th>
                   <th>Reçu</th>
                 </tr>
@@ -4141,6 +4558,18 @@ function AdminPage() {
                         <br />
                         <span className="muted">Par: {record.collectedBy}</span>
                       </td>
+                      {isSuperAdmin ? (
+                        <td>
+                          <button
+                            className="btn danger compact-btn"
+                            type="button"
+                            disabled={deletingActionId === `accounting:${record.id}`}
+                            onClick={() => deleteAccountingOwnerOnly(record)}
+                          >
+                            Supprimer
+                          </button>
+                        </td>
+                      ) : null}
                       <td>
                         {record.orangeMoneyRef ? (
                           <>
@@ -4174,7 +4603,7 @@ function AdminPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="11">
+                    <td colSpan={isSuperAdmin ? 12 : 11}>
                       <div className="empty-state compact">Aucune ligne comptable enregistrée.</div>
                     </td>
                   </tr>
@@ -4447,6 +4876,11 @@ function AdminPage() {
 
     return (
       <div className="admin-stack">
+        <div className="section-tools">
+          <button className="btn secondary compact-btn" type="button" onClick={exportAuditToExcel}>
+            Exporter audit Excel
+          </button>
+        </div>
         <div className="stats audit-stats">
           <Stat label="Argent suivi" value={formatCompact(totalRevenue)} />
           <Stat label="Liquide dehors" value={formatCompact(cashToDeposit)} />
@@ -4594,6 +5028,9 @@ function AdminPage() {
               <h2>Clients</h2>
               <span>Commandes groupées par nom, téléphone ou compte connecté</span>
             </div>
+            <button className="btn secondary compact-btn" type="button" onClick={exportCustomersToExcel}>
+              Excel
+            </button>
           </div>
           <div className="customer-list">
             {customerGroups.length ? (

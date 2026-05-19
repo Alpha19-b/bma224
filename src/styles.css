@@ -572,6 +572,24 @@ main {
   border: 1px solid var(--line);
 }
 
+.btn.danger {
+  background: #fff1f2;
+  color: #b42318;
+  border: 1px solid #fecdd3;
+}
+
+.btn.danger:hover {
+  background: #b42318;
+  color: #fff;
+  border-color: #b42318;
+}
+
+.btn.compact-btn {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.65;
@@ -2890,6 +2908,13 @@ textarea {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.section-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .product-add-button.secondary-action {
