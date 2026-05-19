@@ -2525,10 +2525,13 @@ function AdminPage() {
   const [rolePermissions, setRolePermissions] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
+  const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
+  const [adminConfirm, setAdminConfirm] = useState(null);
   const [adminAccountOpen, setAdminAccountOpen] = useState(false);
   const [adminAccountForm, setAdminAccountForm] = useState(emptyAdminAccountForm);
   const [adminAccountMessage, setAdminAccountMessage] = useState(null);
@@ -2607,7 +2610,10 @@ function AdminPage() {
         setStockMovements([]);
         setSelectedOrder(null);
         setSelectedOrderIds([]);
+        setSelectedProductIds([]);
         setSelectedAccountingIds([]);
+        setSelectedCustomerKeys([]);
+        setAdminConfirm(null);
         setAdminMessage("Connecte-toi avec ton compte admin pour gérer BMA.");
         return;
       }
@@ -2935,6 +2941,7 @@ function AdminPage() {
   useEffect(() => {
     if (!customerGroups.length) {
       setSelectedCustomerKey("");
+      setSelectedCustomerKeys([]);
       return;
     }
 
@@ -2944,6 +2951,13 @@ function AdminPage() {
   }, [customerGroups, selectedCustomerKey]);
 
   useEffect(() => {
+    setSelectedCustomerKeys((current) => {
+      const existingKeys = new Set(customerGroups.map((customer) => customer.key));
+      return current.filter((customerKey) => existingKeys.has(customerKey));
+    });
+  }, [customerGroups]);
+
+  useEffect(() => {
     setSelectedOrderIds((current) => {
       const existingIds = new Set(adminOrders.map((order) => order.rawId));
       return current.filter((orderId) => existingIds.has(orderId));
@@ -2951,11 +2965,25 @@ function AdminPage() {
   }, [adminOrders]);
 
   useEffect(() => {
+    setSelectedProductIds((current) => {
+      const existingIds = new Set(adminProducts.map((product) => product.id));
+      return current.filter((productId) => existingIds.has(productId));
+    });
+  }, [adminProducts]);
+
+  useEffect(() => {
     setSelectedAccountingIds((current) => {
       const existingIds = new Set(accountingRecords.map((record) => record.id));
       return current.filter((recordId) => existingIds.has(recordId));
     });
   }, [accountingRecords]);
+
+  useEffect(() => {
+    if (!adminToast || adminToast.tone === "issue") return undefined;
+
+    const timeoutId = window.setTimeout(() => setAdminToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [adminToast]);
 
   const marginAmount = totalRevenue - totalCost;
   const marginRate = getMarginRate(totalRevenue, totalCost);
@@ -2980,11 +3008,20 @@ function AdminPage() {
   );
   const selectedOrders = adminOrders.filter((order) => selectedOrderIds.includes(order.rawId));
   const allOrdersSelected = adminOrders.length > 0 && selectedOrderIds.length === adminOrders.length;
+  const selectedProducts = adminProducts.filter((product) => selectedProductIds.includes(product.id));
+  const allDisplayedProductsSelected =
+    displayedAdminProducts.length > 0 &&
+    displayedAdminProducts.every((product) => selectedProductIds.includes(product.id));
   const selectedAccountingRecords = accountingRecords.filter((record) =>
     selectedAccountingIds.includes(record.id)
   );
   const allAccountingSelected =
     accountingRecords.length > 0 && selectedAccountingIds.length === accountingRecords.length;
+  const selectedCustomers = customerGroups.filter((customer) =>
+    selectedCustomerKeys.includes(customer.key)
+  );
+  const allCustomersSelected =
+    customerGroups.length > 0 && selectedCustomerKeys.length === customerGroups.length;
   const negativeMarginRecords = accountingRecords.filter(
     (record) => Number(record.saleAmount || 0) - Number(record.costAmount || 0) < 0
   );
@@ -3075,6 +3112,25 @@ function AdminPage() {
     setAdminToast({ text, tone });
   }
 
+  function requestAdminConfirm(options) {
+    setAdminConfirm({
+      title: options.title || "Confirmer l'action",
+      message: options.message || "Tu confirmes cette action ?",
+      confirmLabel: options.confirmLabel || "Confirmer",
+      tone: options.tone || "danger",
+      onConfirm: options.onConfirm,
+    });
+  }
+
+  async function confirmAdminAction() {
+    const action = adminConfirm?.onConfirm;
+    setAdminConfirm(null);
+
+    if (typeof action === "function") {
+      await action();
+    }
+  }
+
   async function refreshAdminLists({ keepSelected = true } = {}) {
     const [productsResult, ordersResult, accountingResult, stockMovementsResult] = await Promise.all([
       fetchProducts(),
@@ -3119,10 +3175,12 @@ function AdminPage() {
   }
 
   function exportProductsToExcel() {
+    const rowsToExport = selectedProducts.length ? selectedProducts : adminProducts;
+
     downloadExcelWorkbook(`bma-articles-${getTodayDateInput()}`, [
       {
         name: "Articles",
-        rows: adminProducts.map((product) => ({
+        rows: rowsToExport.map((product) => ({
           Article: product.name,
           Categorie: product.category,
           Prix_vente_GNF: getProductPrice(product),
@@ -3142,10 +3200,12 @@ function AdminPage() {
   }
 
   function exportOrdersToExcel() {
+    const rowsToExport = selectedOrders.length ? selectedOrders : adminOrders;
+
     downloadExcelWorkbook(`bma-commandes-${getTodayDateInput()}`, [
       {
         name: "Commandes",
-        rows: adminOrders.map((order) => ({
+        rows: rowsToExport.map((order) => ({
           Commande: order.id,
           Date: order.createdDate,
           Client: order.customer,
@@ -3163,10 +3223,12 @@ function AdminPage() {
   }
 
   function exportAccountingToExcel() {
+    const rowsToExport = selectedAccountingRecords.length ? selectedAccountingRecords : accountingRecords;
+
     downloadExcelWorkbook(`bma-comptabilite-${getTodayDateInput()}`, [
       {
         name: "Comptabilite",
-        rows: accountingRecords.map((record) => ({
+        rows: rowsToExport.map((record) => ({
           Date: record.date,
           Commande: record.orderId,
           Client: record.customer,
@@ -3218,10 +3280,12 @@ function AdminPage() {
   }
 
   function exportCustomersToExcel() {
+    const rowsToExport = selectedCustomers.length ? selectedCustomers : customerGroups;
+
     downloadExcelWorkbook(`bma-clients-${getTodayDateInput()}`, [
       {
         name: "Clients",
-        rows: customerGroups.map((customer) => ({
+        rows: rowsToExport.map((customer) => ({
           Client: customer.name,
           Telephone: customer.phone,
           Commandes: customer.orders.length,
@@ -3309,19 +3373,26 @@ function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Supprimer "${product.name}" de la boutique ?`)) return;
+    requestAdminConfirm({
+      title: "Supprimer cet article ?",
+      message: `"${product.name}" sera retiré de la boutique. Cette action est réservée au super admin.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId(`product:${product.id}`);
+        const { error } = await deleteProductAsOwner(product.id);
+        setDeletingActionId("");
 
-    setDeletingActionId(`product:${product.id}`);
-    const { error } = await deleteProductAsOwner(product.id);
-    setDeletingActionId("");
+        if (error) {
+          showToast(`Article non supprimé : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+          return;
+        }
 
-    if (error) {
-      showToast(`Article non supprime : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
-      return;
-    }
-
-    showToast("Article retire de la vente.");
-    await refreshAdminLists({ keepSelected: true });
+        setSelectedProductIds((current) => current.filter((productId) => productId !== product.id));
+        showToast("Article retiré de la vente.");
+        await refreshAdminLists({ keepSelected: true });
+      },
+    });
   }
 
   async function deleteOrderOwnerOnly(order) {
@@ -3330,21 +3401,25 @@ function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Supprimer la commande ${order.id} ? Cette action nettoie aussi sa ligne comptable.`)) {
-      return;
-    }
+    requestAdminConfirm({
+      title: "Supprimer cette commande ?",
+      message: `${order.id} sera supprimée avec ses articles et sa ligne comptable liée.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId(`order:${order.rawId}`);
+        const { error } = await deleteOrderAsOwner(order.rawId);
+        setDeletingActionId("");
 
-    setDeletingActionId(`order:${order.rawId}`);
-    const { error } = await deleteOrderAsOwner(order.rawId);
-    setDeletingActionId("");
+        if (error) {
+          showToast(`Commande non supprimée : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+          return;
+        }
 
-    if (error) {
-      showToast(`Commande non supprimee : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
-      return;
-    }
-
-    showToast("Commande supprimee.");
-    await refreshAdminLists({ keepSelected: false });
+        showToast("Commande supprimée.");
+        await refreshAdminLists({ keepSelected: false });
+      },
+    });
   }
 
   async function deleteAccountingOwnerOnly(record) {
@@ -3353,19 +3428,26 @@ function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Supprimer la ligne comptable ${record.orderId} ?`)) return;
+    requestAdminConfirm({
+      title: "Supprimer cette ligne ?",
+      message: `${record.orderId} sera retirée de l'historique comptable.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId(`accounting:${record.id}`);
+        const { error } = await deleteAccountingEntryAsOwner(record.id);
+        setDeletingActionId("");
 
-    setDeletingActionId(`accounting:${record.id}`);
-    const { error } = await deleteAccountingEntryAsOwner(record.id);
-    setDeletingActionId("");
+        if (error) {
+          showToast(`Ligne non supprimée : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+          return;
+        }
 
-    if (error) {
-      showToast(`Ligne non supprimee : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
-      return;
-    }
-
-    showToast("Ligne comptable supprimee.");
-    await refreshAdminLists({ keepSelected: true });
+        setSelectedAccountingIds((current) => current.filter((recordId) => recordId !== record.id));
+        showToast("Ligne comptable supprimée.");
+        await refreshAdminLists({ keepSelected: true });
+      },
+    });
   }
 
   function toggleOrderSelection(orderId) {
@@ -3378,6 +3460,82 @@ function AdminPage() {
 
   function toggleAllOrdersSelection() {
     setSelectedOrderIds(allOrdersSelected ? [] : adminOrders.map((order) => order.rawId));
+  }
+
+  function toggleProductSelection(productId) {
+    setSelectedProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((currentId) => currentId !== productId)
+        : [...current, productId]
+    );
+  }
+
+  function toggleAllDisplayedProductsSelection() {
+    const displayedIds = displayedAdminProducts.map((product) => product.id);
+
+    setSelectedProductIds((current) => {
+      if (allDisplayedProductsSelected) {
+        return current.filter((productId) => !displayedIds.includes(productId));
+      }
+
+      return [...new Set([...current, ...displayedIds])];
+    });
+  }
+
+  function toggleCustomerSelection(customerKey) {
+    setSelectedCustomerKeys((current) =>
+      current.includes(customerKey)
+        ? current.filter((currentKey) => currentKey !== customerKey)
+        : [...current, customerKey]
+    );
+  }
+
+  function toggleAllCustomersSelection() {
+    setSelectedCustomerKeys(allCustomersSelected ? [] : customerGroups.map((customer) => customer.key));
+  }
+
+  async function bulkDeleteProducts() {
+    if (!isSuperAdmin) {
+      showToast("Suppression réservée au super admin.", "issue");
+      return;
+    }
+
+    if (!selectedProducts.length) {
+      showToast("Sélectionne au moins un article.", "issue");
+      return;
+    }
+
+    requestAdminConfirm({
+      title: "Supprimer les articles ?",
+      message: `${selectedProducts.length} article(s) seront retirés de la boutique.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId("bulk:products");
+        const results = await Promise.all(
+          selectedProducts.map((product) => deleteProductAsOwner(product.id))
+        );
+        setDeletingActionId("");
+
+        const failed = results.filter((result) => result.error);
+
+        if (failed.length) {
+          showToast(
+            `${failed.length} article(s) non supprimé(s) : ${getFriendlyErrorMessage(
+              failed[0].error,
+              "delete"
+            )}`,
+            "issue"
+          );
+          await refreshAdminLists({ keepSelected: true });
+          return;
+        }
+
+        showToast(`${selectedProducts.length} article(s) supprimé(s).`);
+        setSelectedProductIds([]);
+        await refreshAdminLists({ keepSelected: true });
+      },
+    });
   }
 
   async function bulkUpdateOrders(nextStatus) {
@@ -3415,32 +3573,36 @@ function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Supprimer ${selectedOrders.length} commande(s) selectionnee(s) ?`)) {
-      return;
-    }
+    requestAdminConfirm({
+      title: "Supprimer les commandes ?",
+      message: `${selectedOrders.length} commande(s) sélectionnée(s) seront supprimées avec leurs lignes liées.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId("bulk:orders");
+        const results = await Promise.all(
+          selectedOrders.map((order) => deleteOrderAsOwner(order.rawId))
+        );
+        setDeletingActionId("");
 
-    setDeletingActionId("bulk:orders");
-    const results = await Promise.all(
-      selectedOrders.map((order) => deleteOrderAsOwner(order.rawId))
-    );
-    setDeletingActionId("");
+        const failed = results.filter((result) => result.error);
 
-    const failed = results.filter((result) => result.error);
+        if (failed.length) {
+          showToast(
+            `${failed.length} commande(s) non supprimée(s) : ${getFriendlyErrorMessage(
+              failed[0].error,
+              "delete"
+            )}`,
+            "issue"
+          );
+        } else {
+          showToast(`${selectedOrders.length} commande(s) supprimée(s).`);
+          setSelectedOrderIds([]);
+        }
 
-    if (failed.length) {
-      showToast(
-        `${failed.length} commande(s) non supprimée(s) : ${getFriendlyErrorMessage(
-          failed[0].error,
-          "delete"
-        )}`,
-        "issue"
-      );
-    } else {
-      showToast(`${selectedOrders.length} commande(s) supprimee(s).`);
-      setSelectedOrderIds([]);
-    }
-
-    await refreshAdminLists({ keepSelected: false });
+        await refreshAdminLists({ keepSelected: false });
+      },
+    });
   }
 
   function toggleAccountingSelection(recordId) {
@@ -3468,33 +3630,37 @@ function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Supprimer ${selectedAccountingRecords.length} ligne(s) comptable(s) ?`)) {
-      return;
-    }
+    requestAdminConfirm({
+      title: "Supprimer les lignes ?",
+      message: `${selectedAccountingRecords.length} ligne(s) comptable(s) seront supprimées.`,
+      confirmLabel: "Supprimer",
+      tone: "danger",
+      onConfirm: async () => {
+        setDeletingActionId("bulk:accounting");
+        const results = await Promise.all(
+          selectedAccountingRecords.map((record) => deleteAccountingEntryAsOwner(record.id))
+        );
+        setDeletingActionId("");
 
-    setDeletingActionId("bulk:accounting");
-    const results = await Promise.all(
-      selectedAccountingRecords.map((record) => deleteAccountingEntryAsOwner(record.id))
-    );
-    setDeletingActionId("");
+        const failed = results.filter((result) => result.error);
 
-    const failed = results.filter((result) => result.error);
+        if (failed.length) {
+          showToast(
+            `${failed.length} ligne(s) non supprimée(s) : ${getFriendlyErrorMessage(
+              failed[0].error,
+              "delete"
+            )}`,
+            "issue"
+          );
+          await refreshAdminLists({ keepSelected: true });
+          return;
+        }
 
-    if (failed.length) {
-      showToast(
-        `${failed.length} ligne(s) non supprimée(s) : ${getFriendlyErrorMessage(
-          failed[0].error,
-          "delete"
-        )}`,
-        "issue"
-      );
-      await refreshAdminLists({ keepSelected: true });
-      return;
-    }
-
-    showToast(`${selectedAccountingRecords.length} ligne(s) supprimée(s).`);
-    setSelectedAccountingIds([]);
-    await refreshAdminLists({ keepSelected: true });
+        showToast(`${selectedAccountingRecords.length} ligne(s) supprimée(s).`);
+        setSelectedAccountingIds([]);
+        await refreshAdminLists({ keepSelected: true });
+      },
+    });
   }
 
   function updateLoginForm(field, value) {
@@ -4263,8 +4429,26 @@ function AdminPage() {
               <span>Vêtements, accessoires, photos, prix et stock</span>
             </div>
             <div className="accounting-actions">
+              <button
+                className="btn secondary compact-btn"
+                type="button"
+                disabled={!displayedAdminProducts.length}
+                onClick={toggleAllDisplayedProductsSelection}
+              >
+                {allDisplayedProductsSelected ? "Tout décocher" : "Tout cocher"}
+              </button>
+              {isSuperAdmin ? (
+                <button
+                  className="btn danger compact-btn"
+                  type="button"
+                  disabled={!selectedProductIds.length || deletingActionId === "bulk:products"}
+                  onClick={bulkDeleteProducts}
+                >
+                  Supprimer {selectedProductIds.length || ""}
+                </button>
+              ) : null}
               <button className="btn secondary compact-btn" type="button" onClick={exportProductsToExcel}>
-                Excel
+                {selectedProductIds.length ? "Excel sélection" : "Excel"}
               </button>
               <button
                 className="product-add-button"
@@ -4309,10 +4493,21 @@ function AdminPage() {
               </thead>
               <tbody>
                 {displayedAdminProducts.length ? (
-                  displayedAdminProducts.map((product) => (
-                    <tr key={product.id}>
-                      <td>
+                  displayedAdminProducts.map((product) => {
+                    const isChecked = selectedProductIds.includes(product.id);
+
+                    return (
+                    <tr className={isChecked ? "bulk-selected-row" : ""} key={product.id}>
+                      <td data-label="Article">
                         <div className="product-cell">
+                          <label className="order-select-control product-select-control">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleProductSelection(product.id)}
+                            />
+                            <span>Sélectionner</span>
+                          </label>
                           <img src={product.image} alt="" />
                           <span>
                             <strong>{product.name}</strong>
@@ -4327,16 +4522,16 @@ function AdminPage() {
                           </span>
                         </div>
                       </td>
-                      <td>{product.category}</td>
-                      <td>{formatMoney(getProductPrice(product))}</td>
-                      <td>{formatMoney(getPurchasePrice(product))}</td>
-                      <td>{formatMoney(getCostPrice(product))}</td>
-                      <td>
+                      <td data-label="Catégorie">{product.category}</td>
+                      <td data-label="Vente">{formatMoney(getProductPrice(product))}</td>
+                      <td data-label="Achat">{formatMoney(getPurchasePrice(product))}</td>
+                      <td data-label="Revient">{formatMoney(getCostPrice(product))}</td>
+                      <td data-label="Stock">
                         <span className={`stock-pill ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}>
                           {product.stock}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Actions">
                         <div className="inline-actions">
                           <button
                             className="btn secondary"
@@ -4372,7 +4567,8 @@ function AdminPage() {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan="7">
@@ -4565,7 +4761,7 @@ function AdminPage() {
             </button>
           ) : null}
           <button className="btn secondary compact-btn" type="button" onClick={exportOrdersToExcel}>
-            Excel
+            {selectedOrderIds.length ? "Excel sélection" : "Excel"}
           </button>
         </div>
         <div className="admin-columns">
@@ -4712,7 +4908,7 @@ function AdminPage() {
                 </button>
               ) : null}
               <button className="btn secondary compact-btn" type="button" onClick={exportAccountingToExcel}>
-                Excel
+                {selectedAccountingIds.length ? "Excel sélection" : "Excel"}
               </button>
               <button
                 className="product-add-button"
@@ -5259,31 +5455,59 @@ function AdminPage() {
               <h2>Clients</h2>
               <span>Commandes groupées par nom, téléphone ou compte connecté</span>
             </div>
-            <button className="btn secondary compact-btn" type="button" onClick={exportCustomersToExcel}>
-              Excel
-            </button>
+            <div className="accounting-actions">
+              <button
+                className="btn secondary compact-btn"
+                type="button"
+                disabled={!customerGroups.length}
+                onClick={toggleAllCustomersSelection}
+              >
+                {allCustomersSelected ? "Tout décocher" : "Tout cocher"}
+              </button>
+              <button className="btn secondary compact-btn" type="button" onClick={exportCustomersToExcel}>
+                {selectedCustomerKeys.length ? "Excel sélection" : "Excel"}
+              </button>
+            </div>
           </div>
           <div className="customer-list">
             {customerGroups.length ? (
-              customerGroups.map((customer) => (
-                <button
-                  className={`customer-card ${selectedCustomer?.key === customer.key ? "active" : ""}`}
+              customerGroups.map((customer) => {
+                const isChecked = selectedCustomerKeys.includes(customer.key);
+
+                return (
+                <div
+                  className={`customer-card ${selectedCustomer?.key === customer.key ? "active" : ""} ${
+                    isChecked ? "bulk-selected-row" : ""
+                  }`}
                   key={customer.key}
-                  type="button"
-                  onClick={() => setSelectedCustomerKey(customer.key)}
                 >
-                  <span>
-                    <strong>{customer.name}</strong>
-                    <small>{customer.phone}</small>
-                  </span>
-                  <span>
-                    <strong>{formatCompact(customer.totalSpent)}</strong>
-                    <small>
-                      {customer.orders.length} commande{customer.orders.length > 1 ? "s" : ""}
-                    </small>
-                  </span>
-                </button>
-              ))
+                  <label className="order-select-control">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleCustomerSelection(customer.key)}
+                    />
+                    <span>Sélectionner</span>
+                  </label>
+                  <button
+                    className="customer-card-main"
+                    type="button"
+                    onClick={() => setSelectedCustomerKey(customer.key)}
+                  >
+                    <span>
+                      <strong>{customer.name}</strong>
+                      <small>{customer.phone}</small>
+                    </span>
+                    <span>
+                      <strong>{formatCompact(customer.totalSpent)}</strong>
+                      <small>
+                        {customer.orders.length} commande{customer.orders.length > 1 ? "s" : ""}
+                      </small>
+                    </span>
+                  </button>
+                </div>
+                );
+              })
             ) : (
               <div className="empty-state compact">Aucun client à afficher pour l'instant.</div>
             )}
@@ -5491,12 +5715,20 @@ function AdminPage() {
           <div className="checkout-status waiting">{adminMessage}</div>
         ) : null}
         {adminToast && adminToast.tone !== "issue" ? (
-          <div className={`checkout-status ${adminToast.tone}`}>
-            {adminToast.text}
-          </div>
+          <AdminNoticeToast message={adminToast.text} tone={adminToast.tone} onClose={() => setAdminToast(null)} />
         ) : null}
         {adminToast?.tone === "issue" ? (
           <AdminIssuePopup message={adminToast.text} onClose={() => setAdminToast(null)} />
+        ) : null}
+        {adminConfirm ? (
+          <AdminConfirmDialog
+            confirmLabel={adminConfirm.confirmLabel}
+            message={adminConfirm.message}
+            onCancel={() => setAdminConfirm(null)}
+            onConfirm={confirmAdminAction}
+            title={adminConfirm.title}
+            tone={adminConfirm.tone}
+          />
         ) : null}
         {adminAccountOpen ? (
           <div className="auth-overlay">
@@ -5555,6 +5787,39 @@ function AdminIssuePopup({ message, onClose }) {
           Fermer
         </button>
       </section>
+    </div>
+  );
+}
+
+function AdminConfirmDialog({ title, message, confirmLabel, tone = "danger", onCancel, onConfirm }) {
+  return (
+    <div className="admin-modal-overlay" role="dialog" aria-modal="true">
+      <section className="admin-confirm-card">
+        <div>
+          <span>{tone === "danger" ? "Action sensible" : "Confirmation"}</span>
+          <h2>{title}</h2>
+          <p>{message}</p>
+        </div>
+        <div className="admin-confirm-actions">
+          <button className="btn secondary" type="button" onClick={onCancel}>
+            Annuler
+          </button>
+          <button className={`btn ${tone === "danger" ? "danger" : ""}`} type="button" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AdminNoticeToast({ message, tone = "paid", onClose }) {
+  return (
+    <div className={`admin-floating-toast ${tone}`} role="status">
+      <span>{message}</span>
+      <button type="button" onClick={onClose} aria-label="Fermer la notification">
+        ×
+      </button>
     </div>
   );
 }
