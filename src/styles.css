@@ -1603,6 +1603,12 @@ main {
   gap: 9px;
 }
 
+.order-detail-shell .order-items-list {
+  max-height: min(320px, 34svh);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .order-detail-summary {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1652,6 +1658,24 @@ main {
 
 .order-detail-shell {
   min-width: 0;
+}
+
+.admin-columns > .order-detail-shell {
+  position: sticky;
+  top: 92px;
+  max-height: calc(100svh - 112px);
+}
+
+.admin-columns > .order-detail-shell > .section {
+  max-height: inherit;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-columns > .order-detail-shell .detail-panel {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .order-detail-close {
@@ -2917,6 +2941,21 @@ textarea {
   flex-wrap: wrap;
 }
 
+.orders-bulk-bar {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.orders-bulk-bar strong {
+  margin-right: auto;
+  color: var(--ink);
+  font-size: 14px;
+}
+
 .product-add-button.secondary-action {
   background: var(--green);
   border-color: var(--green);
@@ -3127,6 +3166,18 @@ textarea {
   overflow-x: auto;
 }
 
+.orders-table-wrap {
+  max-height: calc(100svh - 292px);
+  overflow: auto;
+}
+
+.orders-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+}
+
 .table th,
 .table td {
   padding: 14px 16px;
@@ -3152,10 +3203,32 @@ textarea {
   cursor: pointer;
 }
 
+.orders-table tbody tr.bulk-selected-row {
+  background: #f8fafc;
+}
+
 .orders-table tbody tr.selected-row,
 .orders-table tbody tr.selected-row:hover {
   background: #e9f7f1;
   box-shadow: inset 4px 0 0 var(--green);
+}
+
+.order-select-control {
+  width: fit-content;
+  margin-bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.order-select-control input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
 }
 
 .accounting-table {

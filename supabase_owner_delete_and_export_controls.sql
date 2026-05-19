@@ -168,10 +168,12 @@ begin
 end;
 $bma_delete_accounting_entry$;
 
+drop function if exists public.bma_delete_order(uuid);
+
 create or replace function public.bma_delete_order(p_order_id uuid)
 returns table (
-  order_id uuid,
-  order_number text
+  deleted_order_id uuid,
+  deleted_order_number text
 )
 language plpgsql
 security definer
@@ -222,29 +224,29 @@ begin
     end if;
   end if;
 
-  delete from public.accounting_entries
-  where id = any(coalesce(v_accounting_ids, array[]::uuid[]));
+  delete from public.accounting_entries ae
+  where ae.id = any(coalesce(v_accounting_ids, array[]::uuid[]));
 
-  delete from public.order_items
-  where order_id = p_order_id;
+  delete from public.order_items oi
+  where oi.order_id = p_order_id;
 
   if to_regclass('public.order_status_history') is not null then
-    execute 'delete from public.order_status_history where order_id = $1'
+    execute 'delete from public.order_status_history osh where osh.order_id = $1'
     using p_order_id;
   end if;
 
   if to_regclass('public.payments') is not null then
-    execute 'delete from public.payments where order_id = $1'
+    execute 'delete from public.payments p where p.order_id = $1'
     using p_order_id;
   end if;
 
   if to_regclass('public.sms_logs') is not null then
-    execute 'delete from public.sms_logs where order_id = $1'
+    execute 'delete from public.sms_logs sl where sl.order_id = $1'
     using p_order_id;
   end if;
 
-  delete from public.orders
-  where id = p_order_id;
+  delete from public.orders o
+  where o.id = p_order_id;
 
   return query select p_order_id, v_order_number;
 end;

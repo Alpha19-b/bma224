@@ -2520,6 +2520,7 @@ function AdminPage() {
   const [stockMovements, setStockMovements] = useState([]);
   const [rolePermissions, setRolePermissions] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
@@ -2600,6 +2601,7 @@ function AdminPage() {
         setAccountingRecords([]);
         setStockMovements([]);
         setSelectedOrder(null);
+        setSelectedOrderIds([]);
         setAdminMessage("Connecte-toi avec ton compte admin pour gérer BMA.");
         return;
       }
@@ -2656,6 +2658,7 @@ function AdminPage() {
       if (!ordersResult.data.length) {
         setAdminOrders([]);
         setSelectedOrder(null);
+        setSelectedOrderIds([]);
         setAdminMessage(
           accountingResult.error
             ? `Comptabilité non chargée : ${accountingResult.error.message}`
@@ -2666,6 +2669,7 @@ function AdminPage() {
 
       setAdminOrders(ordersResult.data);
       setSelectedOrder(null);
+      setSelectedOrderIds([]);
       setAdminMessage(
         accountingResult.error
           ? `Commandes chargées. Comptabilité non chargée : ${accountingResult.error.message}`
@@ -2933,6 +2937,13 @@ function AdminPage() {
     }
   }, [customerGroups, selectedCustomerKey]);
 
+  useEffect(() => {
+    setSelectedOrderIds((current) => {
+      const existingIds = new Set(adminOrders.map((order) => order.rawId));
+      return current.filter((orderId) => existingIds.has(orderId));
+    });
+  }, [adminOrders]);
+
   const marginAmount = totalRevenue - totalCost;
   const marginRate = getMarginRate(totalRevenue, totalCost);
   const financeHealth =
@@ -2954,6 +2965,8 @@ function AdminPage() {
   const deliveredUnpaidOrders = adminOrders.filter(
     (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
   );
+  const selectedOrders = adminOrders.filter((order) => selectedOrderIds.includes(order.rawId));
+  const allOrdersSelected = adminOrders.length > 0 && selectedOrderIds.length === adminOrders.length;
   const negativeMarginRecords = accountingRecords.filter(
     (record) => Number(record.saleAmount || 0) - Number(record.costAmount || 0) < 0
   );
@@ -3335,6 +3348,75 @@ function AdminPage() {
 
     showToast("Ligne comptable supprimee.");
     await refreshAdminLists({ keepSelected: true });
+  }
+
+  function toggleOrderSelection(orderId) {
+    setSelectedOrderIds((current) =>
+      current.includes(orderId)
+        ? current.filter((currentId) => currentId !== orderId)
+        : [...current, orderId]
+    );
+  }
+
+  function toggleAllOrdersSelection() {
+    setSelectedOrderIds(allOrdersSelected ? [] : adminOrders.map((order) => order.rawId));
+  }
+
+  async function bulkUpdateOrders(nextStatus) {
+    if (!selectedOrders.length) {
+      showToast("Selectionne au moins une commande.", "issue");
+      return;
+    }
+
+    setUpdatingOrderId("bulk");
+    const results = await Promise.all(
+      selectedOrders.map((order) => updateAdminOrderStatus(order.rawId, nextStatus))
+    );
+    setUpdatingOrderId("");
+
+    const failed = results.filter((result) => result.error);
+
+    if (failed.length) {
+      showToast(`${failed.length} commande(s) non modifiee(s).`, "issue");
+    } else {
+      showToast(`${selectedOrders.length} commande(s) mise(s) a jour.`);
+      setSelectedOrderIds([]);
+    }
+
+    await refreshAdminLists({ keepSelected: true });
+  }
+
+  async function bulkDeleteOrders() {
+    if (!isSuperAdmin) {
+      showToast("Suppression reservee au super admin.", "issue");
+      return;
+    }
+
+    if (!selectedOrders.length) {
+      showToast("Selectionne au moins une commande.", "issue");
+      return;
+    }
+
+    if (!window.confirm(`Supprimer ${selectedOrders.length} commande(s) selectionnee(s) ?`)) {
+      return;
+    }
+
+    setDeletingActionId("bulk:orders");
+    const results = await Promise.all(
+      selectedOrders.map((order) => deleteOrderAsOwner(order.rawId))
+    );
+    setDeletingActionId("");
+
+    const failed = results.filter((result) => result.error);
+
+    if (failed.length) {
+      showToast(`${failed.length} commande(s) non supprimee(s).`, "issue");
+    } else {
+      showToast(`${selectedOrders.length} commande(s) supprimee(s).`);
+      setSelectedOrderIds([]);
+    }
+
+    await refreshAdminLists({ keepSelected: false });
   }
 
   function updateLoginForm(field, value) {
@@ -4368,16 +4450,55 @@ function AdminPage() {
   function renderOrders() {
     return (
       <div className="admin-stack">
-        <div className="section-tools">
+        <div className="section-tools orders-bulk-bar">
+          <strong>{selectedOrderIds.length} sélectionnée{selectedOrderIds.length > 1 ? "s" : ""}</strong>
+          <button
+            className="btn secondary compact-btn"
+            type="button"
+            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            onClick={() => bulkUpdateOrders("preparing")}
+          >
+            Préparation
+          </button>
+          <button
+            className="btn secondary compact-btn"
+            type="button"
+            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            onClick={() => bulkUpdateOrders("delivered")}
+          >
+            Livrée
+          </button>
+          <button
+            className="btn ghost compact-btn"
+            type="button"
+            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            onClick={() => bulkUpdateOrders("cancelled")}
+          >
+            Annuler
+          </button>
+          {isSuperAdmin ? (
+            <button
+              className="btn danger compact-btn"
+              type="button"
+              disabled={!selectedOrderIds.length || deletingActionId === "bulk:orders"}
+              onClick={bulkDeleteOrders}
+            >
+              Supprimer
+            </button>
+          ) : null}
           <button className="btn secondary compact-btn" type="button" onClick={exportOrdersToExcel}>
-            Exporter commandes Excel
+            Excel
           </button>
         </div>
         <div className="admin-columns">
           <OrdersTable
             orders={adminOrders}
             onSelect={setSelectedOrder}
+            onToggleAll={toggleAllOrdersSelection}
+            onToggleOrder={toggleOrderSelection}
+            allSelected={allOrdersSelected}
             selectedOrderId={selectedOrder?.id}
+            selectedOrderIds={selectedOrderIds}
             updatingOrderId={updatingOrderId}
           />
           <div
@@ -5545,7 +5666,16 @@ function OrderItemsList({ items = [] }) {
   );
 }
 
-function OrdersTable({ orders, onSelect, selectedOrderId = "", updatingOrderId = "" }) {
+function OrdersTable({
+  orders,
+  onSelect,
+  onToggleAll,
+  onToggleOrder,
+  allSelected = false,
+  selectedOrderId = "",
+  selectedOrderIds = [],
+  updatingOrderId = "",
+}) {
   return (
     <section className="section">
       <div className="section-head">
@@ -5553,8 +5683,16 @@ function OrdersTable({ orders, onSelect, selectedOrderId = "", updatingOrderId =
           <h2>Commandes récentes</h2>
           <span>Historique des commandes du site</span>
         </div>
+        <button
+          className="btn secondary compact-btn"
+          type="button"
+          disabled={!orders.length || updatingOrderId === "bulk"}
+          onClick={onToggleAll}
+        >
+          {allSelected ? "Tout décocher" : "Tout cocher"}
+        </button>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap orders-table-wrap">
         <table className="table orders-table">
           <thead>
             <tr>
@@ -5568,51 +5706,68 @@ function OrdersTable({ orders, onSelect, selectedOrderId = "", updatingOrderId =
           </thead>
           <tbody>
             {orders.length ? (
-              orders.map((order) => (
-                <tr
-                  className={selectedOrderId === order.id ? "selected-row" : ""}
-                  key={order.id}
-                  onClick={() => onSelect(order)}
-                  tabIndex="0"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelect(order);
-                    }
-                  }}
-                >
-                  <td>
-                    <strong>{order.id}</strong>
-                    <br />
-                    <span className="muted">
-                      {order.itemsCount || order.items || 0} article
-                      {(order.itemsCount || order.items || 0) > 1 ? "s" : ""}
-                    </span>
-                    <OrderItemsPreview items={order.orderItems} />
-                  </td>
-                  <td>
-                    {order.customer}
-                    <br />
-                    <span className="muted">{order.phone}</span>
-                  </td>
-                  <td>
-                    {order.zone}
-                    <br />
-                    <span className="muted">{order.addressType}</span>
-                  </td>
-                  <td>{formatMoney(order.total)}</td>
-                  <td>
-                    <span className={`status ${order.paymentTone || order.tone}`}>
-                      {order.payment}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status ${order.statusTone || order.tone}`}>
-                      {order.status}
-                    </span>
-                  </td>
-                </tr>
-              ))
+              orders.map((order) => {
+                const isChecked = selectedOrderIds.includes(order.rawId);
+
+                return (
+                  <tr
+                    className={[
+                      selectedOrderId === order.id ? "selected-row" : "",
+                      isChecked ? "bulk-selected-row" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    key={order.id}
+                    onClick={() => onSelect(order)}
+                    tabIndex="0"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(order);
+                      }
+                    }}
+                  >
+                    <td>
+                      <label className="order-select-control" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => onToggleOrder(order.rawId)}
+                        />
+                        <span>Sélectionner</span>
+                      </label>
+                      <strong>{order.id}</strong>
+                      <br />
+                      <span className="muted">
+                        {order.itemsCount || order.items || 0} article
+                        {(order.itemsCount || order.items || 0) > 1 ? "s" : ""}
+                      </span>
+                      <OrderItemsPreview items={order.orderItems} />
+                    </td>
+                    <td>
+                      {order.customer}
+                      <br />
+                      <span className="muted">{order.phone}</span>
+                    </td>
+                    <td>
+                      {order.zone}
+                      <br />
+                      <span className="muted">{order.addressType}</span>
+                    </td>
+                    <td>{formatMoney(order.total)}</td>
+                    <td>
+                      <span className={`status ${order.paymentTone || order.tone}`}>
+                        {order.payment}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status ${order.statusTone || order.tone}`}>
+                        {order.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td colSpan="6">
