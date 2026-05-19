@@ -343,6 +343,10 @@ function getFriendlyErrorMessage(error, context = "") {
     return "Action réservée au super admin.";
   }
 
+  if (source.includes("order_id") && source.includes("ambiguous")) {
+    return "La fonction SQL de suppression commande n'est pas encore corrigée dans Supabase. Exécute le fichier supabase_owner_delete_order_fix.sql puis réessaie.";
+  }
+
   if (source.includes("bucket") || source.includes("storage")) {
     return "Le stockage des reçus n'est pas encore configuré.";
   }
@@ -2521,6 +2525,7 @@ function AdminPage() {
   const [rolePermissions, setRolePermissions] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
@@ -2602,6 +2607,7 @@ function AdminPage() {
         setStockMovements([]);
         setSelectedOrder(null);
         setSelectedOrderIds([]);
+        setSelectedAccountingIds([]);
         setAdminMessage("Connecte-toi avec ton compte admin pour gérer BMA.");
         return;
       }
@@ -2944,6 +2950,13 @@ function AdminPage() {
     });
   }, [adminOrders]);
 
+  useEffect(() => {
+    setSelectedAccountingIds((current) => {
+      const existingIds = new Set(accountingRecords.map((record) => record.id));
+      return current.filter((recordId) => existingIds.has(recordId));
+    });
+  }, [accountingRecords]);
+
   const marginAmount = totalRevenue - totalCost;
   const marginRate = getMarginRate(totalRevenue, totalCost);
   const financeHealth =
@@ -2967,6 +2980,11 @@ function AdminPage() {
   );
   const selectedOrders = adminOrders.filter((order) => selectedOrderIds.includes(order.rawId));
   const allOrdersSelected = adminOrders.length > 0 && selectedOrderIds.length === adminOrders.length;
+  const selectedAccountingRecords = accountingRecords.filter((record) =>
+    selectedAccountingIds.includes(record.id)
+  );
+  const allAccountingSelected =
+    accountingRecords.length > 0 && selectedAccountingIds.length === accountingRecords.length;
   const negativeMarginRecords = accountingRecords.filter(
     (record) => Number(record.saleAmount || 0) - Number(record.costAmount || 0) < 0
   );
@@ -3410,13 +3428,73 @@ function AdminPage() {
     const failed = results.filter((result) => result.error);
 
     if (failed.length) {
-      showToast(`${failed.length} commande(s) non supprimee(s).`, "issue");
+      showToast(
+        `${failed.length} commande(s) non supprimée(s) : ${getFriendlyErrorMessage(
+          failed[0].error,
+          "delete"
+        )}`,
+        "issue"
+      );
     } else {
       showToast(`${selectedOrders.length} commande(s) supprimee(s).`);
       setSelectedOrderIds([]);
     }
 
     await refreshAdminLists({ keepSelected: false });
+  }
+
+  function toggleAccountingSelection(recordId) {
+    setSelectedAccountingIds((current) =>
+      current.includes(recordId)
+        ? current.filter((currentId) => currentId !== recordId)
+        : [...current, recordId]
+    );
+  }
+
+  function toggleAllAccountingSelection() {
+    setSelectedAccountingIds(
+      allAccountingSelected ? [] : accountingRecords.map((record) => record.id)
+    );
+  }
+
+  async function bulkDeleteAccountingRecords() {
+    if (!isSuperAdmin) {
+      showToast("Suppression réservée au super admin.", "issue");
+      return;
+    }
+
+    if (!selectedAccountingRecords.length) {
+      showToast("Sélectionne au moins une ligne comptable.", "issue");
+      return;
+    }
+
+    if (!window.confirm(`Supprimer ${selectedAccountingRecords.length} ligne(s) comptable(s) ?`)) {
+      return;
+    }
+
+    setDeletingActionId("bulk:accounting");
+    const results = await Promise.all(
+      selectedAccountingRecords.map((record) => deleteAccountingEntryAsOwner(record.id))
+    );
+    setDeletingActionId("");
+
+    const failed = results.filter((result) => result.error);
+
+    if (failed.length) {
+      showToast(
+        `${failed.length} ligne(s) non supprimée(s) : ${getFriendlyErrorMessage(
+          failed[0].error,
+          "delete"
+        )}`,
+        "issue"
+      );
+      await refreshAdminLists({ keepSelected: true });
+      return;
+    }
+
+    showToast(`${selectedAccountingRecords.length} ligne(s) supprimée(s).`);
+    setSelectedAccountingIds([]);
+    await refreshAdminLists({ keepSelected: true });
   }
 
   function updateLoginForm(field, value) {
@@ -4615,6 +4693,24 @@ function AdminPage() {
               <span>Commandes, achats, revient, encaissement et dépôt Orange Money</span>
             </div>
             <div className="accounting-actions">
+              <button
+                className="btn secondary compact-btn"
+                type="button"
+                disabled={!accountingRecords.length}
+                onClick={toggleAllAccountingSelection}
+              >
+                {allAccountingSelected ? "Tout décocher" : "Tout cocher"}
+              </button>
+              {isSuperAdmin ? (
+                <button
+                  className="btn danger compact-btn"
+                  type="button"
+                  disabled={!selectedAccountingIds.length || deletingActionId === "bulk:accounting"}
+                  onClick={bulkDeleteAccountingRecords}
+                >
+                  Supprimer {selectedAccountingIds.length || ""}
+                </button>
+              ) : null}
               <button className="btn secondary compact-btn" type="button" onClick={exportAccountingToExcel}>
                 Excel
               </button>
@@ -4656,10 +4752,23 @@ function AdminPage() {
               </thead>
               <tbody>
                 {accountingRecords.length ? (
-                  accountingRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td>{record.date}</td>
-                      <td>
+                  accountingRecords.map((record) => {
+                    const isChecked = selectedAccountingIds.includes(record.id);
+
+                    return (
+                    <tr className={isChecked ? "bulk-selected-row" : ""} key={record.id}>
+                      <td data-label="Date">
+                        <label className="order-select-control">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleAccountingSelection(record.id)}
+                          />
+                          <span>Sélectionner</span>
+                        </label>
+                        {record.date}
+                      </td>
+                      <td data-label="Commande">
                         <strong>{record.orderId}</strong>
                         {record.note ? (
                           <>
@@ -4668,19 +4777,19 @@ function AdminPage() {
                           </>
                         ) : null}
                       </td>
-                      <td>{record.customer}</td>
-                      <td>{formatMoney(record.saleAmount)}</td>
-                      <td>{formatMoney(record.purchaseAmount)}</td>
-                      <td>{formatMoney(record.extraCost)}</td>
-                      <td>{formatMoney(record.costAmount)}</td>
-                      <td>{formatMoney(record.saleAmount - record.costAmount)}</td>
-                      <td>
+                      <td data-label="Client">{record.customer}</td>
+                      <td data-label="Vente">{formatMoney(record.saleAmount)}</td>
+                      <td data-label="Achat">{formatMoney(record.purchaseAmount)}</td>
+                      <td data-label="Frais">{formatMoney(record.extraCost)}</td>
+                      <td data-label="Revient">{formatMoney(record.costAmount)}</td>
+                      <td data-label="Marge">{formatMoney(record.saleAmount - record.costAmount)}</td>
+                      <td data-label="Encaissement">
                         {record.paymentMethod}
                         <br />
                         <span className="muted">Par: {record.collectedBy}</span>
                       </td>
                       {isSuperAdmin ? (
-                        <td>
+                        <td data-label="Admin">
                           <button
                             className="btn danger compact-btn"
                             type="button"
@@ -4691,7 +4800,7 @@ function AdminPage() {
                           </button>
                         </td>
                       ) : null}
-                      <td>
+                      <td data-label="Dépôt OM">
                         {record.orangeMoneyRef ? (
                           <>
                             <span className="status paid">Déposé</span>
@@ -4704,7 +4813,7 @@ function AdminPage() {
                           <span className="status waiting">À déposer</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Reçu">
                         {record.receiptUrl ? (
                           <a
                             className="receipt-link"
@@ -4721,7 +4830,8 @@ function AdminPage() {
                         )}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={isSuperAdmin ? 12 : 11}>
@@ -5380,10 +5490,13 @@ function AdminPage() {
         {adminMessage.includes("non charg") ? (
           <div className="checkout-status waiting">{adminMessage}</div>
         ) : null}
-        {adminToast ? (
+        {adminToast && adminToast.tone !== "issue" ? (
           <div className={`checkout-status ${adminToast.tone}`}>
             {adminToast.text}
           </div>
+        ) : null}
+        {adminToast?.tone === "issue" ? (
+          <AdminIssuePopup message={adminToast.text} onClose={() => setAdminToast(null)} />
         ) : null}
         {adminAccountOpen ? (
           <div className="auth-overlay">
@@ -5426,6 +5539,23 @@ function AdminSectionHeader({ activeSection, meta, onNavigate }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function AdminIssuePopup({ message, onClose }) {
+  return (
+    <div className="admin-error-overlay" role="alertdialog" aria-modal="true">
+      <section className="admin-error-popup">
+        <div>
+          <span>Ça n'a pas marché</span>
+          <h2>Action impossible</h2>
+          <p>{message}</p>
+        </div>
+        <button className="btn danger" type="button" onClick={onClose}>
+          Fermer
+        </button>
+      </section>
+    </div>
   );
 }
 
