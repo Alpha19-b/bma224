@@ -97,6 +97,22 @@ function buildMapsDirectionsUrl(latitude, longitude) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
+function buildDeliveryZone(order, mapsUrl, fallback = "Zone non précisée") {
+  if (order.fulfillment_type === "pickup") return "Retrait";
+
+  const localZone = [order.delivery_commune, order.delivery_quartier]
+    .filter(Boolean)
+    .join(", ");
+
+  if (localZone) return localZone;
+
+  if (order.delivery_location_type === "current_location" || order.delivery_map_label || mapsUrl) {
+    return order.delivery_map_label || "Position GPS";
+  }
+
+  return order.delivery_city || fallback;
+}
+
 async function createReceiptSignedUrl(pathOrUrl) {
   if (!pathOrUrl || !supabase) return "";
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
@@ -771,6 +787,7 @@ export async function fetchAdminOrders() {
         delivery_city,
         delivery_commune,
         delivery_quartier,
+        delivery_location_type,
         delivery_landmark,
         delivery_address,
         delivery_latitude,
@@ -792,7 +809,7 @@ export async function fetchAdminOrders() {
 
   if (
     error &&
-    /delivery_recipient_name|delivery_contact_phone|delivery_landmark|delivery_address|delivery_latitude|delivery_longitude|delivery_map_label|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
+    /delivery_recipient_name|delivery_contact_phone|delivery_location_type|delivery_landmark|delivery_address|delivery_latitude|delivery_longitude|delivery_map_label|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
       error.message || ""
     )
   ) {
@@ -933,12 +950,7 @@ export async function fetchAdminOrders() {
         userId: order.user_id,
         customer: order.delivery_recipient_name ?? order.guest_name ?? "Client connecté",
         phone: order.delivery_contact_phone ?? order.guest_phone ?? "-",
-        zone:
-          order.fulfillment_type === "pickup"
-            ? "Retrait"
-            : [order.delivery_commune, order.delivery_quartier]
-                .filter(Boolean)
-                .join(", ") || order.delivery_city || (mapsUrl ? "Position GPS" : "Zone non précisée"),
+        zone: buildDeliveryZone(order, mapsUrl),
         landmark: order.delivery_landmark || order.delivery_address || "",
         latitude,
         longitude,
@@ -1003,8 +1015,12 @@ export async function fetchCustomerOrders() {
         delivery_city,
         delivery_commune,
         delivery_quartier,
+        delivery_location_type,
         delivery_landmark,
         delivery_address,
+        delivery_latitude,
+        delivery_longitude,
+        delivery_map_label,
         fulfillment_type,
         payment_provider,
         payment_status,
@@ -1022,7 +1038,7 @@ export async function fetchCustomerOrders() {
 
   if (
     error &&
-    /delivery_recipient_name|delivery_contact_phone|delivery_landmark|delivery_address|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
+    /delivery_recipient_name|delivery_contact_phone|delivery_location_type|delivery_landmark|delivery_address|delivery_latitude|delivery_longitude|delivery_map_label|delivery_notes|user_id|djomi_transaction_id|djomi_payment_status/i.test(
       error.message || ""
     )
   ) {
@@ -1156,17 +1172,21 @@ export async function fetchCustomerOrders() {
       );
       const statusTone = getOrderStatusTone(order.order_status);
       const paymentTone = getPaymentTone(order);
+      const latitude = normalizeCoordinateValue(order.delivery_latitude);
+      const longitude = normalizeCoordinateValue(order.delivery_longitude);
+      const mapsUrl = buildMapsDirectionsUrl(latitude, longitude);
 
       return {
         id: order.order_number,
         rawId: order.id,
         customer: order.delivery_recipient_name ?? order.guest_name ?? "Client",
         phone: order.delivery_contact_phone ?? order.guest_phone ?? "",
-        zone:
-          [order.delivery_commune, order.delivery_quartier]
-            .filter(Boolean)
-            .join(", ") || order.delivery_city || "Livraison",
+        zone: buildDeliveryZone(order, mapsUrl, "Livraison"),
         landmark: order.delivery_landmark || order.delivery_address || "",
+        latitude,
+        longitude,
+        mapLabel: order.delivery_map_label ?? "",
+        mapsUrl,
         addressType: "Livraison",
         items: orderItems.length,
         itemsCount: orderItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
