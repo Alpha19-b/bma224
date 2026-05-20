@@ -6060,3 +6060,117 @@ textarea {
     flex: 0 0 40px;
   }
 }
+
+@media (max-width: 760px) {
+  .admin-main .section-head,
+  .admin-main .section-head.action-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .admin-main .section-head > div:first-child {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-main .section-head h2 {
+    max-width: 100%;
+    overflow-wrap: normal;
+    word-break: normal;
+    white-space: normal;
+  }
+
+  .admin-main .section-head .accounting-actions {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-top: 2px;
+  }
+
+  .admin-main .section-head.action-head .accounting-actions {
+    margin-left: 0;
+    flex: none;
+  }
+
+  .products-table td[data-label="Article"] {
+    display: block;
+  }
+
+  .products-table .product-cell {
+    display: grid;
+    grid-template-columns: 24px 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+  }
+
+  .products-table .product-cell .order-select-control {
+    margin: 0;
+  }
+
+  .products-table .product-cell img {
+    width: 68px;
+    height: 68px;
+  }
+
+  .products-table .inline-actions {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .products-table td[data-label="Stock"] {
+    align-items: center;
+  }
+
+  .products-table .stock-pill {
+    width: fit-content;
+    min-width: 42px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .accounting-table td[data-label="Date"] {
+    align-items: center;
+  }
+
+  .table-date-value {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    color: var(--ink);
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .accounting-table td[data-label="Date"] .order-select-control {
+    margin-right: 6px;
+  }
+}
+
+@media (max-width: 430px) {
+  .admin-main .section-head {
+    padding: 12px 10px;
+  }
+
+  .admin-main .section-head .accounting-actions {
+    gap: 7px;
+  }
+
+  .admin-main .section-head .accounting-actions .action-icon-button,
+  .admin-main .section-head .accounting-actions .product-add-button {
+    width: 48px;
+    min-width: 48px;
+    min-height: 46px;
+    border-radius: 10px;
+  }
+
+  .products-table tr,
+  .accounting-table tr {
+    padding: 12px;
+  }
+
+  .products-table td,
+  .accounting-table td {
+    grid-template-columns: 86px minmax(0, 1fr);
+  }
+}

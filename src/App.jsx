@@ -5117,7 +5117,7 @@ function AdminPage() {
                           />
                           <span>Sélectionner</span>
                         </label>
-                        {record.date}
+                        <span className="table-date-value">{record.date}</span>
                       </td>
                       <td data-label="Commande">
                         <strong>{record.orderId}</strong>
