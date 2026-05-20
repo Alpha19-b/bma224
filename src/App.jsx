@@ -411,6 +411,31 @@ function normalizeCoordinate(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function formatLocationAccuracy(accuracy) {
+  const meters = Number(accuracy);
+  if (!Number.isFinite(meters) || meters <= 0) return "";
+
+  if (meters >= 1000) {
+    return `précision environ ±${(meters / 1000).toFixed(1).replace(".", ",")} km`;
+  }
+
+  return `précision environ ±${Math.round(meters)} m`;
+}
+
+function formatLocationReadyMessage(accuracy) {
+  const precision = formatLocationAccuracy(accuracy);
+  if (!precision) return "Position enregistrée.";
+
+  const meters = Number(accuracy);
+  const hint = meters > 120 ? " Ajoute un repère pour aider la livraison." : "";
+  return `Position enregistrée, ${precision}.${hint}`;
+}
+
+function getLocationMapLabel(accuracy) {
+  const precision = formatLocationAccuracy(accuracy);
+  return precision ? `Position actuelle (${precision})` : "Position actuelle";
+}
+
 function getPaymentCallbackUrl(path) {
   const configuredUrl = import.meta.env.VITE_PUBLIC_SITE_URL?.trim();
   const baseUrl =
@@ -1175,24 +1200,86 @@ function ClientPage() {
       return;
     }
 
-    onStatus("Recherche de la position...");
+    let bestPosition = null;
+    let finished = false;
+    let watchId = null;
+    let fallbackTimer = null;
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const latitude = position.coords.latitude.toFixed(6);
-        const longitude = position.coords.longitude.toFixed(6);
-        onSuccess({ latitude, longitude });
-        onStatus("Position enregistrée.");
-      },
-      (error) => {
-        const message =
-          error.code === error.PERMISSION_DENIED
-            ? "Autorise la localisation dans le navigateur, puis réessaie."
-            : "Position introuvable. Vérifie le GPS ou la connexion.";
-        onStatus(message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    );
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 22000,
+      maximumAge: 0,
+    };
+
+    const clearTracking = () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+
+      if (fallbackTimer) {
+        window.clearTimeout(fallbackTimer);
+      }
+    };
+
+    const finishWithPosition = (position) => {
+      if (finished || !position) return;
+      finished = true;
+      clearTracking();
+
+      const accuracy = Number(position.coords.accuracy);
+      const cleanAccuracy = Number.isFinite(accuracy) ? Math.round(accuracy) : null;
+      const latitude = position.coords.latitude.toFixed(6);
+      const longitude = position.coords.longitude.toFixed(6);
+
+      onSuccess({ latitude, longitude, accuracy: cleanAccuracy });
+      onStatus(formatLocationReadyMessage(cleanAccuracy));
+    };
+
+    const handlePosition = (position) => {
+      if (
+        !bestPosition ||
+        Number(position.coords.accuracy || Infinity) < Number(bestPosition.coords.accuracy || Infinity)
+      ) {
+        bestPosition = position;
+      }
+
+      const accuracy = Math.round(Number(position.coords.accuracy || 0));
+      const precision = formatLocationAccuracy(accuracy);
+      onStatus(precision ? `GPS trouvé, stabilisation... ${precision}.` : "GPS trouvé, stabilisation...");
+
+      if (accuracy > 0 && accuracy <= 35) {
+        finishWithPosition(position);
+      }
+    };
+
+    const handleError = (error) => {
+      if (bestPosition) {
+        finishWithPosition(bestPosition);
+        return;
+      }
+
+      finished = true;
+      clearTracking();
+
+      const message =
+        error.code === error.PERMISSION_DENIED
+          ? "Autorise la localisation dans le navigateur, puis réessaie."
+          : "Position introuvable. Mets-toi près d'une fenêtre ou active le GPS.";
+      onStatus(message);
+    };
+
+    onStatus("Recherche GPS précise... reste quelques secondes sur place.");
+
+    watchId = navigator.geolocation.watchPosition(handlePosition, handleError, options);
+
+    fallbackTimer = window.setTimeout(() => {
+      if (bestPosition) {
+        finishWithPosition(bestPosition);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(finishWithPosition, handleError, options);
+    }, 9000);
   }
 
   function useLocationForAccount() {
@@ -1215,7 +1302,7 @@ function ClientPage() {
 
   function useLocationForCheckout() {
     requestBrowserLocation(
-      ({ latitude, longitude }) => {
+      ({ latitude, longitude, accuracy }) => {
         setCheckout((current) => ({
           ...current,
           city: "",
@@ -1223,7 +1310,7 @@ function ClientPage() {
           quartier: "",
           latitude,
           longitude,
-          mapLabel: "Position actuelle",
+          mapLabel: getLocationMapLabel(accuracy),
         }));
       },
       setCheckoutLocationStatus
