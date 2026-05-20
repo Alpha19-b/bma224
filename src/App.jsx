@@ -114,6 +114,135 @@ const commonColorSwatches = {
   Gris: "#667085",
 };
 
+function ActionIcon({ name }) {
+  const commonProps = {
+    className: "action-icon",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+    focusable: "false",
+  };
+
+  switch (name) {
+    case "trash":
+      return (
+        <svg {...commonProps}>
+          <path d="M3 6h18" />
+          <path d="M8 6V4h8v2" />
+          <path d="M6 6l1 15h10l1-15" />
+          <path d="M10 11v6" />
+          <path d="M14 11v6" />
+        </svg>
+      );
+    case "download":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 3v12" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      );
+    case "select":
+      return (
+        <svg {...commonProps}>
+          <rect x="4" y="4" width="16" height="16" rx="3" />
+          <path d="M8 12l3 3 5-6" />
+        </svg>
+      );
+    case "plus":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case "minus":
+      return (
+        <svg {...commonProps}>
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case "edit":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5l4 4L8 20H4v-4L16.5 3.5z" />
+        </svg>
+      );
+    case "package":
+      return (
+        <svg {...commonProps}>
+          <path d="M21 8l-9-5-9 5 9 5 9-5z" />
+          <path d="M3 8v8l9 5 9-5V8" />
+          <path d="M12 13v8" />
+        </svg>
+      );
+    case "check":
+      return (
+        <svg {...commonProps}>
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      );
+    case "x":
+      return (
+        <svg {...commonProps}>
+          <path d="M18 6L6 18" />
+          <path d="M6 6l12 12" />
+        </svg>
+      );
+    case "wallet":
+      return (
+        <svg {...commonProps}>
+          <path d="M4 7h16v12H4z" />
+          <path d="M16 12h4" />
+          <path d="M4 7l3-4h12" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function ActionButton({
+  icon,
+  label,
+  count,
+  className = "secondary",
+  type = "button",
+  title,
+  disabled,
+  onClick,
+  iconOnly = false,
+}) {
+  const buttonLabel = title || label;
+
+  return (
+    <button
+      className={[
+        "btn compact-btn action-icon-button",
+        className,
+        iconOnly ? "icon-only" : "",
+        count ? "has-count" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      type={type}
+      title={buttonLabel}
+      aria-label={buttonLabel}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <ActionIcon name={icon} />
+      <span className="action-label">{label}</span>
+      {count ? <strong className="action-count">{count}</strong> : null}
+    </button>
+  );
+}
+
 function matchesStyleFilter(product, filter) {
   if (filter === "all") return true;
   if (filter === "promo") return Boolean(product.promoPrice);
@@ -2370,9 +2499,14 @@ function CartPanel({
                       max={row.stock}
                       onChange={(value) => onQuantityChange(row.id, value)}
                     />
-                    <button className="btn ghost" onClick={() => onRemove(row.id)}>
-                      Supprimer
-                    </button>
+                    <ActionButton
+                      icon="trash"
+                      label="Retirer"
+                      className="ghost cart-remove-button"
+                      title={`Retirer ${row.name} du panier`}
+                      iconOnly
+                      onClick={() => onRemove(row.id)}
+                    />
                   </div>
                 )}
               </div>
@@ -4346,9 +4480,12 @@ function AdminPage() {
     return (
       <>
         <div className="section-tools">
-          <button className="btn secondary compact-btn" type="button" onClick={exportAllAdminData}>
-            Export complet Excel
-          </button>
+          <ActionButton
+            icon="download"
+            label="Export"
+            title="Exporter toutes les données"
+            onClick={exportAllAdminData}
+          />
         </div>
         <div className="stats admin-stats">
           <Stat label="Commandes ouvertes" value={openOrders.length} />
@@ -4433,27 +4570,31 @@ function AdminPage() {
               <span>Vêtements, accessoires, photos, prix et stock</span>
             </div>
             <div className="accounting-actions">
-              <button
-                className="btn secondary compact-btn"
-                type="button"
+              <ActionButton
+                icon="select"
+                label={allDisplayedProductsSelected ? "Décocher" : "Tout"}
+                title={allDisplayedProductsSelected ? "Tout décocher" : "Tout cocher"}
                 disabled={!displayedAdminProducts.length}
                 onClick={toggleAllDisplayedProductsSelection}
-              >
-                {allDisplayedProductsSelected ? "Tout décocher" : "Tout cocher"}
-              </button>
+              />
               {isSuperAdmin ? (
-                <button
-                  className="btn danger compact-btn"
-                  type="button"
+                <ActionButton
+                  icon="trash"
+                  label="Supprimer"
+                  count={selectedProductIds.length}
+                  className="danger"
+                  title="Supprimer les articles sélectionnés"
+                  iconOnly
                   disabled={!selectedProductIds.length || deletingActionId === "bulk:products"}
                   onClick={bulkDeleteProducts}
-                >
-                  Supprimer {selectedProductIds.length || ""}
-                </button>
+                />
               ) : null}
-              <button className="btn secondary compact-btn" type="button" onClick={exportProductsToExcel}>
-                {selectedProductIds.length ? "Excel sélection" : "Excel"}
-              </button>
+              <ActionButton
+                icon="download"
+                label="Excel"
+                title={selectedProductIds.length ? "Exporter la sélection" : "Exporter les articles"}
+                onClick={exportProductsToExcel}
+              />
               <button
                 className="product-add-button"
                 type="button"
@@ -4461,7 +4602,7 @@ function AdminPage() {
                 title="Ajouter un article"
                 onClick={openProductCreator}
               >
-                <span aria-hidden="true">+</span>
+                <ActionIcon name="plus" />
                 <b>Ajouter</b>
               </button>
             </div>
@@ -4537,36 +4678,35 @@ function AdminPage() {
                       </td>
                       <td data-label="Actions">
                         <div className="inline-actions">
-                          <button
-                            className="btn secondary"
-                            type="button"
+                          <ActionButton
+                            icon="edit"
+                            label="Modifier"
+                            title={`Modifier ${product.name}`}
                             onClick={() => startProductEdit(product)}
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            className="btn secondary"
-                            type="button"
+                          />
+                          <ActionButton
+                            icon="plus"
+                            label="Stock"
+                            title={`Ajouter une pièce au stock de ${product.name}`}
                             onClick={() => adjustStock(product.id, 1)}
-                          >
-                            + stock
-                          </button>
-                          <button
-                            className="btn ghost"
-                            type="button"
+                          />
+                          <ActionButton
+                            icon="minus"
+                            label="Stock"
+                            className="ghost"
+                            title={`Retirer une pièce du stock de ${product.name}`}
                             onClick={() => adjustStock(product.id, -1)}
-                          >
-                            - stock
-                          </button>
+                          />
                           {isSuperAdmin ? (
-                            <button
-                              className="btn danger"
-                              type="button"
+                            <ActionButton
+                              icon="trash"
+                              label="Supprimer"
+                              className="danger"
+                              title={`Supprimer ${product.name}`}
+                              iconOnly
                               disabled={deletingActionId === `product:${product.id}`}
                               onClick={() => deleteProductOwnerOnly(product)}
-                            >
-                              Supprimer
-                            </button>
+                            />
                           ) : null}
                         </div>
                       </td>
@@ -4730,43 +4870,46 @@ function AdminPage() {
       <div className="admin-stack">
         <div className="section-tools orders-bulk-bar">
           <strong>{selectedOrderIds.length} sélectionnée{selectedOrderIds.length > 1 ? "s" : ""}</strong>
-          <button
-            className="btn secondary compact-btn"
-            type="button"
+          <ActionButton
+            icon="package"
+            label="Préparer"
+            title="Mettre les commandes sélectionnées en préparation"
             disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("preparing")}
-          >
-            Préparation
-          </button>
-          <button
-            className="btn secondary compact-btn"
-            type="button"
+          />
+          <ActionButton
+            icon="check"
+            label="Livrer"
+            title="Marquer les commandes sélectionnées comme livrées"
             disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("delivered")}
-          >
-            Livrée
-          </button>
-          <button
-            className="btn ghost compact-btn"
-            type="button"
+          />
+          <ActionButton
+            icon="x"
+            label="Annuler"
+            className="ghost"
+            title="Annuler les commandes sélectionnées"
             disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("cancelled")}
-          >
-            Annuler
-          </button>
+          />
           {isSuperAdmin ? (
-            <button
-              className="btn danger compact-btn"
-              type="button"
+            <ActionButton
+              icon="trash"
+              label="Supprimer"
+              count={selectedOrderIds.length}
+              className="danger"
+              title="Supprimer les commandes sélectionnées"
+              iconOnly
               disabled={!selectedOrderIds.length || deletingActionId === "bulk:orders"}
               onClick={bulkDeleteOrders}
-            >
-              Supprimer
-            </button>
+            />
           ) : null}
-          <button className="btn secondary compact-btn" type="button" onClick={exportOrdersToExcel}>
-            {selectedOrderIds.length ? "Excel sélection" : "Excel"}
-          </button>
+          <ActionButton
+            icon="download"
+            label="Excel"
+            title={selectedOrderIds.length ? "Exporter la sélection" : "Exporter les commandes"}
+            onClick={exportOrdersToExcel}
+          />
         </div>
         <div className="admin-columns">
           <OrdersTable
@@ -4828,35 +4971,33 @@ function AdminPage() {
                 </div>
                 <OrderItemsList items={selectedOrder.orderItems} />
                 <div className="inline-actions vertical">
-                  <button
-                    className="btn secondary"
+                  <ActionButton
+                    icon="package"
+                    label="Préparer"
                     disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "preparing"}
                     onClick={() => updateOrderStatus(selectedOrder, "preparing")}
-                  >
-                    Mettre en préparation
-                  </button>
-                  <button
-                    className="btn secondary"
+                  />
+                  <ActionButton
+                    icon="check"
+                    label="Livrée"
                     disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "delivered"}
                     onClick={() => updateOrderStatus(selectedOrder, "delivered")}
-                  >
-                    Marquer livrée
-                  </button>
-                  <button
-                    className="btn ghost"
+                  />
+                  <ActionButton
+                    icon="x"
+                    label="Annuler"
+                    className="ghost"
                     disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "cancelled"}
                     onClick={() => updateOrderStatus(selectedOrder, "cancelled")}
-                  >
-                    Annuler
-                  </button>
+                  />
                   {isSuperAdmin ? (
-                    <button
-                      className="btn danger"
+                    <ActionButton
+                      icon="trash"
+                      label="Supprimer"
+                      className="danger"
                       disabled={deletingActionId === `order:${selectedOrder.rawId}`}
                       onClick={() => deleteOrderOwnerOnly(selectedOrder)}
-                    >
-                      Supprimer commande
-                    </button>
+                    />
                   ) : null}
                 </div>
               </>
@@ -4893,41 +5034,49 @@ function AdminPage() {
               <span>Commandes, achats, revient, encaissement et dépôt Orange Money</span>
             </div>
             <div className="accounting-actions">
-              <button
-                className="btn secondary compact-btn"
-                type="button"
+              <ActionButton
+                icon="select"
+                label={allAccountingSelected ? "Décocher" : "Tout"}
+                title={allAccountingSelected ? "Tout décocher" : "Tout cocher"}
                 disabled={!accountingRecords.length}
                 onClick={toggleAllAccountingSelection}
-              >
-                {allAccountingSelected ? "Tout décocher" : "Tout cocher"}
-              </button>
+              />
               {isSuperAdmin ? (
-                <button
-                  className="btn danger compact-btn"
-                  type="button"
+                <ActionButton
+                  icon="trash"
+                  label="Supprimer"
+                  count={selectedAccountingIds.length}
+                  className="danger"
+                  title="Supprimer les lignes sélectionnées"
+                  iconOnly
                   disabled={!selectedAccountingIds.length || deletingActionId === "bulk:accounting"}
                   onClick={bulkDeleteAccountingRecords}
-                >
-                  Supprimer {selectedAccountingIds.length || ""}
-                </button>
+                />
               ) : null}
-              <button className="btn secondary compact-btn" type="button" onClick={exportAccountingToExcel}>
-                {selectedAccountingIds.length ? "Excel sélection" : "Excel"}
-              </button>
+              <ActionButton
+                icon="download"
+                label="Excel"
+                title={selectedAccountingIds.length ? "Exporter la sélection" : "Exporter la comptabilité"}
+                onClick={exportAccountingToExcel}
+              />
               <button
                 className="product-add-button"
                 type="button"
+                title="Ajouter une vente manuelle"
+                aria-label="Ajouter une vente manuelle"
                 onClick={openManualSalePanel}
               >
-                <span aria-hidden="true">+</span>
+                <ActionIcon name="plus" />
                 <b>Vente</b>
               </button>
               <button
                 className="product-add-button secondary-action deposit-action"
                 type="button"
+                title="Enregistrer un dépôt Orange Money"
+                aria-label="Enregistrer un dépôt Orange Money"
                 onClick={openDepositPanel}
               >
-                <span aria-hidden="true">OM</span>
+                <ActionIcon name="wallet" />
                 <b>Dépôt</b>
               </button>
             </div>
@@ -4990,14 +5139,15 @@ function AdminPage() {
                       </td>
                       {isSuperAdmin ? (
                         <td data-label="Admin">
-                          <button
-                            className="btn danger compact-btn"
-                            type="button"
+                          <ActionButton
+                            icon="trash"
+                            label="Supprimer"
+                            className="danger"
+                            title={`Supprimer ${record.orderId}`}
+                            iconOnly
                             disabled={deletingActionId === `accounting:${record.id}`}
                             onClick={() => deleteAccountingOwnerOnly(record)}
-                          >
-                            Supprimer
-                          </button>
+                          />
                         </td>
                       ) : null}
                       <td data-label="Dépôt OM">
@@ -5308,9 +5458,12 @@ function AdminPage() {
     return (
       <div className="admin-stack">
         <div className="section-tools">
-          <button className="btn secondary compact-btn" type="button" onClick={exportAuditToExcel}>
-            Exporter audit Excel
-          </button>
+          <ActionButton
+            icon="download"
+            label="Excel"
+            title="Exporter l'audit"
+            onClick={exportAuditToExcel}
+          />
         </div>
         <div className="stats audit-stats">
           <Stat label="Argent suivi" value={formatCompact(totalRevenue)} />
@@ -5460,17 +5613,19 @@ function AdminPage() {
               <span>Commandes groupées par nom, téléphone ou compte connecté</span>
             </div>
             <div className="accounting-actions">
-              <button
-                className="btn secondary compact-btn"
-                type="button"
+              <ActionButton
+                icon="select"
+                label={allCustomersSelected ? "Décocher" : "Tout"}
+                title={allCustomersSelected ? "Tout décocher" : "Tout cocher"}
                 disabled={!customerGroups.length}
                 onClick={toggleAllCustomersSelection}
-              >
-                {allCustomersSelected ? "Tout décocher" : "Tout cocher"}
-              </button>
-              <button className="btn secondary compact-btn" type="button" onClick={exportCustomersToExcel}>
-                {selectedCustomerKeys.length ? "Excel sélection" : "Excel"}
-              </button>
+              />
+              <ActionButton
+                icon="download"
+                label="Excel"
+                title={selectedCustomerKeys.length ? "Exporter la sélection" : "Exporter les clients"}
+                onClick={exportCustomersToExcel}
+              />
             </div>
           </div>
           <div className="customer-list">
@@ -6082,14 +6237,13 @@ function OrdersTable({
           <h2>Commandes récentes</h2>
           <span>Historique des commandes du site</span>
         </div>
-        <button
-          className="btn secondary compact-btn"
-          type="button"
+        <ActionButton
+          icon="select"
+          label={allSelected ? "Décocher" : "Tout"}
+          title={allSelected ? "Tout décocher" : "Tout cocher"}
           disabled={!orders.length || updatingOrderId === "bulk"}
           onClick={onToggleAll}
-        >
-          {allSelected ? "Tout décocher" : "Tout cocher"}
-        </button>
+        />
       </div>
       <div className="table-wrap orders-table-wrap">
         <table className="table orders-table">

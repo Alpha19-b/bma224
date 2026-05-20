@@ -590,6 +590,40 @@ main {
   font-size: 13px;
 }
 
+.action-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+}
+
+.action-icon-button {
+  min-width: 40px;
+  white-space: nowrap;
+}
+
+.action-icon-button.icon-only {
+  width: 40px;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.action-icon-button.icon-only .action-label {
+  display: none;
+}
+
+.action-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(17, 24, 32, 0.1);
+  color: currentColor;
+  font-size: 11px;
+  line-height: 1;
+}
+
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.65;
@@ -3079,6 +3113,11 @@ textarea {
   line-height: 1;
 }
 
+.product-add-button .action-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .product-add-button b {
   font-size: 14px;
 }
@@ -3120,6 +3159,11 @@ textarea {
 .product-add-button.deposit-action span {
   font-size: 13px;
   letter-spacing: 0;
+}
+
+.product-add-button.deposit-action .action-icon {
+  width: 17px;
+  height: 17px;
 }
 
 .product-editor-overlay {
@@ -5834,5 +5878,124 @@ textarea {
 
   .detail-info {
     padding-bottom: calc(176px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 900px) {
+  .accounting-actions,
+  .section-tools,
+  .orders-bulk-bar {
+    gap: 6px;
+  }
+
+  .action-icon-button {
+    min-width: 40px;
+    white-space: nowrap;
+  }
+
+  .accounting-actions .action-icon-button .action-label,
+  .section-tools .action-icon-button .action-label,
+  .orders-bulk-bar .action-icon-button .action-label,
+  .products-table .inline-actions .action-icon-button .action-label,
+  .cart-remove-button .action-label {
+    display: none;
+  }
+
+  .accounting-actions .action-icon-button,
+  .section-tools .action-icon-button,
+  .orders-bulk-bar .action-icon-button,
+  .products-table .inline-actions .action-icon-button,
+  .cart-remove-button {
+    width: 40px;
+    min-width: 40px;
+    padding-right: 0;
+    padding-left: 0;
+    flex: 0 0 40px;
+  }
+
+  .accounting-actions .action-icon-button.has-count,
+  .orders-bulk-bar .action-icon-button.has-count,
+  .section-tools .action-icon-button.has-count {
+    width: auto;
+    min-width: 48px;
+    padding-right: 8px;
+    padding-left: 8px;
+    flex-basis: auto;
+  }
+
+  .product-add-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+  }
+
+  .product-add-button b {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .section-head .accounting-actions {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .section-head .accounting-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .orders-bulk-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .orders-bulk-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .orders-bulk-bar strong {
+    margin-right: 4px;
+    white-space: nowrap;
+  }
+
+  .products-table .inline-actions {
+    width: auto;
+    flex-wrap: nowrap;
+  }
+
+  .products-table .inline-actions .action-icon-button {
+    width: 40px;
+    min-width: 40px;
+    padding-right: 0;
+    padding-left: 0;
+    flex: 0 0 40px;
+  }
+
+  .inline-actions.vertical .action-icon-button {
+    width: 100%;
+    padding-right: 10px;
+    padding-left: 10px;
+    flex: 1 1 auto;
+  }
+
+  .inline-actions.vertical .action-icon-button .action-label {
+    display: inline;
+  }
+
+  .cart-row-actions .quantity-control {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .cart-row-actions .cart-remove-button {
+    width: 40px;
+    min-width: 40px;
+    flex: 0 0 40px;
   }
 }
