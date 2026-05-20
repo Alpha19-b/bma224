@@ -1521,7 +1521,7 @@ function ClientPage() {
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
           <span className="brand-mark">BMA</span>
-          <span>Mode & accessoires</span>
+          <span>BMA Family</span>
         </button>
 
         <div className="store-actions">
@@ -1645,9 +1645,9 @@ function ClientPage() {
 
         <section className="fashion-hero">
           <div>
-            <span>BMA Family</span>
+            <span>T'es seul ou t'es BMA ?</span>
             <h1>Bien Mieux À plusieurs.</h1>
-            <p>La famille des jeunes qui partagent les bons plans, créent le style et avancent ensemble.</p>
+            <p>Bons plans, style et énergie de la family. On choisit les pièces, tu commandes vite, on avance ensemble.</p>
             <div className="hero-stats">
               <strong>Bons plans mode</strong>
               <strong>Photos réelles</strong>
@@ -1659,13 +1659,13 @@ function ClientPage() {
             type="button"
             onClick={() => document.querySelector("#articles")?.scrollIntoView({ behavior: "smooth" })}
           >
-            Voir les articles
+            Entrer dans le drop
           </button>
         </section>
 
         <section className="store-proof-strip" aria-label="Avantages BMA">
           <div>
-            <strong>On est BMA</strong>
+            <strong>BMA, c'est nous</strong>
             <span>Une vibe, une famille, un mouvement</span>
           </div>
           <div>
@@ -1685,7 +1685,7 @@ function ClientPage() {
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h2>Drop du moment</h2>
+              <h2>Le drop de la Family</h2>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
@@ -1781,7 +1781,7 @@ function ClientPage() {
               {itemCount} article{itemCount > 1 ? "s" : ""}
             </span>
             <strong>{formatMoney(total)}</strong>
-            <span>Voir panier</span>
+            <span>Mon panier</span>
           </button>
         ) : null}
       </main>
@@ -1848,7 +1848,7 @@ function ProductCard({ product, onOpen }) {
               {product.colors?.length ? <span>{product.colors.length} couleur{product.colors.length > 1 ? "s" : ""}</span> : null}
             </>
           ) : (
-            <span>Prêt à commander</span>
+            <span>Prêt à rejoindre le panier</span>
           )}
         </div>
         {product.stock > 0 ? (
@@ -1861,7 +1861,7 @@ function ProductCard({ product, onOpen }) {
                 onOpen();
               }}
             >
-              {hasOptions ? "Choisir" : "Voir"}
+              {hasOptions ? "Choisir" : "Voir le look"}
             </button>
           </div>
         ) : (
@@ -2028,8 +2028,8 @@ function ClientAuthPanel({
     <section className="section client-auth-panel auth-card">
       <div className="section-head">
         <div>
-          <h2>Ton espace BMA</h2>
-          <span>Connecte-toi pour retrouver tes infos plus vite, ou continue sans compte.</span>
+          <h2>Rejoins la BMA Family</h2>
+          <span>Retrouve tes achats, ton adresse et tes paiements plus vite.</span>
         </div>
         <button className="btn ghost" type="button" onClick={onClose}>
           Fermer
@@ -2464,7 +2464,7 @@ function CartPanel({
       <aside className="cart-drawer" role="dialog" aria-modal="true" aria-label="Panier BMA">
         <div className="drawer-head">
           <div>
-            <h2>{showCheckout ? "Finaliser la commande" : "Panier"}</h2>
+            <h2>{showCheckout ? "Finaliser la commande" : "Ton panier BMA"}</h2>
             <span>
               {itemCount} article{itemCount > 1 ? "s" : ""}
             </span>
@@ -2512,7 +2512,7 @@ function CartPanel({
               </div>
             ))
           ) : (
-            <span className="empty">Aucun article ajouté.</span>
+            <span className="empty">Aucun article dans ton panier.</span>
           )}
         </div>
 
