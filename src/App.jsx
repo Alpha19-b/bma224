@@ -347,6 +347,10 @@ function getFriendlyErrorMessage(error, context = "") {
     return "La fonction SQL de suppression commande n'est pas encore corrigée dans Supabase. Exécute le fichier supabase_owner_delete_order_fix.sql puis réessaie.";
   }
 
+  if (source.includes("accounting_entry_id") && source.includes("ambiguous")) {
+    return "La fonction SQL de suppression comptable n'est pas encore corrigée dans Supabase. Exécute le fichier supabase_owner_delete_accounting_fix.sql puis réessaie.";
+  }
+
   if (source.includes("bucket") || source.includes("storage")) {
     return "Le stockage des reçus n'est pas encore configuré.";
   }

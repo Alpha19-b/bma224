@@ -120,8 +120,8 @@ begin
 
   if to_regclass('public.orange_money_deposit_items') is not null then
     with deleted_items as (
-      delete from public.orange_money_deposit_items
-      where accounting_entry_id = p_entry_id
+      delete from public.orange_money_deposit_items odi
+      where odi.accounting_entry_id = p_entry_id
       returning deposit_id
     )
     select array_agg(deposit_id)
@@ -205,8 +205,8 @@ begin
 
   if to_regclass('public.orange_money_deposit_items') is not null then
     with deleted_items as (
-      delete from public.orange_money_deposit_items
-      where accounting_entry_id = any(coalesce(v_accounting_ids, array[]::uuid[]))
+      delete from public.orange_money_deposit_items odi
+      where odi.accounting_entry_id = any(coalesce(v_accounting_ids, array[]::uuid[]))
       returning deposit_id
     )
     select array_agg(deposit_id)
