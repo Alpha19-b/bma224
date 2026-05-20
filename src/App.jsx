@@ -4648,6 +4648,7 @@ function AdminPage() {
                           <label className="order-select-control product-select-control">
                             <input
                               type="checkbox"
+                              aria-label={`Sélectionner ${product.name}`}
                               checked={isChecked}
                               onChange={() => toggleProductSelection(product.id)}
                             />
@@ -5110,6 +5111,7 @@ function AdminPage() {
                         <label className="order-select-control">
                           <input
                             type="checkbox"
+                            aria-label={`Sélectionner ${record.orderId}`}
                             checked={isChecked}
                             onChange={() => toggleAccountingSelection(record.id)}
                           />
@@ -5643,6 +5645,7 @@ function AdminPage() {
                   <label className="order-select-control">
                     <input
                       type="checkbox"
+                      aria-label={`Sélectionner ${customer.name}`}
                       checked={isChecked}
                       onChange={() => toggleCustomerSelection(customer.key)}
                     />
@@ -6284,6 +6287,7 @@ function OrdersTable({
                       <label className="order-select-control" onClick={(event) => event.stopPropagation()}>
                         <input
                           type="checkbox"
+                          aria-label={`Sélectionner ${order.id}`}
                           checked={isChecked}
                           onChange={() => onToggleOrder(order.rawId)}
                         />
