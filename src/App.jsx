@@ -1645,13 +1645,13 @@ function ClientPage() {
 
         <section className="fashion-hero">
           <div>
-            <span>BMA</span>
-            <h1>Les looks BMA du moment.</h1>
-            <p>Habits et accessoires choisis pour sortir fort, commander vite et payer simplement en ligne.</p>
+            <span>BMA Family</span>
+            <h1>Bien Mieux À plusieurs.</h1>
+            <p>La famille des jeunes qui partagent les bons plans, créent le style et avancent ensemble.</p>
             <div className="hero-stats">
-              <strong>Nouveautés mode</strong>
-              <strong>Paiement sécurisé</strong>
-              <strong>Livraison rapide</strong>
+              <strong>Bons plans mode</strong>
+              <strong>Photos réelles</strong>
+              <strong>Paiement simple</strong>
             </div>
           </div>
           <button
@@ -1665,20 +1665,20 @@ function ClientPage() {
 
         <section className="store-proof-strip" aria-label="Avantages BMA">
           <div>
-            <strong>Photos réelles</strong>
-            <span>Tu vois l'article avant de commander</span>
+            <strong>On est BMA</strong>
+            <span>Une vibe, une famille, un mouvement</span>
           </div>
           <div>
-            <strong>Paiement Djomi</strong>
-            <span>Validation rapide et suivie</span>
+            <strong>Looks choisis</strong>
+            <span>Habits et accessoires qui parlent aux jeunes</span>
           </div>
           <div>
-            <strong>Livraison simple</strong>
+            <strong>Commande facile</strong>
             <span>Repère clair ou position GPS</span>
           </div>
           <div>
-            <strong>Compte optionnel</strong>
-            <span>Commande vite, crée un compte si tu veux</span>
+            <strong>Suivi propre</strong>
+            <span>Compte optionnel, historique si tu veux</span>
           </div>
         </section>
 
