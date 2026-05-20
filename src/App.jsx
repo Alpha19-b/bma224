@@ -114,6 +114,24 @@ const commonColorSwatches = {
   Gris: "#667085",
 };
 
+function getKnownColorHex(label) {
+  const normalizedLabel = String(label || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+  const match = Object.entries(commonColorSwatches).find(
+    ([name]) =>
+      name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase() === normalizedLabel
+  );
+
+  return match?.[1] || "";
+}
+
 function ActionIcon({ name }) {
   const commonProps = {
     className: "action-icon",
@@ -272,12 +290,14 @@ function getProductColorOptions(product) {
   return (product.colors ?? [])
     .map((color) => {
       if (typeof color === "string") {
-        return { value: color.trim(), hex: commonColorSwatches[color.trim()] || "" };
+        const value = color.trim();
+        return { value, hex: getKnownColorHex(value) };
       }
 
+      const value = String(color?.value ?? "").trim();
       return {
-        value: String(color?.value ?? "").trim(),
-        hex: color?.hex || commonColorSwatches[color?.value] || "",
+        value,
+        hex: color?.hex || getKnownColorHex(value),
       };
     })
     .filter((color) => {
@@ -290,7 +310,7 @@ function getProductColorOptions(product) {
 function getColorSwatchStyle(color) {
   const label = typeof color === "string" ? color : color?.value;
   const hex = typeof color === "string" ? "" : color?.hex;
-  return { background: hex || commonColorSwatches[label] || "#d9e1ea" };
+  return { background: hex || getKnownColorHex(label) || "#d9e1ea" };
 }
 
 function getSessionProfile(session, profile = null) {
@@ -342,7 +362,7 @@ function parseColorText(value) {
   return splitOptionText(value).map((entry) => {
     const match = entry.match(/^(.+?)(?:\s*[:|]\s*|\s+)(#[0-9a-fA-F]{6})$/);
     const label = (match ? match[1] : entry).trim();
-    const hex = match?.[2] || commonColorSwatches[label] || "";
+    const hex = match?.[2] || getKnownColorHex(label);
     return { value: label, hex };
   });
 }
