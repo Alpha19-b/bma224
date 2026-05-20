@@ -54,6 +54,12 @@ const getPurchasePrice = (product) =>
   product.purchasePrice ?? Math.round(getProductPrice(product) * 0.65);
 const getCostPrice = (product) =>
   product.costPrice ?? Math.round(getProductPrice(product) * 0.78);
+const lowStockLabel = (stock) => {
+  const count = Number(stock || 0);
+  if (count <= 0) return "Indisponible";
+  if (count <= 3) return `Plus que ${count} en stock`;
+  return "Disponible maintenant";
+};
 const DELIVERY_FEE_GNF = 0;
 
 const emptyCheckout = {
@@ -1904,6 +1910,8 @@ function ProductCard({ product, onOpen }) {
   const gallery = product.images?.length ? product.images : [product.image];
   const [activeImage, setActiveImage] = useState(gallery[0]);
   const hasOptions = Boolean(product.sizes?.length || product.colors?.length);
+  const colorOptions = getProductColorOptions(product);
+  const visibleColors = colorOptions.slice(0, 4);
   const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
 
   return (
@@ -1955,12 +1963,29 @@ function ProductCard({ product, onOpen }) {
           {hasOptions ? (
             <>
               {product.sizes?.length ? <span>{product.sizes.slice(0, 4).join(", ")}</span> : null}
-              {product.colors?.length ? <span>{product.colors.length} couleur{product.colors.length > 1 ? "s" : ""}</span> : null}
+              {product.stock > 0 ? (
+                <span>{lowStock ? `${product.stock} restant${product.stock > 1 ? "s" : ""}` : "Stock dispo"}</span>
+              ) : null}
             </>
           ) : (
             <span>Prêt à rejoindre le panier</span>
           )}
         </div>
+        {visibleColors.length ? (
+          <div className="product-color-row" aria-label="Couleurs disponibles">
+            {visibleColors.map((color) => (
+              <span
+                className="color-dot"
+                key={color.value}
+                style={getColorSwatchStyle(color)}
+                title={color.value}
+              />
+            ))}
+            {colorOptions.length > visibleColors.length ? (
+              <small>+{colorOptions.length - visibleColors.length}</small>
+            ) : null}
+          </div>
+        ) : null}
         {product.stock > 0 ? (
           <div className="product-buy-row">
             <button
@@ -2049,6 +2074,17 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             {product.promoPrice ? <span>{formatMoney(product.price)}</span> : null}
           </div>
           {product.description ? <p>{product.description}</p> : null}
+          <div className="detail-trust-strip" aria-label="Infos commande">
+            <span>Photos réelles</span>
+            <span>Paiement Djomi</span>
+            <span>Livraison GPS ou repère</span>
+          </div>
+          {product.stock > 0 ? (
+            <div className="detail-stock-note">
+              <strong>{lowStockLabel(product.stock)}</strong>
+              <span>La taille, la couleur et la quantité choisies partent avec la commande.</span>
+            </div>
+          ) : null}
 
           {sizeOptions.length ? (
             <div className="option-group">
@@ -2718,6 +2754,13 @@ function CartPanel({
             <span>Total</span>
             <span>{formatMoney(total)}</span>
           </div>
+          {showCheckout ? (
+            <div className="checkout-assurance" aria-label="Sécurité commande">
+              <span>Paiement Djomi</span>
+              <span>GPS ou repère</span>
+              <span>Suivi dans Mes achats</span>
+            </div>
+          ) : null}
           {checkoutStatus ? (
             <div className={`checkout-status ${checkoutStatus.tone}`}>
               {checkoutStatus.text}
