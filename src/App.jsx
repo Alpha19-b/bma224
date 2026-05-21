@@ -62,6 +62,92 @@ const lowStockLabel = (stock) => {
 };
 const DELIVERY_FEE_GNF = 0;
 
+const ORDER_RECEIVED_STATUSES = new Set(["pending_payment", "confirmed"]);
+const ORDER_PREPARING_STATUSES = new Set([
+  "preparing",
+  "ready",
+  "ready_for_pickup",
+  "assigned_to_delivery",
+  "in_delivery",
+]);
+const ORDER_TERMINAL_STATUSES = new Set(["delivered", "cancelled", "delivery_failed"]);
+
+const orderFilterOptions = [
+  { value: "open", label: "À traiter" },
+  { value: "received", label: "Reçues" },
+  { value: "preparing", label: "Préparation" },
+  { value: "unpaid", label: "À payer" },
+  { value: "paid", label: "Payées" },
+  { value: "delivered", label: "Livrées" },
+  { value: "cancelled", label: "Annulées" },
+  { value: "all", label: "Tout" },
+];
+
+const clientOrderFilterOptions = [
+  { value: "open", label: "En cours" },
+  { value: "unpaid", label: "À payer" },
+  { value: "paid", label: "Payées" },
+  { value: "delivered", label: "Livrées" },
+  { value: "all", label: "Tout" },
+];
+
+function isOrderPaid(order) {
+  return order?.paymentTone === "paid" || order?.payment === "Payé" || order?.payment === "Paye";
+}
+
+function matchesOrderFilter(order, filter) {
+  if (filter === "all") return true;
+  if (filter === "open") return !ORDER_TERMINAL_STATUSES.has(order.rawStatus);
+  if (filter === "received") return ORDER_RECEIVED_STATUSES.has(order.rawStatus);
+  if (filter === "preparing") return ORDER_PREPARING_STATUSES.has(order.rawStatus);
+  if (filter === "unpaid") return !isOrderPaid(order);
+  if (filter === "paid") return isOrderPaid(order);
+  if (filter === "delivered") return order.rawStatus === "delivered";
+  if (filter === "cancelled") return ["cancelled", "delivery_failed"].includes(order.rawStatus);
+  return true;
+}
+
+function countOrdersByFilter(orders, filter) {
+  return orders.filter((order) => matchesOrderFilter(order, filter)).length;
+}
+
+function canMoveOrderStatus(order, nextStatus) {
+  if (!order?.rawStatus) return false;
+  if (order.rawStatus === nextStatus) return false;
+  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus)) return false;
+
+  if (nextStatus === "preparing") {
+    return ORDER_RECEIVED_STATUSES.has(order.rawStatus);
+  }
+
+  if (nextStatus === "delivered") {
+    return ORDER_PREPARING_STATUSES.has(order.rawStatus) && isOrderPaid(order);
+  }
+
+  if (nextStatus === "cancelled") {
+    return order.rawStatus !== "delivered";
+  }
+
+  return false;
+}
+
+function getStatusMoveBlockReason(order, nextStatus) {
+  if (!order?.rawStatus) return "Commande introuvable.";
+  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus)) {
+    return "Cette commande est déjà terminée. Son statut ne peut plus revenir en arrière.";
+  }
+  if (nextStatus === "delivered" && !isOrderPaid(order)) {
+    return "Impossible de livrer une commande dont le paiement n'est pas confirmé.";
+  }
+  if (nextStatus === "delivered" && !ORDER_PREPARING_STATUSES.has(order.rawStatus)) {
+    return "Mets d'abord la commande en préparation avant de la marquer livrée.";
+  }
+  if (nextStatus === "preparing" && !ORDER_RECEIVED_STATUSES.has(order.rawStatus)) {
+    return "Cette commande ne peut pas revenir en préparation.";
+  }
+  return "Transition de statut non autorisée.";
+}
+
 const emptyCheckout = {
   recipientName: "",
   contactPhone: "",
@@ -1581,53 +1667,6 @@ function ClientPage() {
     window.location.assign(paymentResult.data.paymentUrl);
   }
 
-  async function handleVerifyCustomerOrderPayment(order) {
-    if (clientOrderPaymentId) return;
-
-    if (!order?.rawId) {
-      setClientOrdersMessage({
-        tone: "issue",
-        text: "Commande introuvable. Actualise tes achats puis reessaie.",
-      });
-      return;
-    }
-
-    setClientOrderPaymentId(order.rawId);
-    setClientOrdersMessage({
-      tone: "waiting",
-      text: "Verification du paiement...",
-    });
-
-    const { data, error } = await confirmDjomiPayment({ order_id: order.rawId });
-
-    setClientOrderPaymentId("");
-
-    if (error) {
-      setClientOrdersMessage({
-        tone: "issue",
-        text: `Paiement non verifie : ${getFriendlyErrorMessage(error, "payment")}`,
-      });
-      return;
-    }
-
-    if (data?.paid === false) {
-      setClientOrdersMessage({
-        tone: "waiting",
-        text:
-          data.message ||
-          "Djomi ne confirme pas encore ce paiement. Si tu n'as pas fini, relance le paiement.",
-      });
-      loadClientOrders();
-      return;
-    }
-
-    setClientOrdersMessage({
-      tone: "paid",
-      text: "Paiement confirme. Commande mise a jour.",
-    });
-    loadClientOrders();
-  }
-
   return (
     <div className="storefront">
       <header className="store-header">
@@ -1754,7 +1793,6 @@ function ClientPage() {
               onClose={() => setClientOrdersOpen(false)}
               onPay={handlePayCustomerOrder}
               onRefresh={loadClientOrders}
-              onVerifyPayment={handleVerifyCustomerOrderPayment}
             />
           </div>
         ) : null}
@@ -2363,12 +2401,13 @@ function ClientOrdersPanel({
   onClose,
   onPay,
   onRefresh,
-  onVerifyPayment,
 }) {
+  const [clientOrderFilter, setClientOrderFilter] = useState("open");
   const paidCount = orders.filter((order) => order.paymentTone === "paid").length;
   const openCount = orders.filter(
     (order) => !["delivered", "cancelled", "delivery_failed"].includes(order.rawStatus)
   ).length;
+  const visibleOrders = orders.filter((order) => matchesOrderFilter(order, clientOrderFilter));
 
   return (
     <section className="section client-auth-panel auth-card client-orders-panel">
@@ -2393,7 +2432,7 @@ function ClientOrdersPanel({
           <strong>{orders.length}</strong>
         </div>
         <div>
-          <span>Payees</span>
+          <span>Payées</span>
           <strong>{paidCount}</strong>
         </div>
         <div>
@@ -2408,11 +2447,25 @@ function ClientOrdersPanel({
         </div>
       ) : null}
 
+      <div className="order-filter-tabs client-order-tabs" aria-label="Filtrer mes achats">
+        {clientOrderFilterOptions.map((filter) => (
+          <button
+            className={clientOrderFilter === filter.value ? "active" : ""}
+            key={filter.value}
+            type="button"
+            onClick={() => setClientOrderFilter(filter.value)}
+          >
+            <span>{filter.label}</span>
+            <strong>{countOrdersByFilter(orders, filter.value)}</strong>
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="empty-state compact">Chargement de tes achats...</div>
-      ) : orders.length ? (
+      ) : visibleOrders.length ? (
         <div className="client-order-list">
-          {orders.map((order) => {
+          {visibleOrders.map((order) => {
             const canPay =
               order.paymentTone !== "paid" &&
               !["cancelled", "delivery_failed", "delivered"].includes(order.rawStatus);
@@ -2451,16 +2504,6 @@ function ClientOrdersPanel({
 
                 {canPay ? (
                   <div className="client-order-payment-actions">
-                    {order.hasDjomiTransaction ? (
-                      <button
-                        className={`btn secondary ${isPaying ? "loading" : ""}`}
-                        type="button"
-                        disabled={Boolean(payingOrderId)}
-                        onClick={() => onVerifyPayment(order)}
-                      >
-                        {isPaying ? "Verification..." : "Verifier le paiement"}
-                      </button>
-                    ) : null}
                     <button
                       className={`btn ${isPaying ? "loading" : ""}`}
                       type="button"
@@ -2477,7 +2520,9 @@ function ClientOrdersPanel({
         </div>
       ) : (
         <div className="empty-state compact">
-          Aucun achat pour le moment. Tes commandes connectees apparaitront ici.
+          {orders.length
+            ? "Aucune commande dans cette vue."
+            : "Aucun achat pour le moment. Tes commandes connectées apparaîtront ici."}
         </div>
       )}
     </section>
@@ -2789,6 +2834,7 @@ function AdminPage() {
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
+  const [orderFilter, setOrderFilter] = useState("open");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
   const [adminConfirm, setAdminConfirm] = useState(null);
@@ -3266,8 +3312,14 @@ function AdminPage() {
   const deliveredUnpaidOrders = adminOrders.filter(
     (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
   );
-  const selectedOrders = adminOrders.filter((order) => selectedOrderIds.includes(order.rawId));
-  const allOrdersSelected = adminOrders.length > 0 && selectedOrderIds.length === adminOrders.length;
+  const visibleAdminOrders = adminOrders.filter((order) => matchesOrderFilter(order, orderFilter));
+  const selectedOrders = visibleAdminOrders.filter((order) => selectedOrderIds.includes(order.rawId));
+  const allOrdersSelected =
+    visibleAdminOrders.length > 0 &&
+    visibleAdminOrders.every((order) => selectedOrderIds.includes(order.rawId));
+  const canPrepareSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "preparing"));
+  const canDeliverSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "delivered"));
+  const canCancelSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "cancelled"));
   const selectedProducts = adminProducts.filter((product) => selectedProductIds.includes(product.id));
   const allDisplayedProductsSelected =
     displayedAdminProducts.length > 0 &&
@@ -3460,7 +3512,7 @@ function AdminPage() {
   }
 
   function exportOrdersToExcel() {
-    const rowsToExport = selectedOrders.length ? selectedOrders : adminOrders;
+    const rowsToExport = selectedOrders.length ? selectedOrders : visibleAdminOrders;
 
     downloadExcelWorkbook(`bma-commandes-${getTodayDateInput()}`, [
       {
@@ -3719,7 +3771,7 @@ function AdminPage() {
   }
 
   function toggleAllOrdersSelection() {
-    setSelectedOrderIds(allOrdersSelected ? [] : adminOrders.map((order) => order.rawId));
+    setSelectedOrderIds(allOrdersSelected ? [] : visibleAdminOrders.map((order) => order.rawId));
   }
 
   function toggleProductSelection(productId) {
@@ -3804,9 +3856,16 @@ function AdminPage() {
       return;
     }
 
+    const movableOrders = selectedOrders.filter((order) => canMoveOrderStatus(order, nextStatus));
+
+    if (!movableOrders.length) {
+      showToast(getStatusMoveBlockReason(selectedOrders[0], nextStatus), "issue");
+      return;
+    }
+
     setUpdatingOrderId("bulk");
     const results = await Promise.all(
-      selectedOrders.map((order) => updateAdminOrderStatus(order.rawId, nextStatus))
+      movableOrders.map((order) => updateAdminOrderStatus(order.rawId, nextStatus))
     );
     setUpdatingOrderId("");
 
@@ -3815,7 +3874,12 @@ function AdminPage() {
     if (failed.length) {
       showToast(`${failed.length} commande(s) non modifiee(s).`, "issue");
     } else {
-      showToast(`${selectedOrders.length} commande(s) mise(s) a jour.`);
+      const skippedCount = selectedOrders.length - movableOrders.length;
+      showToast(
+        skippedCount
+          ? `${movableOrders.length} commande(s) mise(s) a jour, ${skippedCount} ignoree(s).`
+          : `${movableOrders.length} commande(s) mise(s) a jour.`
+      );
       setSelectedOrderIds([]);
     }
 
@@ -4298,6 +4362,11 @@ function AdminPage() {
 
     if (!targetOrder?.rawId) {
       showToast("Commande introuvable.", "issue");
+      return;
+    }
+
+    if (!canMoveOrderStatus(targetOrder, nextStatus)) {
+      showToast(getStatusMoveBlockReason(targetOrder, nextStatus), "issue");
       return;
     }
 
@@ -4991,20 +5060,36 @@ function AdminPage() {
   function renderOrders() {
     return (
       <div className="admin-stack">
+        <div className="order-filter-tabs" aria-label="Filtrer les commandes">
+          {orderFilterOptions.map((filter) => (
+            <button
+              className={orderFilter === filter.value ? "active" : ""}
+              key={filter.value}
+              type="button"
+              onClick={() => {
+                setOrderFilter(filter.value);
+                setSelectedOrderIds([]);
+              }}
+            >
+              <span>{filter.label}</span>
+              <strong>{countOrdersByFilter(adminOrders, filter.value)}</strong>
+            </button>
+          ))}
+        </div>
         <div className="section-tools orders-bulk-bar">
           <strong>{selectedOrderIds.length} sélectionnée{selectedOrderIds.length > 1 ? "s" : ""}</strong>
           <ActionButton
             icon="package"
             label="Préparer"
             title="Mettre les commandes sélectionnées en préparation"
-            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            disabled={!canPrepareSelectedOrders || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("preparing")}
           />
           <ActionButton
             icon="check"
             label="Livrer"
             title="Marquer les commandes sélectionnées comme livrées"
-            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            disabled={!canDeliverSelectedOrders || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("delivered")}
           />
           <ActionButton
@@ -5012,7 +5097,7 @@ function AdminPage() {
             label="Annuler"
             className="ghost"
             title="Annuler les commandes sélectionnées"
-            disabled={!selectedOrderIds.length || updatingOrderId === "bulk"}
+            disabled={!canCancelSelectedOrders || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("cancelled")}
           />
           {isSuperAdmin ? (
@@ -5036,11 +5121,12 @@ function AdminPage() {
         </div>
         <div className="admin-columns">
           <OrdersTable
-            orders={adminOrders}
+            orders={visibleAdminOrders}
             onSelect={setSelectedOrder}
             onToggleAll={toggleAllOrdersSelection}
             onToggleOrder={toggleOrderSelection}
             allSelected={allOrdersSelected}
+            filterLabel={orderFilterOptions.find((filter) => filter.value === orderFilter)?.label}
             selectedOrderId={selectedOrder?.id}
             selectedOrderIds={selectedOrderIds}
             updatingOrderId={updatingOrderId}
@@ -5097,20 +5183,29 @@ function AdminPage() {
                   <ActionButton
                     icon="package"
                     label="Préparer"
-                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "preparing"}
+                    disabled={
+                      updatingOrderId === selectedOrder.id ||
+                      !canMoveOrderStatus(selectedOrder, "preparing")
+                    }
                     onClick={() => updateOrderStatus(selectedOrder, "preparing")}
                   />
                   <ActionButton
                     icon="check"
                     label="Livrée"
-                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "delivered"}
+                    disabled={
+                      updatingOrderId === selectedOrder.id ||
+                      !canMoveOrderStatus(selectedOrder, "delivered")
+                    }
                     onClick={() => updateOrderStatus(selectedOrder, "delivered")}
                   />
                   <ActionButton
                     icon="x"
                     label="Annuler"
                     className="ghost"
-                    disabled={updatingOrderId === selectedOrder.id || selectedOrder.rawStatus === "cancelled"}
+                    disabled={
+                      updatingOrderId === selectedOrder.id ||
+                      !canMoveOrderStatus(selectedOrder, "cancelled")
+                    }
                     onClick={() => updateOrderStatus(selectedOrder, "cancelled")}
                   />
                   {isSuperAdmin ? (
@@ -6351,6 +6446,7 @@ function OrdersTable({
   onToggleAll,
   onToggleOrder,
   allSelected = false,
+  filterLabel = "",
   selectedOrderId = "",
   selectedOrderIds = [],
   updatingOrderId = "",
@@ -6359,8 +6455,10 @@ function OrdersTable({
     <section className="section">
       <div className="section-head">
         <div>
-          <h2>Commandes récentes</h2>
-          <span>Historique des commandes du site</span>
+          <h2>{filterLabel ? `Commandes - ${filterLabel}` : "Commandes"}</h2>
+          <span>
+            {orders.length} commande{orders.length > 1 ? "s" : ""} dans cette vue
+          </span>
         </div>
         <ActionButton
           icon="select"

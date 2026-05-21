@@ -3172,6 +3172,55 @@ textarea {
   font-size: 14px;
 }
 
+.order-filter-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 6px;
+  scrollbar-width: thin;
+}
+
+.order-filter-tabs button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 10px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.order-filter-tabs button.active {
+  border-color: #111820;
+  background: #111820;
+  color: #fff;
+}
+
+.order-filter-tabs strong {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #eef3f8;
+  color: #111820;
+  font-size: 12px;
+}
+
+.order-filter-tabs button.active strong {
+  background: #f4c542;
+  color: #111820;
+}
+
+.client-order-tabs {
+  margin: 14px 22px 0;
+  padding-bottom: 0;
+}
+
 .product-add-button.secondary-action {
   background: var(--green);
   border-color: var(--green);
@@ -5865,6 +5914,10 @@ textarea {
 
   .client-order-list {
     padding: 12px;
+  }
+
+  .client-order-tabs {
+    margin: 12px 12px 0;
   }
 
   .client-order-head,
