@@ -1637,7 +1637,7 @@ function ClientPage() {
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
           <span className="brand-mark">BMA</span>
-          <span>BMA Family</span>
+          <span>BMA</span>
         </button>
 
         <div className="store-actions">
@@ -1761,13 +1761,13 @@ function ClientPage() {
 
         <section className="fashion-hero">
           <div>
-            <span>T'es seul ou t'es BMA ?</span>
-            <h1>Bien Mieux À plusieurs.</h1>
-            <p>Bons plans, style et énergie de la family. On choisit les pièces, tu commandes vite, on avance ensemble.</p>
+            <span>BMA</span>
+            <h1>Mode et accessoires sélectionnés.</h1>
+            <p>Des articles disponibles, des photos réelles, un paiement simple et une livraison avec repère ou GPS.</p>
             <div className="hero-stats">
-              <strong>Bons plans mode</strong>
+              <strong>Stock affiché</strong>
               <strong>Photos réelles</strong>
-              <strong>Paiement simple</strong>
+              <strong>Paiement Djomi</strong>
             </div>
           </div>
           <button
@@ -1775,33 +1775,14 @@ function ClientPage() {
             type="button"
             onClick={() => document.querySelector("#articles")?.scrollIntoView({ behavior: "smooth" })}
           >
-            Entrer dans le drop
+            Voir les articles
           </button>
-        </section>
-
-        <section className="store-proof-strip" aria-label="Avantages BMA">
-          <div>
-            <strong>BMA, c'est nous</strong>
-            <span>Une vibe, une famille, un mouvement</span>
-          </div>
-          <div>
-            <strong>Looks choisis</strong>
-            <span>Habits et accessoires qui parlent aux jeunes</span>
-          </div>
-          <div>
-            <strong>Commande facile</strong>
-            <span>Repère clair ou position GPS</span>
-          </div>
-          <div>
-            <strong>Suivi propre</strong>
-            <span>Compte optionnel, historique si tu veux</span>
-          </div>
         </section>
 
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h2>Le drop de la Family</h2>
+              <h2>Articles disponibles</h2>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
@@ -2074,15 +2055,10 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             {product.promoPrice ? <span>{formatMoney(product.price)}</span> : null}
           </div>
           {product.description ? <p>{product.description}</p> : null}
-          <div className="detail-trust-strip" aria-label="Infos commande">
-            <span>Photos réelles</span>
-            <span>Paiement Djomi</span>
-            <span>Livraison GPS ou repère</span>
-          </div>
           {product.stock > 0 ? (
             <div className="detail-stock-note">
               <strong>{lowStockLabel(product.stock)}</strong>
-              <span>La taille, la couleur et la quantité choisies partent avec la commande.</span>
+              <span>Taille, couleur et quantité enregistrées dans la commande.</span>
             </div>
           ) : null}
 
@@ -2174,7 +2150,7 @@ function ClientAuthPanel({
     <section className="section client-auth-panel auth-card">
       <div className="section-head">
         <div>
-          <h2>Rejoins la BMA Family</h2>
+          <h2>Connexion BMA</h2>
           <span>Retrouve tes achats, ton adresse et tes paiements plus vite.</span>
         </div>
         <button className="btn ghost" type="button" onClick={onClose}>
@@ -2754,13 +2730,6 @@ function CartPanel({
             <span>Total</span>
             <span>{formatMoney(total)}</span>
           </div>
-          {showCheckout ? (
-            <div className="checkout-assurance" aria-label="Sécurité commande">
-              <span>Paiement Djomi</span>
-              <span>GPS ou repère</span>
-              <span>Suivi dans Mes achats</span>
-            </div>
-          ) : null}
           {checkoutStatus ? (
             <div className={`checkout-status ${checkoutStatus.tone}`}>
               {checkoutStatus.text}
