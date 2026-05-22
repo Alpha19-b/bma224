@@ -79,6 +79,7 @@ const orderFilterOptions = [
   { value: "unpaid", label: "À payer" },
   { value: "paid", label: "Payées" },
   { value: "delivered", label: "Livrées" },
+  { value: "paid_delivered", label: "Payées livrées" },
   { value: "cancelled", label: "Annulées" },
   { value: "all", label: "Tout" },
 ];
@@ -103,6 +104,7 @@ function matchesOrderFilter(order, filter) {
   if (filter === "unpaid") return !isOrderPaid(order);
   if (filter === "paid") return isOrderPaid(order);
   if (filter === "delivered") return order.rawStatus === "delivered";
+  if (filter === "paid_delivered") return order.rawStatus === "delivered" && isOrderPaid(order);
   if (filter === "cancelled") return ["cancelled", "delivery_failed"].includes(order.rawStatus);
   return true;
 }
@@ -1676,7 +1678,7 @@ function ClientPage() {
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
           <span className="brand-mark">BMA</span>
-          <span>BMA</span>
+          <span>BMA Family</span>
         </button>
 
         <div className="store-actions">
@@ -1799,11 +1801,11 @@ function ClientPage() {
 
         <section className="fashion-hero">
           <div>
-            <span>BMA</span>
-            <h1>Mode et accessoires sélectionnés.</h1>
-            <p>Des articles disponibles, des photos réelles, un paiement simple et une livraison avec repère ou GPS.</p>
+            <span>BMA Family</span>
+            <h1>Bien Mieux À plusieurs.</h1>
+            <p>Une sélection mode et accessoires pour commander vite, payer simplement et suivre tes achats sans complication.</p>
             <div className="hero-stats">
-              <strong>Stock affiché</strong>
+              <strong>Bons plans mode</strong>
               <strong>Photos réelles</strong>
               <strong>Paiement Djomi</strong>
             </div>
@@ -5180,34 +5182,43 @@ function AdminPage() {
                 </div>
                 <OrderItemsList items={selectedOrder.orderItems} />
                 <div className="inline-actions vertical">
-                  <ActionButton
-                    icon="package"
-                    label="Préparer"
-                    disabled={
-                      updatingOrderId === selectedOrder.id ||
-                      !canMoveOrderStatus(selectedOrder, "preparing")
-                    }
-                    onClick={() => updateOrderStatus(selectedOrder, "preparing")}
-                  />
-                  <ActionButton
-                    icon="check"
-                    label="Livrée"
-                    disabled={
-                      updatingOrderId === selectedOrder.id ||
-                      !canMoveOrderStatus(selectedOrder, "delivered")
-                    }
-                    onClick={() => updateOrderStatus(selectedOrder, "delivered")}
-                  />
-                  <ActionButton
-                    icon="x"
-                    label="Annuler"
-                    className="ghost"
-                    disabled={
-                      updatingOrderId === selectedOrder.id ||
-                      !canMoveOrderStatus(selectedOrder, "cancelled")
-                    }
-                    onClick={() => updateOrderStatus(selectedOrder, "cancelled")}
-                  />
+                  {canMoveOrderStatus(selectedOrder, "preparing") ? (
+                    <ActionButton
+                      icon="package"
+                      label="Préparer"
+                      disabled={updatingOrderId === selectedOrder.id}
+                      onClick={() => updateOrderStatus(selectedOrder, "preparing")}
+                    />
+                  ) : null}
+                  {canMoveOrderStatus(selectedOrder, "delivered") ? (
+                    <ActionButton
+                      icon="check"
+                      label="Marquer livrée"
+                      disabled={updatingOrderId === selectedOrder.id}
+                      onClick={() => updateOrderStatus(selectedOrder, "delivered")}
+                    />
+                  ) : null}
+                  {canMoveOrderStatus(selectedOrder, "cancelled") ? (
+                    <ActionButton
+                      icon="x"
+                      label="Annuler"
+                      className="ghost"
+                      disabled={updatingOrderId === selectedOrder.id}
+                      onClick={() => updateOrderStatus(selectedOrder, "cancelled")}
+                    />
+                  ) : null}
+                  {ORDER_PREPARING_STATUSES.has(selectedOrder.rawStatus) && !isOrderPaid(selectedOrder) ? (
+                    <div className="order-flow-note waiting">
+                      <strong>Paiement attendu</strong>
+                      <span>Cette commande pourra être livrée après confirmation du paiement.</span>
+                    </div>
+                  ) : null}
+                  {ORDER_TERMINAL_STATUSES.has(selectedOrder.rawStatus) ? (
+                    <div className="order-flow-note">
+                      <strong>Statut final</strong>
+                      <span>Cette commande est terminée dans le suivi. Seul le super admin peut la supprimer.</span>
+                    </div>
+                  ) : null}
                   {isSuperAdmin ? (
                     <ActionButton
                       icon="trash"

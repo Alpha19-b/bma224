@@ -3221,6 +3221,35 @@ textarea {
   padding-bottom: 0;
 }
 
+.order-flow-note {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+  display: grid;
+  gap: 4px;
+  background: #f8fafc;
+}
+
+.order-flow-note strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.order-flow-note span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.order-flow-note.waiting {
+  border-color: #f3d8ac;
+  background: #fff7e8;
+}
+
+.order-flow-note.waiting strong {
+  color: #8b5a0a;
+}
+
 .product-add-button.secondary-action {
   background: var(--green);
   border-color: var(--green);
