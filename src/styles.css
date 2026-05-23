@@ -3682,6 +3682,13 @@ textarea {
   box-shadow: inset 4px 0 0 var(--green);
 }
 
+.order-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .order-select-control {
   width: fit-content;
   margin: 0 8px 0 0;
@@ -4435,11 +4442,7 @@ textarea {
   }
 
   .orders-table td:nth-child(5)::before {
-    content: "Paiement";
-  }
-
-  .orders-table td:nth-child(6)::before {
-    content: "Statut";
+    content: "Suivi";
   }
 
   .orders-table td::before {

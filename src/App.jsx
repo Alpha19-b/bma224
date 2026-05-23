@@ -73,14 +73,11 @@ const ORDER_PREPARING_STATUSES = new Set([
 const ORDER_TERMINAL_STATUSES = new Set(["delivered", "cancelled", "delivery_failed"]);
 
 const orderFilterOptions = [
-  { value: "open", label: "Traiter" },
-  { value: "received", label: "Reçues" },
+  { value: "open", label: "Ouvertes" },
   { value: "preparing", label: "Prépa" },
-  { value: "unpaid", label: "Payer" },
+  { value: "unpaid", label: "À payer" },
   { value: "paid", label: "Payées" },
   { value: "delivered", label: "Livrées" },
-  { value: "paid_delivered", label: "OK livrées" },
-  { value: "cancelled", label: "Annulées" },
   { value: "all", label: "Tout" },
 ];
 
@@ -125,7 +122,7 @@ function canMoveOrderStatus(order, nextStatus, isSuperAdmin = false) {
   }
 
   if (nextStatus === "delivered") {
-    return ORDER_PREPARING_STATUSES.has(order.rawStatus) && isOrderPaid(order);
+    return !ORDER_TERMINAL_STATUSES.has(order.rawStatus) && isOrderPaid(order);
   }
 
   if (nextStatus === "cancelled") {
@@ -142,9 +139,6 @@ function getStatusMoveBlockReason(order, nextStatus, isSuperAdmin = false) {
   }
   if (nextStatus === "delivered" && !isOrderPaid(order)) {
     return "Impossible de livrer une commande dont le paiement n'est pas confirmé.";
-  }
-  if (nextStatus === "delivered" && !ORDER_PREPARING_STATUSES.has(order.rawStatus)) {
-    return "Mets d'abord la commande en préparation avant de la marquer livrée.";
   }
   if (nextStatus === "preparing" && !ORDER_RECEIVED_STATUSES.has(order.rawStatus)) {
     return "Cette commande ne peut pas revenir en préparation.";
@@ -265,6 +259,13 @@ function ActionIcon({ name }) {
         <svg {...commonProps}>
           <rect x="4" y="4" width="16" height="16" rx="3" />
           <path d="M8 12l3 3 5-6" />
+        </svg>
+      );
+    case "user":
+      return (
+        <svg {...commonProps}>
+          <path d="M20 21a8 8 0 0 0-16 0" />
+          <circle cx="12" cy="8" r="4" />
         </svg>
       );
     case "plus":
@@ -2847,6 +2848,7 @@ function AdminPage() {
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
   const [selectedAuditPersonKey, setSelectedAuditPersonKey] = useState("");
+  const [staffAuditOpen, setStaffAuditOpen] = useState(false);
   const [orderFilter, setOrderFilter] = useState("open");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
@@ -3419,7 +3421,7 @@ function AdminPage() {
       .sort((first, second) => second.saleAmount - first.saleAmount);
   })();
   const selectedAuditPerson =
-    staffAuditRows.find((person) => person.key === selectedAuditPersonKey) ?? staffAuditRows[0] ?? null;
+    staffAuditRows.find((person) => person.key === selectedAuditPersonKey) ?? null;
   const auditIssues = [
     cashToDeposit > 0
       ? {
@@ -5797,6 +5799,12 @@ function AdminPage() {
       <div className="admin-stack">
         <div className="section-tools">
           <ActionButton
+            icon="user"
+            label={staffAuditOpen ? "Masquer" : "Par personne"}
+            title={staffAuditOpen ? "Masquer l'audit par personne" : "Ouvrir l'audit par personne"}
+            onClick={() => setStaffAuditOpen((open) => !open)}
+          />
+          <ActionButton
             icon="download"
             label="Excel"
             title="Exporter l'audit"
@@ -5810,6 +5818,7 @@ function AdminPage() {
           <Stat label="Ruptures" value={outOfStockProducts.length} />
         </div>
 
+        {staffAuditOpen ? (
         <section className="section staff-audit-section">
           <div className="section-head">
             <div>
@@ -5881,12 +5890,17 @@ function AdminPage() {
                     </div>
                   ) : null}
                 </div>
-              ) : null}
+              ) : (
+                <div className="empty-state compact">
+                  Choisis une personne à gauche pour voir ses ventes, ses dépôts et son liquide restant.
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state compact">Aucune vente attribuée pour l'instant.</div>
           )}
         </section>
+        ) : null}
 
         <div className="audit-grid">
           <section className="section audit-panel">
@@ -6673,8 +6687,7 @@ function OrdersTable({
               <th>Client</th>
               <th>Zone</th>
               <th>Total</th>
-              <th>Paiement</th>
-              <th>Statut</th>
+              <th>Suivi</th>
             </tr>
           </thead>
           <tbody>
@@ -6730,21 +6743,21 @@ function OrdersTable({
                     </td>
                     <td>{formatMoney(order.total)}</td>
                     <td>
-                      <span className={`status ${order.paymentTone || order.tone}`}>
-                        {order.payment}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`status ${order.statusTone || order.tone}`}>
-                        {order.status}
-                      </span>
+                      <div className="order-status-stack">
+                        <span className={`status ${order.paymentTone || order.tone}`}>
+                          {order.payment}
+                        </span>
+                        <span className={`status ${order.statusTone || order.tone}`}>
+                          {order.status}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td colSpan="6">
+                <td colSpan="5">
                   <div className="empty-state compact">Aucune commande pour le moment.</div>
                 </td>
               </tr>
