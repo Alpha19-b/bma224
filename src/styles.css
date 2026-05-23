@@ -2970,6 +2970,134 @@ textarea {
   gap: 8px;
 }
 
+.staff-audit-layout {
+  padding: 0 18px 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.staff-audit-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.staff-audit-list button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.staff-audit-list button.active {
+  border-color: #111820;
+  box-shadow: inset 4px 0 0 #111820;
+}
+
+.staff-audit-list span,
+.staff-history-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.staff-audit-list small,
+.staff-audit-head span,
+.staff-history-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.staff-audit-list b {
+  color: #9a5a00;
+  white-space: nowrap;
+}
+
+.staff-audit-detail {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.staff-audit-head {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.staff-audit-head h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.staff-audit-head strong {
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+.staff-audit-metrics {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.staff-history {
+  padding: 0 12px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.staff-deposit-history {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.staff-deposit-history > strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.staff-history-row {
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.staff-history-row b {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.staff-history-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.staff-history-row.compact {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .audit-product-row {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -3170,6 +3298,10 @@ textarea {
   margin-right: auto;
   color: var(--ink);
   font-size: 14px;
+}
+
+.selection-count-mobile {
+  display: none;
 }
 
 .order-filter-tabs {
@@ -5904,6 +6036,93 @@ textarea {
 }
 
 @media (max-width: 760px) {
+  .order-filter-tabs {
+    gap: 6px;
+    padding: 2px 0 8px;
+  }
+
+  .order-filter-tabs button {
+    min-width: 62px;
+    min-height: 48px;
+    border-radius: 14px;
+    padding: 7px 8px;
+    flex: 0 0 62px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .order-filter-tabs button span {
+    max-width: 54px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .order-filter-tabs strong {
+    min-width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+
+  .orders-bulk-bar {
+    display: grid;
+    grid-template-columns: 42px repeat(5, 44px);
+    justify-content: start;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px;
+  }
+
+  .orders-bulk-bar strong {
+    width: 42px;
+    height: 42px;
+    margin: 0;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: #f4f7fa;
+    font-size: 18px;
+  }
+
+  .selection-label {
+    display: none;
+  }
+
+  .selection-count-mobile {
+    display: inline;
+  }
+
+  .orders-bulk-bar .action-icon-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .orders-bulk-bar .action-icon-button .action-label,
+  .orders-bulk-bar .action-icon-button .action-count {
+    display: none;
+  }
+
+  .staff-audit-layout {
+    padding: 0 12px 14px;
+    grid-template-columns: 1fr;
+  }
+
+  .staff-audit-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-history-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .staff-history-row em {
+    grid-column: 1 / -1;
+  }
+
   .store-actions > .history-button.btn.secondary {
     grid-column: 1 / -1;
     grid-row: 3;

@@ -73,13 +73,13 @@ const ORDER_PREPARING_STATUSES = new Set([
 const ORDER_TERMINAL_STATUSES = new Set(["delivered", "cancelled", "delivery_failed"]);
 
 const orderFilterOptions = [
-  { value: "open", label: "À traiter" },
+  { value: "open", label: "Traiter" },
   { value: "received", label: "Reçues" },
-  { value: "preparing", label: "Préparation" },
-  { value: "unpaid", label: "À payer" },
+  { value: "preparing", label: "Prépa" },
+  { value: "unpaid", label: "Payer" },
   { value: "paid", label: "Payées" },
   { value: "delivered", label: "Livrées" },
-  { value: "paid_delivered", label: "Payées livrées" },
+  { value: "paid_delivered", label: "OK livrées" },
   { value: "cancelled", label: "Annulées" },
   { value: "all", label: "Tout" },
 ];
@@ -113,10 +113,12 @@ function countOrdersByFilter(orders, filter) {
   return orders.filter((order) => matchesOrderFilter(order, filter)).length;
 }
 
-function canMoveOrderStatus(order, nextStatus) {
+function canMoveOrderStatus(order, nextStatus, isSuperAdmin = false) {
   if (!order?.rawStatus) return false;
   if (order.rawStatus === nextStatus) return false;
-  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus)) return false;
+  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus)) {
+    return isSuperAdmin && nextStatus === "preparing";
+  }
 
   if (nextStatus === "preparing") {
     return ORDER_RECEIVED_STATUSES.has(order.rawStatus);
@@ -133,10 +135,10 @@ function canMoveOrderStatus(order, nextStatus) {
   return false;
 }
 
-function getStatusMoveBlockReason(order, nextStatus) {
+function getStatusMoveBlockReason(order, nextStatus, isSuperAdmin = false) {
   if (!order?.rawStatus) return "Commande introuvable.";
-  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus)) {
-    return "Cette commande est déjà terminée. Son statut ne peut plus revenir en arrière.";
+  if (ORDER_TERMINAL_STATUSES.has(order.rawStatus) && !isSuperAdmin) {
+    return "Cette commande est déjà terminée. Contacte le super admin pour la réouvrir.";
   }
   if (nextStatus === "delivered" && !isOrderPaid(order)) {
     return "Impossible de livrer une commande dont le paiement n'est pas confirmé.";
@@ -490,6 +492,14 @@ function getCustomerKey({ name, phone, userId }) {
   if (userId) return `user:${userId}`;
   if (cleanPhone) return `phone:${cleanPhone}`;
   return `name:${String(name || "client").trim().toLowerCase()}`;
+}
+
+function getPersonKey(name) {
+  return String(name || "-")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase() || "-";
 }
 
 function getWhatsappUrl(phone) {
@@ -2836,6 +2846,7 @@ function AdminPage() {
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
+  const [selectedAuditPersonKey, setSelectedAuditPersonKey] = useState("");
   const [orderFilter, setOrderFilter] = useState("open");
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
@@ -3319,9 +3330,15 @@ function AdminPage() {
   const allOrdersSelected =
     visibleAdminOrders.length > 0 &&
     visibleAdminOrders.every((order) => selectedOrderIds.includes(order.rawId));
-  const canPrepareSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "preparing"));
-  const canDeliverSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "delivered"));
-  const canCancelSelectedOrders = selectedOrders.some((order) => canMoveOrderStatus(order, "cancelled"));
+  const canPrepareSelectedOrders = selectedOrders.some((order) =>
+    canMoveOrderStatus(order, "preparing", isSuperAdmin)
+  );
+  const canDeliverSelectedOrders = selectedOrders.some((order) =>
+    canMoveOrderStatus(order, "delivered", isSuperAdmin)
+  );
+  const canCancelSelectedOrders = selectedOrders.some((order) =>
+    canMoveOrderStatus(order, "cancelled", isSuperAdmin)
+  );
   const selectedProducts = adminProducts.filter((product) => selectedProductIds.includes(product.id));
   const allDisplayedProductsSelected =
     displayedAdminProducts.length > 0 &&
@@ -3339,6 +3356,70 @@ function AdminPage() {
   const negativeMarginRecords = accountingRecords.filter(
     (record) => Number(record.saleAmount || 0) - Number(record.costAmount || 0) < 0
   );
+  const staffAuditRows = (() => {
+    const groups = new Map();
+    const ensurePerson = (name) => {
+      const cleanName = String(name || "-").trim() || "-";
+      const key = getPersonKey(cleanName);
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          name: cleanName,
+          records: [],
+          depositRecords: [],
+          articlesSold: 0,
+          saleAmount: 0,
+          costAmount: 0,
+          cashCollected: 0,
+          cashDepositedFromSales: 0,
+          cashToDeposit: 0,
+          depositsMade: 0,
+          djomiAmount: 0,
+          orangeMoneyAmount: 0,
+        });
+      }
+      return groups.get(key);
+    };
+
+    accountingRecords.forEach((record) => {
+      const seller = ensurePerson(record.collectedBy || "-");
+      const quantity = Number(record.quantity || 1);
+      const saleAmount = Number(record.saleAmount || 0);
+      const costAmount = Number(record.costAmount || 0);
+
+      seller.records.push(record);
+      seller.articlesSold += quantity;
+      seller.saleAmount += saleAmount;
+      seller.costAmount += costAmount;
+
+      if (record.paymentMethod === "Liquide") {
+        seller.cashCollected += saleAmount;
+        if (record.orangeMoneyRef) {
+          seller.cashDepositedFromSales += saleAmount;
+        } else {
+          seller.cashToDeposit += saleAmount;
+        }
+      }
+
+      if (record.paymentMethod === "Djomi") seller.djomiAmount += saleAmount;
+      if (record.paymentMethod === "Orange Money") seller.orangeMoneyAmount += saleAmount;
+
+      if (record.depositedBy) {
+        const depositor = ensurePerson(record.depositedBy);
+        depositor.depositRecords.push(record);
+        depositor.depositsMade += saleAmount;
+      }
+    });
+
+    return [...groups.values()]
+      .map((person) => ({
+        ...person,
+        marginAmount: person.saleAmount - person.costAmount,
+      }))
+      .sort((first, second) => second.saleAmount - first.saleAmount);
+  })();
+  const selectedAuditPerson =
+    staffAuditRows.find((person) => person.key === selectedAuditPersonKey) ?? staffAuditRows[0] ?? null;
   const auditIssues = [
     cashToDeposit > 0
       ? {
@@ -3575,6 +3656,22 @@ function AdminPage() {
           { Indicateur: "Articles epuises", Valeur: outOfStockProducts.length },
           { Indicateur: "Stock faible", Valeur: lowStockProducts.length },
         ],
+      },
+      {
+        name: "Par personne",
+        rows: staffAuditRows.map((person) => ({
+          Personne: person.name,
+          Articles_vendus: person.articlesSold,
+          Ventes_GNF: person.saleAmount,
+          Revient_GNF: person.costAmount,
+          Marge_GNF: person.marginAmount,
+          Liquide_encaisse_GNF: person.cashCollected,
+          Liquide_depose_depuis_ses_ventes_GNF: person.cashDepositedFromSales,
+          Liquide_a_deposer_GNF: person.cashToDeposit,
+          Depots_effectues_GNF: person.depositsMade,
+          Djomi_GNF: person.djomiAmount,
+          Orange_Money_direct_GNF: person.orangeMoneyAmount,
+        })),
       },
       {
         name: "Mouvements stock",
@@ -3858,10 +3955,12 @@ function AdminPage() {
       return;
     }
 
-    const movableOrders = selectedOrders.filter((order) => canMoveOrderStatus(order, nextStatus));
+    const movableOrders = selectedOrders.filter((order) =>
+      canMoveOrderStatus(order, nextStatus, isSuperAdmin)
+    );
 
     if (!movableOrders.length) {
-      showToast(getStatusMoveBlockReason(selectedOrders[0], nextStatus), "issue");
+      showToast(getStatusMoveBlockReason(selectedOrders[0], nextStatus, isSuperAdmin), "issue");
       return;
     }
 
@@ -4367,8 +4466,8 @@ function AdminPage() {
       return;
     }
 
-    if (!canMoveOrderStatus(targetOrder, nextStatus)) {
-      showToast(getStatusMoveBlockReason(targetOrder, nextStatus), "issue");
+    if (!canMoveOrderStatus(targetOrder, nextStatus, isSuperAdmin)) {
+      showToast(getStatusMoveBlockReason(targetOrder, nextStatus, isSuperAdmin), "issue");
       return;
     }
 
@@ -5079,7 +5178,12 @@ function AdminPage() {
           ))}
         </div>
         <div className="section-tools orders-bulk-bar">
-          <strong>{selectedOrderIds.length} sélectionnée{selectedOrderIds.length > 1 ? "s" : ""}</strong>
+          <strong>
+            <span className="selection-label">
+              {selectedOrderIds.length} sélectionnée{selectedOrderIds.length > 1 ? "s" : ""}
+            </span>
+            <span className="selection-count-mobile">{selectedOrderIds.length}</span>
+          </strong>
           <ActionButton
             icon="package"
             label="Préparer"
@@ -5182,15 +5286,15 @@ function AdminPage() {
                 </div>
                 <OrderItemsList items={selectedOrder.orderItems} />
                 <div className="inline-actions vertical">
-                  {canMoveOrderStatus(selectedOrder, "preparing") ? (
+                  {canMoveOrderStatus(selectedOrder, "preparing", isSuperAdmin) ? (
                     <ActionButton
                       icon="package"
-                      label="Préparer"
+                      label={ORDER_TERMINAL_STATUSES.has(selectedOrder.rawStatus) ? "Réouvrir" : "Préparer"}
                       disabled={updatingOrderId === selectedOrder.id}
                       onClick={() => updateOrderStatus(selectedOrder, "preparing")}
                     />
                   ) : null}
-                  {canMoveOrderStatus(selectedOrder, "delivered") ? (
+                  {canMoveOrderStatus(selectedOrder, "delivered", isSuperAdmin) ? (
                     <ActionButton
                       icon="check"
                       label="Marquer livrée"
@@ -5198,7 +5302,7 @@ function AdminPage() {
                       onClick={() => updateOrderStatus(selectedOrder, "delivered")}
                     />
                   ) : null}
-                  {canMoveOrderStatus(selectedOrder, "cancelled") ? (
+                  {canMoveOrderStatus(selectedOrder, "cancelled", isSuperAdmin) ? (
                     <ActionButton
                       icon="x"
                       label="Annuler"
@@ -5216,7 +5320,11 @@ function AdminPage() {
                   {ORDER_TERMINAL_STATUSES.has(selectedOrder.rawStatus) ? (
                     <div className="order-flow-note">
                       <strong>Statut final</strong>
-                      <span>Cette commande est terminée dans le suivi. Seul le super admin peut la supprimer.</span>
+                      <span>
+                        {isSuperAdmin
+                          ? "Tu peux la réouvrir si une correction est vraiment nécessaire."
+                          : "Contacte le super admin si ce statut doit être corrigé."}
+                      </span>
                     </div>
                   ) : null}
                   {isSuperAdmin ? (
@@ -5701,6 +5809,84 @@ function AdminPage() {
           <Stat label="Valeur stock" value={formatCompact(inventoryCostValue)} />
           <Stat label="Ruptures" value={outOfStockProducts.length} />
         </div>
+
+        <section className="section staff-audit-section">
+          <div className="section-head">
+            <div>
+              <h2>Audit par personne</h2>
+              <span>Ventes, dépôts, liquide restant et historique par manager ou vendeur</span>
+            </div>
+          </div>
+          {staffAuditRows.length ? (
+            <div className="staff-audit-layout">
+              <div className="staff-audit-list">
+                {staffAuditRows.map((person) => (
+                  <button
+                    className={selectedAuditPerson?.key === person.key ? "active" : ""}
+                    key={person.key}
+                    type="button"
+                    onClick={() => setSelectedAuditPersonKey(person.key)}
+                  >
+                    <span>
+                      <strong>{person.name}</strong>
+                      <small>{person.articlesSold} article{person.articlesSold > 1 ? "s" : ""} vendu{person.articlesSold > 1 ? "s" : ""}</small>
+                    </span>
+                    <b>{formatMoney(person.cashToDeposit)}</b>
+                  </button>
+                ))}
+              </div>
+              {selectedAuditPerson ? (
+                <div className="staff-audit-detail">
+                  <div className="staff-audit-head">
+                    <div>
+                      <h3>{selectedAuditPerson.name}</h3>
+                      <span>{selectedAuditPerson.records.length} vente{selectedAuditPerson.records.length > 1 ? "s" : ""} suivie{selectedAuditPerson.records.length > 1 ? "s" : ""}</span>
+                    </div>
+                    <strong>{formatMoney(selectedAuditPerson.saleAmount)}</strong>
+                  </div>
+                  <div className="staff-audit-metrics">
+                    <AuditRow label="Articles vendus" value={selectedAuditPerson.articlesSold} />
+                    <AuditRow label="Ventes" value={formatMoney(selectedAuditPerson.saleAmount)} tone="paid" />
+                    <AuditRow label="Marge" value={formatMoney(selectedAuditPerson.marginAmount)} tone={selectedAuditPerson.marginAmount < 0 ? "warning" : "paid"} />
+                    <AuditRow label="Liquide encaissé" value={formatMoney(selectedAuditPerson.cashCollected)} />
+                    <AuditRow label="Liquide à déposer" value={formatMoney(selectedAuditPerson.cashToDeposit)} tone={selectedAuditPerson.cashToDeposit ? "warning" : "paid"} />
+                    <AuditRow label="Dépôts effectués" value={formatMoney(selectedAuditPerson.depositsMade)} />
+                  </div>
+                  <div className="staff-history">
+                    {selectedAuditPerson.records.slice(0, 8).map((record) => (
+                      <div className="staff-history-row" key={record.id}>
+                        <span>
+                          <strong>{record.orderId}</strong>
+                          <small>{record.date} · {record.customer}</small>
+                        </span>
+                        <span>{record.quantity} art.</span>
+                        <b>{formatMoney(record.saleAmount)}</b>
+                        <em>{record.orangeMoneyRef ? "Déposé" : record.paymentMethod}</em>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedAuditPerson.depositRecords.length ? (
+                    <div className="staff-deposit-history">
+                      <strong>Dépôts effectués</strong>
+                      {selectedAuditPerson.depositRecords.slice(0, 5).map((record) => (
+                        <div className="staff-history-row compact" key={`deposit-${record.id}`}>
+                          <span>
+                            <strong>{record.orangeMoneyRef || record.orderId}</strong>
+                            <small>{record.depositedAt || record.date}</small>
+                          </span>
+                          <b>{formatMoney(record.saleAmount)}</b>
+                          <em>Orange Money</em>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="empty-state compact">Aucune vente attribuée pour l'instant.</div>
+          )}
+        </section>
 
         <div className="audit-grid">
           <section className="section audit-panel">
