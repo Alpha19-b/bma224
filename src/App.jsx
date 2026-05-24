@@ -2834,6 +2834,7 @@ function AdminPage() {
   const [adminNavOpen, setAdminNavOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [adminContext, setAdminContext] = useState(null);
+  const [adminAccessStatus, setAdminAccessStatus] = useState("idle");
   const [authReady, setAuthReady] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [adminOrders, setAdminOrders] = useState([]);
@@ -2925,6 +2926,7 @@ function AdminPage() {
     async function loadAdminData() {
       if (!session) {
         setAdminContext(null);
+        setAdminAccessStatus("idle");
         setAdminProducts([]);
         setAdminOrders([]);
         setAccountingRecords([]);
@@ -2939,7 +2941,35 @@ function AdminPage() {
         return;
       }
 
+      setAdminAccessStatus("checking");
       const contextResult = await fetchCurrentAdminContext();
+      if (cancelled) return;
+
+      if (contextResult.error || !contextResult.data?.isInternal) {
+        setAdminContext(null);
+        setAdminAccessStatus("denied");
+        setAdminProducts([]);
+        setAdminOrders([]);
+        setAccountingRecords([]);
+        setStockMovements([]);
+        setRolePermissions([]);
+        setSelectedOrder(null);
+        setSelectedOrderIds([]);
+        setSelectedProductIds([]);
+        setSelectedAccountingIds([]);
+        setSelectedCustomerKeys([]);
+        setAdminConfirm(null);
+        setAdminMessage(
+          contextResult.error
+            ? `Acces administration refuse : ${contextResult.error.message}`
+            : "Ce compte est un compte client. Utilise un compte administrateur BMA."
+        );
+        return;
+      }
+
+      setAdminContext(contextResult.data);
+      setAdminAccessStatus("allowed");
+
       const syncResult = await syncDjomiPayments({ limit: 50 });
       const productsResult = await fetchProducts();
       const ordersResult = await fetchAdminOrders();
@@ -2948,8 +2978,6 @@ function AdminPage() {
       const permissionsResult = await fetchRolePermissions();
 
       if (cancelled) return;
-
-      setAdminContext(contextResult.error ? null : contextResult.data);
 
       if (productsResult.error) {
         setAdminProducts([]);
@@ -3020,7 +3048,7 @@ function AdminPage() {
   }, [authReady, session]);
 
   useEffect(() => {
-    if (!session) return undefined;
+    if (!session || adminAccessStatus !== "allowed") return undefined;
 
     let cancelled = false;
 
@@ -3065,7 +3093,7 @@ function AdminPage() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [session]);
+  }, [session, adminAccessStatus]);
 
   useEffect(() => {
     if (!session) {
@@ -4113,6 +4141,26 @@ function AdminPage() {
       return;
     }
 
+    setAdminAccessStatus("checking");
+    const contextResult = await fetchCurrentAdminContext();
+
+    if (contextResult.error || !contextResult.data?.isInternal) {
+      await signOutAdmin();
+      setSession(null);
+      setAdminContext(null);
+      setAdminAccessStatus("idle");
+      showToast(
+        contextResult.error
+          ? `Accès administration refusé : ${contextResult.error.message}`
+          : "Ce compte est un compte client. Il ne peut pas ouvrir l'administration BMA.",
+        "issue"
+      );
+      return;
+    }
+
+    setAdminContext(contextResult.data);
+    setAdminAccessStatus("allowed");
+
     setLoginForm({ email: "", password: "" });
     setAdminToast(null);
   }
@@ -4127,6 +4175,7 @@ function AdminPage() {
 
     setSession(null);
     setAdminContext(null);
+    setAdminAccessStatus("idle");
     setAdminAccountOpen(false);
     showToast("Session admin fermée.", "waiting");
   }
@@ -6224,6 +6273,30 @@ function AdminPage() {
     );
   }
 
+  if (adminAccessStatus === "idle" || adminAccessStatus === "checking") {
+    return (
+      <div className="admin-login-screen">
+        <AdminAccessMessage
+          title="Vérification"
+          text="On vérifie que ce compte appartient bien à l'équipe BMA."
+        />
+      </div>
+    );
+  }
+
+  if (adminAccessStatus === "denied" || !adminContext?.isInternal) {
+    return (
+      <div className="admin-login-screen">
+        <AdminAccessMessage
+          title="Accès refusé"
+          text="Ce compte est un compte client. Il ne peut pas ouvrir l'administration BMA."
+          actionLabel="Se déconnecter"
+          onAction={handleAdminSignOut}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app admin-shell">
       <aside className="sidebar">
@@ -6444,6 +6517,25 @@ function AdminLogin({ authReady, loginForm, message, onChange, onSubmit }) {
             {authReady ? "Se connecter" : "Chargement..."}
           </button>
         </form>
+      </section>
+    </div>
+  );
+}
+
+function AdminAccessMessage({ title, text, actionLabel, onAction }) {
+  return (
+    <div className="admin-login-layout">
+      <section className="section auth-panel admin-login-card admin-access-card">
+        <div className="login-card-head">
+          <div className="brand-mark">BMA</div>
+          <h1>{title}</h1>
+        </div>
+        <p className="admin-access-text">{text}</p>
+        {actionLabel && onAction ? (
+          <button className="btn" type="button" onClick={onAction}>
+            {actionLabel}
+          </button>
+        ) : null}
       </section>
     </div>
   );
