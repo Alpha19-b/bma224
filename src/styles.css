@@ -3588,6 +3588,19 @@ textarea {
   padding: 18px;
 }
 
+.staff-invite-form {
+  padding: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(180px, 0.6fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.staff-invite-form .btn {
+  min-height: 54px;
+  white-space: nowrap;
+}
+
 .permission-row {
   display: flex;
   justify-content: space-between;
@@ -4734,6 +4747,14 @@ textarea {
   .permission-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .staff-invite-form {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-invite-form .btn {
+    width: 100%;
   }
 
   .permission-row .toggle {

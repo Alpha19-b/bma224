@@ -1788,3 +1788,32 @@ export async function updateRolePermission(role, permissionKey, isEnabled) {
 
   return { data, error };
 }
+
+export async function inviteStaffMember({ email, role }) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase.functions.invoke("invite-staff", {
+    body: { email, role },
+  });
+
+  if (error) {
+    let message = error.message;
+
+    try {
+      const responsePayload = await error.context?.clone?.().json?.();
+      message =
+        responsePayload?.error ||
+        responsePayload?.message ||
+        responsePayload?.details ||
+        message;
+    } catch {
+      // Le corps d'erreur n'est pas toujours disponible.
+    }
+
+    return { data: null, error: new Error(message) };
+  }
+
+  return { data, error: null };
+}

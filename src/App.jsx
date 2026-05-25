@@ -18,6 +18,7 @@ import {
   fetchProducts,
   fetchRolePermissions,
   fetchStockMovements,
+  inviteStaffMember,
   replaceProductOptions,
   syncDjomiPayments,
   updateProduct,
@@ -2854,6 +2855,8 @@ function AdminPage() {
   const [adminMessage, setAdminMessage] = useState("Connexion à l'administration...");
   const [adminToast, setAdminToast] = useState(null);
   const [adminConfirm, setAdminConfirm] = useState(null);
+  const [staffInviteForm, setStaffInviteForm] = useState({ email: "", role: "staff" });
+  const [isStaffInviteSubmitting, setIsStaffInviteSubmitting] = useState(false);
   const [adminAccountOpen, setAdminAccountOpen] = useState(false);
   const [adminAccountForm, setAdminAccountForm] = useState(emptyAdminAccountForm);
   const [adminAccountMessage, setAdminAccountMessage] = useState(null);
@@ -4819,6 +4822,40 @@ function AdminPage() {
     showToast("Permission mise à jour.");
   }
 
+  function updateStaffInviteForm(field, value) {
+    setStaffInviteForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleStaffInviteSubmit(event) {
+    event.preventDefault();
+
+    if (!isSuperAdmin) {
+      showToast("Seul le super admin peut inviter du personnel.", "issue");
+      return;
+    }
+
+    const email = staffInviteForm.email.trim();
+    if (!email) {
+      showToast("Entre l'email de la personne à inviter.", "issue");
+      return;
+    }
+
+    setIsStaffInviteSubmitting(true);
+    const { data, error } = await inviteStaffMember({
+      email,
+      role: staffInviteForm.role,
+    });
+    setIsStaffInviteSubmitting(false);
+
+    if (error) {
+      showToast(`Invitation non envoyée : ${error.message}`, "issue");
+      return;
+    }
+
+    setStaffInviteForm({ email: "", role: "staff" });
+    showToast(data?.message || "Invitation envoyée par email.");
+  }
+
   function renderDashboard() {
     return (
       <>
@@ -6215,37 +6252,72 @@ function AdminPage() {
 
   function renderSettings() {
     return (
-      <section className="section">
-        <div className="section-head">
-          <div>
-            <h2>Permissions équipe</h2>
-            <span>Changer qui voit quoi sans modifier le code</span>
-          </div>
-        </div>
-        {rolePermissions.length ? (
-          <div className="permission-grid">
-            {rolePermissions.map((permission) => (
-              <div className="permission-row" key={`${permission.role}-${permission.permission_key}`}>
-                <div>
-                  <strong>{permission.label}</strong>
-                  <span>{permission.role}</span>
-                </div>
-                <button
-                  className={`toggle ${permission.is_enabled ? "on" : ""}`}
-                  type="button"
-                  onClick={() => toggleRolePermission(permission)}
-                >
-                  {permission.is_enabled ? "Visible" : "Masqué"}
-                </button>
+      <div className="admin-stack">
+        {isSuperAdmin ? (
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>Ajouter du personnel</h2>
+                <span>Envoyer une invitation admin par email</span>
               </div>
-            ))}
+            </div>
+            <form className="staff-invite-form" onSubmit={handleStaffInviteSubmit}>
+              <Field
+                autoComplete="email"
+                label="Email"
+                type="email"
+                value={staffInviteForm.email}
+                onChange={(value) => updateStaffInviteForm("email", value)}
+              />
+              <div className="field">
+                <label>Rôle</label>
+                <select
+                  value={staffInviteForm.role}
+                  onChange={(event) => updateStaffInviteForm("role", event.target.value)}
+                >
+                  <option value="staff">Vendeur</option>
+                  <option value="manager">Manager</option>
+                </select>
+              </div>
+              <button className="btn" type="submit" disabled={isStaffInviteSubmitting}>
+                {isStaffInviteSubmitting ? "Envoi..." : "Envoyer l'invitation"}
+              </button>
+            </form>
+          </section>
+        ) : null}
+
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>Permissions équipe</h2>
+              <span>Changer qui voit quoi sans modifier le code</span>
+            </div>
           </div>
-        ) : (
-          <div className="empty-state">
-            Les réglages d'équipe ne sont pas encore créés. Exécute le SQL de permissions.
-          </div>
-        )}
-      </section>
+          {rolePermissions.length ? (
+            <div className="permission-grid">
+              {rolePermissions.map((permission) => (
+                <div className="permission-row" key={`${permission.role}-${permission.permission_key}`}>
+                  <div>
+                    <strong>{permission.label}</strong>
+                    <span>{permission.role}</span>
+                  </div>
+                  <button
+                    className={`toggle ${permission.is_enabled ? "on" : ""}`}
+                    type="button"
+                    onClick={() => toggleRolePermission(permission)}
+                  >
+                    {permission.is_enabled ? "Visible" : "Masqué"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              Les réglages d'équipe ne sont pas encore créés. Exécute le SQL de permissions.
+            </div>
+          )}
+        </section>
+      </div>
     );
   }
 
