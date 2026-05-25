@@ -1817,3 +1817,44 @@ export async function inviteStaffMember({ email, role }) {
 
   return { data, error: null };
 }
+
+async function callStaffManagement(body) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase.functions.invoke("manage-staff", {
+    body,
+  });
+
+  if (error) {
+    let message = error.message;
+
+    try {
+      const responsePayload = await error.context?.clone?.().json?.();
+      message =
+        responsePayload?.error ||
+        responsePayload?.message ||
+        responsePayload?.details ||
+        message;
+    } catch {
+      // Le corps d'erreur n'est pas toujours disponible.
+    }
+
+    return { data: null, error: new Error(message) };
+  }
+
+  return { data, error: null };
+}
+
+export async function fetchStaffMembers() {
+  return callStaffManagement({ action: "list" });
+}
+
+export async function updateStaffMemberRole(userId, role) {
+  return callStaffManagement({ action: "update_role", user_id: userId, role });
+}
+
+export async function removeStaffMember(userId) {
+  return callStaffManagement({ action: "remove", user_id: userId });
+}

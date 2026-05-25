@@ -17,13 +17,16 @@ import {
   fetchCustomerOrders,
   fetchProducts,
   fetchRolePermissions,
+  fetchStaffMembers,
   fetchStockMovements,
   inviteStaffMember,
+  removeStaffMember,
   replaceProductOptions,
   syncDjomiPayments,
   updateProduct,
   updateAdminOrderStatus,
   updateRolePermission,
+  updateStaffMemberRole,
   uploadOrangeMoneyReceipt,
   uploadProductImage,
 } from "./services/shopApi.js";
@@ -62,6 +65,11 @@ const lowStockLabel = (stock) => {
   return "Disponible maintenant";
 };
 const DELIVERY_FEE_GNF = 0;
+const staffRoleLabels = {
+  owner: "Super admin",
+  manager: "Manager",
+  staff: "Vendeur",
+};
 
 const ORDER_RECEIVED_STATUSES = new Set(["pending_payment", "confirmed"]);
 const ORDER_PREPARING_STATUSES = new Set([
@@ -2857,6 +2865,9 @@ function AdminPage() {
   const [adminConfirm, setAdminConfirm] = useState(null);
   const [staffInviteForm, setStaffInviteForm] = useState({ email: "", role: "staff" });
   const [isStaffInviteSubmitting, setIsStaffInviteSubmitting] = useState(false);
+  const [staffMembers, setStaffMembers] = useState([]);
+  const [isStaffLoading, setIsStaffLoading] = useState(false);
+  const [staffActionId, setStaffActionId] = useState("");
   const [adminAccountOpen, setAdminAccountOpen] = useState(false);
   const [adminAccountForm, setAdminAccountForm] = useState(emptyAdminAccountForm);
   const [adminAccountMessage, setAdminAccountMessage] = useState(null);
@@ -2934,6 +2945,8 @@ function AdminPage() {
         setAdminOrders([]);
         setAccountingRecords([]);
         setStockMovements([]);
+        setRolePermissions([]);
+        setStaffMembers([]);
         setSelectedOrder(null);
         setSelectedOrderIds([]);
         setSelectedProductIds([]);
@@ -2956,6 +2969,7 @@ function AdminPage() {
         setAccountingRecords([]);
         setStockMovements([]);
         setRolePermissions([]);
+        setStaffMembers([]);
         setSelectedOrder(null);
         setSelectedOrderIds([]);
         setSelectedProductIds([]);
@@ -2979,6 +2993,9 @@ function AdminPage() {
       const accountingResult = await fetchAccountingEntries();
       const stockMovementsResult = await fetchStockMovements();
       const permissionsResult = await fetchRolePermissions();
+      const staffResult = contextResult.data?.isOwner
+        ? await fetchStaffMembers()
+        : { data: null, error: null };
 
       if (cancelled) return;
 
@@ -3011,6 +3028,12 @@ function AdminPage() {
       } else {
         setRolePermissions(permissionsResult.data);
       }
+
+      setStaffMembers(
+        contextResult.data?.isOwner && !staffResult.error
+          ? staffResult.data?.members ?? []
+          : []
+      );
 
       if (ordersResult.error) {
         setAdminMessage(
@@ -4826,6 +4849,22 @@ function AdminPage() {
     setStaffInviteForm((current) => ({ ...current, [field]: value }));
   }
 
+  async function refreshStaffMembers({ silent = false } = {}) {
+    if (!isSuperAdmin) return;
+
+    setIsStaffLoading(true);
+    const { data, error } = await fetchStaffMembers();
+    setIsStaffLoading(false);
+
+    if (error) {
+      if (!silent) showToast(`Personnel non chargé : ${error.message}`, "issue");
+      setStaffMembers([]);
+      return;
+    }
+
+    setStaffMembers(data?.members ?? []);
+  }
+
   async function handleStaffInviteSubmit(event) {
     event.preventDefault();
 
@@ -4854,6 +4893,44 @@ function AdminPage() {
 
     setStaffInviteForm({ email: "", role: "staff" });
     showToast(data?.message || "Invitation envoyée par email.");
+    await refreshStaffMembers({ silent: true });
+  }
+
+  async function handleStaffRoleChange(member, nextRole) {
+    if (member.role === nextRole) return;
+
+    setStaffActionId(member.id);
+    const { data, error } = await updateStaffMemberRole(member.id, nextRole);
+    setStaffActionId("");
+
+    if (error) {
+      showToast(`Rôle non modifié : ${error.message}`, "issue");
+      return;
+    }
+
+    setStaffMembers(data?.members ?? []);
+    showToast("Rôle du membre mis à jour.");
+  }
+
+  function requestRemoveStaffMember(member) {
+    requestAdminConfirm({
+      title: "Retirer l'accès admin",
+      message: `Retirer ${member.email || member.name || "ce membre"} du personnel BMA ? Son compte client restera intact.`,
+      confirmLabel: "Retirer",
+      onConfirm: async () => {
+        setStaffActionId(member.id);
+        const { data, error } = await removeStaffMember(member.id);
+        setStaffActionId("");
+
+        if (error) {
+          showToast(`Membre non retiré : ${error.message}`, "issue");
+          return;
+        }
+
+        setStaffMembers(data?.members ?? []);
+        showToast("Accès admin retiré.");
+      },
+    });
   }
 
   function renderDashboard() {
@@ -6283,6 +6360,72 @@ function AdminPage() {
                 {isStaffInviteSubmitting ? "Envoi..." : "Envoyer l'invitation"}
               </button>
             </form>
+          </section>
+        ) : null}
+
+        {isSuperAdmin ? (
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>Personnel</h2>
+                <span>Voir les accès, modifier les rôles ou retirer un membre</span>
+              </div>
+              <ActionButton
+                icon="select"
+                label="Actualiser"
+                title="Actualiser le personnel"
+                disabled={isStaffLoading}
+                onClick={() => refreshStaffMembers()}
+              />
+            </div>
+            {isStaffLoading && !staffMembers.length ? (
+              <div className="empty-state compact">Chargement du personnel...</div>
+            ) : staffMembers.length ? (
+              <div className="staff-members-list">
+                {staffMembers.map((member) => (
+                  <div className="staff-member-row" key={member.id}>
+                    <div className="staff-member-main">
+                      <strong>{member.name || member.email || "Membre BMA"}</strong>
+                      <span>
+                        {member.email || "Email indisponible"}
+                        {member.is_current_user ? " · toi" : ""}
+                      </span>
+                    </div>
+                    <div className="staff-member-meta">
+                      <span>{staffRoleLabels[member.role] || member.role}</span>
+                      {member.last_sign_in_at ? (
+                        <small>Vu le {String(member.last_sign_in_at).slice(0, 10)}</small>
+                      ) : (
+                        <small>Pas encore connecté</small>
+                      )}
+                    </div>
+                    <select
+                      aria-label={`Rôle de ${member.email || member.name}`}
+                      value={member.role}
+                      disabled={member.is_current_user || staffActionId === member.id}
+                      onChange={(event) => handleStaffRoleChange(member, event.target.value)}
+                    >
+                      <option value="staff">Vendeur</option>
+                      <option value="manager">Manager</option>
+                      <option value="owner">Super admin</option>
+                    </select>
+                    <ActionButton
+                      icon="trash"
+                      label="Retirer"
+                      title="Retirer l'accès admin"
+                      className="danger"
+                      iconOnly
+                      disabled={member.is_current_user || staffActionId === member.id}
+                      onClick={() => requestRemoveStaffMember(member)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state compact">
+                Aucun membre du personnel chargé. Vérifie que l'Edge Function manage-staff est déployée.
+              </div>
+            )}
           </section>
         ) : null}
 

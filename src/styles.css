@@ -3601,6 +3601,49 @@ textarea {
   white-space: nowrap;
 }
 
+.staff-members-list {
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.staff-member-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.8fr) minmax(150px, 0.6fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.staff-member-main,
+.staff-member-meta {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.staff-member-main strong,
+.staff-member-main span,
+.staff-member-meta span,
+.staff-member-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staff-member-main span,
+.staff-member-meta small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.staff-member-meta span {
+  color: var(--ink);
+  font-weight: 900;
+}
+
 .permission-row {
   display: flex;
   justify-content: space-between;
@@ -4755,6 +4798,16 @@ textarea {
 
   .staff-invite-form .btn {
     width: 100%;
+  }
+
+  .staff-member-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .staff-member-row .action-icon-button {
+    width: 48px;
+    justify-self: end;
   }
 
   .permission-row .toggle {
