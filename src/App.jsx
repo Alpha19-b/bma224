@@ -596,6 +596,60 @@ function parseGnfInput(value, label, options = {}) {
   return { value: Math.round(number) };
 }
 
+function translateTechnicalErrorText(value) {
+  let text = String(value || "").trim();
+  if (!text) return "Action impossible pour le moment.";
+
+  const replacements = [
+    [
+      /column reference "product_id" is ambiguous/gi,
+      "référence produit ambiguë dans une fonction SQL Supabase. La fonction de suppression des articles doit être corrigée côté base.",
+    ],
+    [
+      /column reference "order_id" is ambiguous/gi,
+      "référence commande ambiguë dans une fonction SQL Supabase. La fonction de suppression des commandes doit être corrigée côté base.",
+    ],
+    [
+      /column reference "accounting_entry_id" is ambiguous/gi,
+      "référence comptable ambiguë dans une fonction SQL Supabase. La fonction de suppression des lignes comptables doit être corrigée côté base.",
+    ],
+    [
+      /column reference "([^"]+)" is ambiguous/gi,
+      "référence SQL ambiguë ($1). Une fonction Supabase doit être corrigée côté base.",
+    ],
+    [
+      /new row violates row-level security policy/gi,
+      "action refusée par les règles de sécurité Supabase",
+    ],
+    [
+      /violates row-level security policy/gi,
+      "action refusée par les règles de sécurité Supabase",
+    ],
+    [
+      /duplicate key value violates unique constraint/gi,
+      "cette référence existe déjà",
+    ],
+    [
+      /null value in column "([^"]+)" of relation "([^"]+)" violates not-null constraint/gi,
+      "information obligatoire manquante ($1)",
+    ],
+    [
+      /invalid input syntax for type uuid/gi,
+      "identifiant invalide",
+    ],
+    [
+      /violates foreign key constraint/gi,
+      "cet élément est encore lié à d'autres données",
+    ],
+  ];
+
+  replacements.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+
+  return text;
+}
+
 function getFriendlyErrorMessage(error, context = "") {
   const message = String(error?.message || error || "");
   const details = String(error?.details || "");
@@ -635,6 +689,10 @@ function getFriendlyErrorMessage(error, context = "") {
     return "La fonction SQL de suppression commande n'est pas encore corrigée dans Supabase. Exécute le fichier supabase_owner_delete_order_fix.sql puis réessaie.";
   }
 
+  if (source.includes("product_id") && source.includes("ambiguous")) {
+    return "La fonction SQL de suppression des articles n'est pas encore corrigée dans Supabase. Corrige la référence product_id dans la fonction de suppression puis réessaie.";
+  }
+
   if (source.includes("accounting_entry_id") && source.includes("ambiguous")) {
     return "La fonction SQL de suppression comptable n'est pas encore corrigée dans Supabase. Exécute le fichier supabase_owner_delete_accounting_fix.sql puis réessaie.";
   }
@@ -647,7 +705,7 @@ function getFriendlyErrorMessage(error, context = "") {
     return "Élément introuvable. Recharge la page puis réessaie.";
   }
 
-  return message || "Action impossible pour le moment.";
+  return translateTechnicalErrorText(message) || "Action impossible pour le moment.";
 }
 
 function escapeExcelValue(value) {
@@ -3560,7 +3618,10 @@ function AdminPage() {
   }
 
   function showToast(text, tone = "paid") {
-    setAdminToast({ text, tone });
+    setAdminToast({
+      text: tone === "issue" ? translateTechnicalErrorText(text) : text,
+      tone,
+    });
   }
 
   function requestAdminConfirm(options) {
