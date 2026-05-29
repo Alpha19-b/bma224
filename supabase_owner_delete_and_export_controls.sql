@@ -58,7 +58,7 @@ $bma_admin_context$;
 
 create or replace function public.bma_delete_product(p_product_id uuid)
 returns table (
-  product_id uuid,
+  deleted_product_id uuid,
   deleted_mode text
 )
 language plpgsql
@@ -70,20 +70,20 @@ begin
     raise exception 'Acces refuse: seul le super admin peut supprimer un article.';
   end if;
 
-  update public.products
+  update public.products p
   set
     is_active = false,
     stock = 0
-  where id = p_product_id;
+  where p.id = p_product_id;
 
   if not found then
     raise exception 'Article introuvable.';
   end if;
 
   if to_regclass('public.product_options') is not null then
-    update public.product_options
+    update public.product_options po
     set is_active = false
-    where product_id = p_product_id;
+    where po.product_id = p_product_id;
   end if;
 
   return query select p_product_id, 'retired_from_sale'::text;
