@@ -34,7 +34,52 @@ const orderStatusLabels = {
   cancelled: "Annulée",
 };
 
+function normalizeVariantKey(value) {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function uniqueTextValues(values = []) {
+  return [
+    ...new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function normalizeProductImageEntry(entry) {
+  if (typeof entry === "string") {
+    return { imageUrl: entry, color: "" };
+  }
+
+  return {
+    imageUrl: entry?.imageUrl || entry?.image_url || entry?.url || "",
+    color: String(entry?.color || entry?.colorValue || entry?.color_value || "").trim(),
+  };
+}
+
 function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] }, fallbackCategory = "Produit") {
+  const sizesByColor = options.sizesByColor ?? {};
+  const imageEntries = (options.imageEntries ?? [])
+    .map(normalizeProductImageEntry)
+    .filter((entry) => entry.imageUrl);
+  const cleanGallery = uniqueTextValues([
+    ...gallery,
+    ...imageEntries.map((entry) => entry.imageUrl),
+  ]);
+  const fallbackGallery = cleanGallery.length
+    ? cleanGallery
+    : [product.main_image_url].filter(Boolean);
+  const sizes = uniqueTextValues([
+    ...(options.sizes ?? []),
+    ...Object.values(sizesByColor).flat(),
+  ]);
+
   return {
     id: product.id,
     name: product.name,
@@ -47,10 +92,15 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
         ? null
         : Number(product.promo_price),
     stock: product.stock,
-    image: gallery[0] || product.main_image_url || publicImageFallback,
-    images: gallery.length ? gallery : [product.main_image_url].filter(Boolean),
+    image: fallbackGallery[0] || product.main_image_url || publicImageFallback,
+    images: fallbackGallery,
+    imageEntries: imageEntries.length
+      ? imageEntries
+      : fallbackGallery.map((imageUrl) => ({ imageUrl, color: "" })),
+    imagesByColor: options.imagesByColor ?? {},
     description: product.description,
-    sizes: options.sizes ?? [],
+    sizes,
+    sizesByColor,
     colors: options.colors ?? [],
   };
 }
@@ -301,14 +351,27 @@ export async function fetchProducts() {
 
   const productIds = data.map((product) => product.id);
   let imagesByProductId = {};
+  let imageEntriesByProductId = {};
+  let imagesByColorByProductId = {};
   let optionsByProductId = {};
 
   if (productIds.length) {
     let { data: imageRows, error: imageError } = await supabase
       .from("product_images")
-      .select("product_id, image_url, sort_order")
+      .select("product_id, image_url, sort_order, color_value")
       .in("product_id", productIds)
       .order("sort_order", { ascending: true });
+
+    if (imageError && /color_value/i.test(imageError.message || "")) {
+      const fallbackImages = await supabase
+        .from("product_images")
+        .select("product_id, image_url, sort_order")
+        .in("product_id", productIds)
+        .order("sort_order", { ascending: true });
+
+      imageRows = fallbackImages.data;
+      imageError = fallbackImages.error;
+    }
 
     if (imageError && /sort_order/i.test(imageError.message || "")) {
       const fallbackImages = await supabase
@@ -321,29 +384,88 @@ export async function fetchProducts() {
     }
 
     if (!imageError) {
-      imagesByProductId = (imageRows ?? []).reduce((grouped, image) => {
-        grouped[image.product_id] = grouped[image.product_id] || [];
-        grouped[image.product_id].push(image.image_url);
-        return grouped;
-      }, {});
+      (imageRows ?? []).forEach((image) => {
+        const color = String(image.color_value ?? "").trim();
+        const imageUrl = image.image_url;
+
+        if (!imageUrl) return;
+
+        imagesByProductId[image.product_id] = imagesByProductId[image.product_id] || [];
+        imageEntriesByProductId[image.product_id] =
+          imageEntriesByProductId[image.product_id] || [];
+        imagesByProductId[image.product_id].push(imageUrl);
+        imageEntriesByProductId[image.product_id].push({ imageUrl, color });
+
+        if (color) {
+          const colorKey = normalizeVariantKey(color);
+          imagesByColorByProductId[image.product_id] =
+            imagesByColorByProductId[image.product_id] || {};
+          imagesByColorByProductId[image.product_id][colorKey] =
+            imagesByColorByProductId[image.product_id][colorKey] || [];
+          imagesByColorByProductId[image.product_id][colorKey].push(imageUrl);
+        }
+      });
+
+      imagesByProductId = Object.fromEntries(
+        Object.entries(imagesByProductId).map(([productId, imageUrls]) => [
+          productId,
+          uniqueTextValues(imageUrls),
+        ])
+      );
+
+      imageEntriesByProductId = Object.fromEntries(
+        Object.entries(imageEntriesByProductId).map(([productId, entries]) => [
+          productId,
+          entries.filter((entry, index, all) => {
+            const key = `${entry.imageUrl}|${normalizeVariantKey(entry.color)}`;
+            return (
+              all.findIndex(
+                (item) => `${item.imageUrl}|${normalizeVariantKey(item.color)}` === key
+              ) === index
+            );
+          }),
+        ])
+      );
     }
 
-    const { data: optionRows, error: optionError } = await supabase
+    let { data: optionRows, error: optionError } = await supabase
       .from("product_options")
-      .select("product_id, option_type, value, hex_color, sort_order")
+      .select("product_id, option_type, value, hex_color, parent_value, sort_order")
       .in("product_id", productIds)
       .eq("is_active", true)
       .order("sort_order", { ascending: true });
+
+    if (optionError && /parent_value/i.test(optionError.message || "")) {
+      const fallbackOptions = await supabase
+        .from("product_options")
+        .select("product_id, option_type, value, hex_color, sort_order")
+        .in("product_id", productIds)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+
+      optionRows = fallbackOptions.data;
+      optionError = fallbackOptions.error;
+    }
 
     if (!optionError) {
       optionsByProductId = (optionRows ?? []).reduce((grouped, option) => {
         grouped[option.product_id] = grouped[option.product_id] || {
           sizes: [],
           colors: [],
+          sizesByColor: {},
         };
 
         if (option.option_type === "size") {
-          grouped[option.product_id].sizes.push(option.value);
+          const parentValue = String(option.parent_value ?? "").trim();
+
+          if (parentValue) {
+            const parentKey = normalizeVariantKey(parentValue);
+            grouped[option.product_id].sizesByColor[parentKey] =
+              grouped[option.product_id].sizesByColor[parentKey] || [];
+            grouped[option.product_id].sizesByColor[parentKey].push(option.value);
+          } else {
+            grouped[option.product_id].sizes.push(option.value);
+          }
         }
 
         if (option.option_type === "color") {
@@ -369,7 +491,11 @@ export async function fetchProducts() {
         ),
       ];
 
-      return mapProductRow(product, gallery, optionsByProductId[product.id]);
+      return mapProductRow(product, gallery, {
+        ...(optionsByProductId[product.id] ?? {}),
+        imageEntries: imageEntriesByProductId[product.id] ?? [],
+        imagesByColor: imagesByColorByProductId[product.id] ?? {},
+      });
     }),
     error: null,
   };
@@ -543,7 +669,13 @@ export async function createProduct(product) {
     data: mapProductRow(
       data,
       [data.main_image_url].filter(Boolean),
-      { sizes: product.sizes ?? [], colors: product.colors ?? [] },
+      {
+        sizes: product.sizes ?? [],
+        colors: product.colors ?? [],
+        sizesByColor: product.sizesByColor ?? {},
+        imageEntries: product.imageEntries ?? [],
+        imagesByColor: product.imagesByColor ?? {},
+      },
       product.category ?? "Produit"
     ),
     error: null,
@@ -608,24 +740,40 @@ export async function updateProduct(productId, product) {
     data: mapProductRow(
       data,
       [data.main_image_url].filter(Boolean),
-      { sizes: product.sizes ?? [], colors: product.colors ?? [] },
+      {
+        sizes: product.sizes ?? [],
+        colors: product.colors ?? [],
+        sizesByColor: product.sizesByColor ?? {},
+        imageEntries: product.imageEntries ?? [],
+        imagesByColor: product.imagesByColor ?? {},
+      },
       product.category ?? "Produit"
     ),
     error: null,
   };
 }
 
-export async function replaceProductOptions(productId, { sizes = [], colors = [] }) {
+export async function replaceProductOptions(productId, { sizes = [], colors = [], sizesByColor = {} }) {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
   }
 
-  const sizeRows = sizes.map((value, index) => ({
+  const sizeRows = uniqueTextValues(sizes).map((value, index) => ({
     product_id: productId,
     option_type: "size",
     value,
     sort_order: index,
   }));
+
+  const colorSizeRows = Object.entries(sizesByColor ?? {}).flatMap(([colorValue, values], colorIndex) =>
+    uniqueTextValues(values).map((value, sizeIndex) => ({
+      product_id: productId,
+      option_type: "size",
+      value,
+      parent_value: colorValue,
+      sort_order: 1000 + colorIndex * 100 + sizeIndex,
+    }))
+  );
 
   const colorRows = colors.map((color, index) => ({
     product_id: productId,
@@ -644,13 +792,33 @@ export async function replaceProductOptions(productId, { sizes = [], colors = []
     return { data: [], error: deleteError };
   }
 
-  const rows = [...sizeRows, ...colorRows];
+  const rows = [...sizeRows, ...colorSizeRows, ...colorRows];
 
   if (!rows.length) {
     return { data: [], error: null };
   }
 
-  const { data, error } = await supabase.from("product_options").insert(rows).select();
+  let { data, error } = await supabase.from("product_options").insert(rows).select();
+
+  if (error && /parent_value/i.test(error.message || "")) {
+    const fallbackSizeRows = uniqueTextValues([
+      ...sizes,
+      ...Object.values(sizesByColor ?? {}).flat(),
+    ]).map((value, index) => ({
+      product_id: productId,
+      option_type: "size",
+      value,
+      sort_order: index,
+    }));
+    const fallbackRows = [...fallbackSizeRows, ...colorRows];
+    const fallback = fallbackRows.length
+      ? await supabase.from("product_options").insert(fallbackRows).select()
+      : { data: [], error: null };
+
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   return { data: data ?? [], error };
 }
 
@@ -681,10 +849,19 @@ export async function deleteProductAsOwner(productId) {
   return { data, error };
 }
 
-export async function createProductImages(productId, imageUrls) {
-  const uniqueImageUrls = [...new Set((imageUrls ?? []).filter(Boolean))];
+export async function createProductImages(productId, imageEntries) {
+  const uniqueEntries = (imageEntries ?? [])
+    .map(normalizeProductImageEntry)
+    .filter((entry) => entry.imageUrl)
+    .filter((entry, index, all) => {
+      const key = `${entry.imageUrl}|${normalizeVariantKey(entry.color)}`;
+      return (
+        all.findIndex((item) => `${item.imageUrl}|${normalizeVariantKey(item.color)}` === key) ===
+        index
+      );
+    });
 
-  if (!uniqueImageUrls.length) {
+  if (!uniqueEntries.length) {
     return { data: [], error: null };
   }
 
@@ -692,22 +869,47 @@ export async function createProductImages(productId, imageUrls) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
   }
 
-  const rows = uniqueImageUrls.map((imageUrl, index) => ({
+  const rows = uniqueEntries.map((entry, index) => ({
     product_id: productId,
-    image_url: imageUrl,
+    image_url: entry.imageUrl,
+    color_value: entry.color || null,
     sort_order: index,
   }));
 
   let { data, error } = await supabase.from("product_images").insert(rows).select();
 
+  if (error && /color_value/i.test(error.message || "")) {
+    const fallbackRows = rows.map(({ color_value, ...row }) => row);
+    const fallback = await supabase.from("product_images").insert(fallbackRows).select();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error && /sort_order/i.test(error.message || "")) {
-    const fallbackRows = rows.map(({ sort_order, ...row }) => row);
+    const fallbackRows = rows.map(({ sort_order, color_value, ...row }) => row);
     const fallback = await supabase.from("product_images").insert(fallbackRows).select();
     data = fallback.data;
     error = fallback.error;
   }
 
   return { data: data ?? [], error };
+}
+
+export async function replaceProductImages(productId, imageEntries) {
+  if (!supabase) {
+    return { data: [], error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("product_images")
+    .delete()
+    .eq("product_id", productId);
+
+  if (deleteError) {
+    return { data: [], error: deleteError };
+  }
+
+  return createProductImages(productId, imageEntries);
 }
 
 export async function fetchCurrentAdminContext() {

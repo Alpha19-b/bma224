@@ -6,7 +6,6 @@ import {
   createDjomiPaymentSession,
   createOrangeMoneyDeposit,
   createProduct,
-  createProductImages,
   createCheckoutOrder,
   deleteAccountingEntryAsOwner,
   deleteOrderAsOwner,
@@ -21,6 +20,7 @@ import {
   fetchStockMovements,
   inviteStaffMember,
   removeStaffMember,
+  replaceProductImages,
   replaceProductOptions,
   syncDjomiPayments,
   updateProduct,
@@ -386,8 +386,30 @@ function matchesStyleFilter(product, filter) {
   return true;
 }
 
-function getProductSizeOptions(product) {
-  return [...new Set((product.sizes ?? []).map((size) => String(size).trim()).filter(Boolean))];
+function normalizeVariantKey(value) {
+  return String(value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function uniqueOptionValues(values = []) {
+  return [
+    ...new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+function getProductSizeOptions(product, colorValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const sizesByColor = product.sizesByColor ?? {};
+  const colorSizes = colorKey ? sizesByColor[colorKey] ?? [] : [];
+  const fallbackSizes = product.sizes ?? [];
+  return uniqueOptionValues(colorSizes.length ? colorSizes : fallbackSizes);
 }
 
 function getProductColorOptions(product) {
@@ -417,6 +439,36 @@ function getColorSwatchStyle(color) {
   const label = typeof color === "string" ? color : color?.value;
   const hex = typeof color === "string" ? "" : color?.hex;
   return { background: hex || getKnownColorHex(label) || "#d9e1ea" };
+}
+
+function getProductGalleryForColor(product, colorValue = "") {
+  const fallbackGallery = (product.images?.length ? product.images : [product.image]).filter(Boolean);
+  const colorKey = normalizeVariantKey(colorValue);
+  const colorGallery = colorKey ? product.imagesByColor?.[colorKey] ?? [] : [];
+  return colorGallery.length ? colorGallery : fallbackGallery;
+}
+
+function getProductImageEntries(product) {
+  const entries = product.imageEntries?.length
+    ? product.imageEntries
+    : (product.images ?? []).map((imageUrl) => ({ imageUrl, color: "" }));
+
+  return entries
+    .map((entry) => ({
+      imageUrl: entry.imageUrl || entry.image_url || entry.url || "",
+      color: String(entry.color || entry.color_value || "").trim(),
+    }))
+    .filter((entry) => entry.imageUrl);
+}
+
+function buildImagesByColor(imageEntries = []) {
+  return imageEntries.reduce((grouped, entry) => {
+    const colorKey = normalizeVariantKey(entry.color);
+    if (!colorKey || !entry.imageUrl) return grouped;
+    grouped[colorKey] = grouped[colorKey] || [];
+    grouped[colorKey].push(entry.imageUrl);
+    return grouped;
+  }, {});
 }
 
 function getSessionProfile(session, profile = null) {
@@ -482,6 +534,46 @@ function formatColorText(colors = []) {
     })
     .filter(Boolean)
     .join(", ");
+}
+
+function parseSizesByColorText(value) {
+  return String(value ?? "")
+    .split(/\n+/)
+    .reduce((grouped, line) => {
+      const [colorPart, ...sizeParts] = line.split(":");
+      const color = colorPart?.trim();
+      const sizes = splitOptionText(sizeParts.join(":"));
+
+      if (color && sizes.length) {
+        grouped[color] = sizes;
+      }
+
+      return grouped;
+    }, {});
+}
+
+function formatSizesByColorText(sizesByColor = {}, colors = []) {
+  const lines = [];
+  const usedKeys = new Set();
+
+  colors.forEach((color) => {
+    const label = typeof color === "string" ? color : color?.value;
+    const key = normalizeVariantKey(label);
+    const sizes = sizesByColor[key] ?? sizesByColor[label] ?? [];
+
+    if (label && sizes.length) {
+      lines.push(`${label}: ${sizes.join(", ")}`);
+      usedKeys.add(key);
+    }
+  });
+
+  Object.entries(sizesByColor).forEach(([color, sizes]) => {
+    const key = normalizeVariantKey(color);
+    if (usedKeys.has(key) || !sizes?.length) return;
+    lines.push(`${color}: ${sizes.join(", ")}`);
+  });
+
+  return lines.join("\n");
 }
 
 function formatCartVariant(row) {
@@ -2109,21 +2201,36 @@ function ProductCard({ product, onOpen }) {
 }
 
 function ProductDetailModal({ product, onAdd, onClose }) {
-  const gallery = product.images?.length ? product.images : [product.image];
-  const sizeOptions = getProductSizeOptions(product);
   const colorOptions = getProductColorOptions(product);
+  const [selectedColor, setSelectedColor] = useState(colorOptions[0]?.value || "");
+  const gallery = getProductGalleryForColor(product, selectedColor);
+  const sizeOptions = getProductSizeOptions(product, selectedColor);
   const [activeImage, setActiveImage] = useState(gallery[0]);
   const [selectedSize, setSelectedSize] = useState(sizeOptions[0] || "");
-  const [selectedColor, setSelectedColor] = useState(colorOptions[0]?.value || "");
   const [quantity, setQuantity] = useState(1);
   const price = getProductPrice(product);
 
   useEffect(() => {
-    setActiveImage(gallery[0]);
-    setSelectedSize(sizeOptions[0] || "");
-    setSelectedColor(colorOptions[0]?.value || "");
+    const nextColor = colorOptions[0]?.value || "";
+    const nextGallery = getProductGalleryForColor(product, nextColor);
+    const nextSizeOptions = getProductSizeOptions(product, nextColor);
+    setSelectedColor(nextColor);
+    setActiveImage(nextGallery[0]);
+    setSelectedSize(nextSizeOptions[0] || "");
     setQuantity(1);
   }, [product.id]);
+
+  useEffect(() => {
+    const nextGallery = getProductGalleryForColor(product, selectedColor);
+    const nextSizeOptions = getProductSizeOptions(product, selectedColor);
+
+    setActiveImage((current) =>
+      nextGallery.includes(current) ? current : nextGallery[0]
+    );
+    setSelectedSize((current) =>
+      nextSizeOptions.includes(current) ? current : nextSizeOptions[0] || ""
+    );
+  }, [product.id, selectedColor]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -2180,27 +2287,6 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             </div>
           ) : null}
 
-          {sizeOptions.length ? (
-            <div className="option-group">
-              <div className="option-head">
-                <strong>Taille</strong>
-                <span>{selectedSize}</span>
-              </div>
-              <div className="option-list">
-                {sizeOptions.map((size) => (
-                  <button
-                    className={selectedSize === size ? "active" : ""}
-                    key={size}
-                    type="button"
-                    onClick={() => setSelectedSize(size)}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           {colorOptions.length ? (
             <div className="option-group">
               <div className="option-head">
@@ -2217,6 +2303,27 @@ function ProductDetailModal({ product, onAdd, onClose }) {
                   >
                     <span className="color-dot" style={getColorSwatchStyle(color)} />
                     <span>{color.value}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {sizeOptions.length ? (
+            <div className="option-group">
+              <div className="option-head">
+                <strong>Taille</strong>
+                <span>{selectedSize}</span>
+              </div>
+              <div className="option-list">
+                {sizeOptions.map((size) => (
+                  <button
+                    className={selectedSize === size ? "active" : ""}
+                    key={size}
+                    type="button"
+                    onClick={() => setSelectedSize(size)}
+                  >
+                    {size}
                   </button>
                 ))}
               </div>
@@ -2943,6 +3050,7 @@ function AdminPage() {
     category: "",
     description: "",
     sizes: "",
+    sizesByColor: "",
     colors: "",
     price: "",
     purchasePrice: "",
@@ -2950,6 +3058,7 @@ function AdminPage() {
     stock: "",
     imageFiles: [],
     imagePreviews: [],
+    imageColors: [],
   });
   const [accountingForm, setAccountingForm] = useState({
     orderId: "",
@@ -4339,6 +4448,16 @@ function AdminPage() {
       ...current,
       imageFiles,
       imagePreviews: imageFiles.map((file) => URL.createObjectURL(file)),
+      imageColors: imageFiles.map((_, index) => current.imageColors[index] || ""),
+    }));
+  }
+
+  function updateProductImageColor(index, color) {
+    setProductForm((current) => ({
+      ...current,
+      imageColors: current.imagePreviews.map((_, imageIndex) =>
+        imageIndex === index ? color : current.imageColors[imageIndex] || ""
+      ),
     }));
   }
 
@@ -4353,6 +4472,7 @@ function AdminPage() {
       category: "",
       description: "",
       sizes: "",
+      sizesByColor: "",
       colors: "",
       price: "",
       purchasePrice: "",
@@ -4360,6 +4480,7 @@ function AdminPage() {
       stock: "",
       imageFiles: [],
       imagePreviews: [],
+      imageColors: [],
     });
   }
 
@@ -4392,19 +4513,22 @@ function AdminPage() {
   }
 
   function startProductEdit(product) {
+    const imageEntries = getProductImageEntries(product);
     setEditingProductId(product.id);
     setProductForm({
       name: product.name || "",
       category: product.category || "",
       description: product.description || "",
       sizes: (product.sizes ?? []).join(", "),
+      sizesByColor: formatSizesByColorText(product.sizesByColor ?? {}, product.colors ?? []),
       colors: formatColorText(product.colors ?? []),
       price: String(getProductPrice(product) || ""),
       purchasePrice: String(getPurchasePrice(product) || ""),
       extraCost: String(Math.max(0, getCostPrice(product) - getPurchasePrice(product)) || ""),
       stock: String(product.stock ?? ""),
       imageFiles: [],
-      imagePreviews: product.images ?? [],
+      imagePreviews: imageEntries.map((entry) => entry.imageUrl),
+      imageColors: imageEntries.map((entry) => entry.color || ""),
     });
     setProductEditorOpen(true);
   }
@@ -4452,6 +4576,7 @@ function AdminPage() {
 
     const costPrice = purchasePriceResult.value + extraCostResult.value;
     const sizes = splitOptionText(productForm.sizes);
+    const sizesByColor = parseSizesByColorText(productForm.sizesByColor);
     const colors = parseColorText(productForm.colors);
 
     const stockResult = parseGnfInput(productForm.stock, "Stock", {
@@ -4479,6 +4604,16 @@ function AdminPage() {
       if (uploadResult.data) imageUrls.push(uploadResult.data);
     }
 
+    const existingProduct = adminProducts.find((product) => product.id === editingProductId);
+    const finalImageUrls = imageUrls.length
+      ? imageUrls
+      : productForm.imagePreviews.filter((imageUrl) => imageUrl && !String(imageUrl).startsWith("blob:"));
+    const imageEntries = finalImageUrls.map((imageUrl, index) => ({
+      imageUrl,
+      color: productForm.imageColors[index] || "",
+    }));
+    const imagesByColor = buildImagesByColor(imageEntries);
+
     const productPayload = {
       name: productForm.name.trim(),
       category: productForm.category.trim(),
@@ -4488,12 +4623,14 @@ function AdminPage() {
       purchasePrice: purchasePriceResult.value,
       costPrice,
       stock: stockResult.value,
-      image: imageUrls[0] ?? "",
+      image: imageEntries[0]?.imageUrl ?? existingProduct?.image ?? "",
       sizes,
+      sizesByColor,
       colors,
+      imageEntries,
+      imagesByColor,
     };
 
-    const existingProduct = adminProducts.find((product) => product.id === editingProductId);
     const productResult = editingProductId
       ? await updateProduct(editingProductId, productPayload)
       : await createProduct(productPayload);
@@ -4507,7 +4644,7 @@ function AdminPage() {
       return;
     }
 
-    const optionsResult = await replaceProductOptions(data.id, { sizes, colors });
+    const optionsResult = await replaceProductOptions(data.id, { sizes, colors, sizesByColor });
 
     if (optionsResult.error) {
       showToast(
@@ -4517,8 +4654,8 @@ function AdminPage() {
       return;
     }
 
-    const galleryResult = imageUrls.length
-      ? await createProductImages(data.id, imageUrls)
+    const galleryResult = imageEntries.length || editingProductId
+      ? await replaceProductImages(data.id, imageEntries)
       : { error: null };
 
     if (galleryResult.error) {
@@ -4530,12 +4667,19 @@ function AdminPage() {
 
     const savedProduct = {
       ...data,
-      images: imageUrls.length
-        ? [...new Set([...imageUrls, ...(existingProduct?.images ?? [])])]
+      images: imageEntries.length
+        ? imageEntries.map((entry) => entry.imageUrl)
         : existingProduct?.images ?? data.images,
+      imageEntries: imageEntries.length
+        ? imageEntries
+        : existingProduct?.imageEntries ?? data.imageEntries,
+      imagesByColor: imageEntries.length
+        ? imagesByColor
+        : existingProduct?.imagesByColor ?? data.imagesByColor,
       purchasePrice: purchasePriceResult.value,
       costPrice,
       sizes,
+      sizesByColor,
       colors,
     };
 
@@ -5276,13 +5420,26 @@ function AdminPage() {
               />
               {productForm.imagePreviews.length ? (
                 <div className="image-preview-grid">
-                  {productForm.imagePreviews.map((imageUrl) => (
+                  {productForm.imagePreviews.map((imageUrl, index) => (
+                    <div className="image-preview-card" key={`${imageUrl}-${index}`}>
                     <img
                       className="image-preview"
                       src={imageUrl}
                       alt="Aperçu article"
-                      key={imageUrl}
                     />
+                      <select
+                        aria-label="Couleur de la photo"
+                        value={productForm.imageColors[index] || ""}
+                        onChange={(event) => updateProductImageColor(index, event.target.value)}
+                      >
+                        <option value="">Photo generale</option>
+                        {parseColorText(productForm.colors).map((color) => (
+                          <option key={color.value} value={color.value}>
+                            {color.value}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -5322,6 +5479,17 @@ function AdminPage() {
                 value={productForm.colors}
                 onChange={(event) => updateProductForm("colors", event.target.value)}
               />
+            </div>
+            <div className="field">
+              <label>Tailles selon la couleur</label>
+              <textarea
+                placeholder={"Rouge: 40, 41, 42\nBleu: 39, 40\nNoir: S, M, L"}
+                value={productForm.sizesByColor}
+                onChange={(event) => updateProductForm("sizesByColor", event.target.value)}
+              />
+              <small className="muted">
+                Optionnel. Si une couleur a ses propres tailles, elle remplace la liste generale.
+              </small>
             </div>
             <div className="price-form-grid">
             <Field

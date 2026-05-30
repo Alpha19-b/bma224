@@ -2388,6 +2388,23 @@ textarea {
   background: #f8fafc;
 }
 
+.image-preview-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.image-preview-card select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .image-preview-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
