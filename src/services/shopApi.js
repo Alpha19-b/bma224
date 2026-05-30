@@ -65,9 +65,17 @@ function normalizeProductImageEntry(entry) {
 
 function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] }, fallbackCategory = "Produit") {
   const sizesByColor = options.sizesByColor ?? {};
-  const imageEntries = (options.imageEntries ?? [])
+  const globalSizes = uniqueTextValues(options.sizes ?? []);
+  const databaseImageEntries = (options.imageEntries ?? [])
     .map(normalizeProductImageEntry)
     .filter((entry) => entry.imageUrl);
+  const hasMainImageAsGeneral = databaseImageEntries.some(
+    (entry) => entry.imageUrl === product.main_image_url && !entry.color
+  );
+  const imageEntries =
+    product.main_image_url && !hasMainImageAsGeneral
+      ? [{ imageUrl: product.main_image_url, color: "" }, ...databaseImageEntries]
+      : databaseImageEntries;
   const cleanGallery = uniqueTextValues([
     ...gallery,
     ...imageEntries.map((entry) => entry.imageUrl),
@@ -76,7 +84,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
     ? cleanGallery
     : [product.main_image_url].filter(Boolean);
   const sizes = uniqueTextValues([
-    ...(options.sizes ?? []),
+    ...globalSizes,
     ...Object.values(sizesByColor).flat(),
   ]);
 
@@ -99,6 +107,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
       : fallbackGallery.map((imageUrl) => ({ imageUrl, color: "" })),
     imagesByColor: options.imagesByColor ?? {},
     description: product.description,
+    globalSizes,
     sizes,
     sizesByColor,
     colors: options.colors ?? [],

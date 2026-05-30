@@ -408,7 +408,12 @@ function getProductSizeOptions(product, colorValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const sizesByColor = product.sizesByColor ?? {};
   const colorSizes = colorKey ? sizesByColor[colorKey] ?? [] : [];
-  const fallbackSizes = product.sizes ?? [];
+  const hasColorSpecificSizes = Object.keys(sizesByColor).length > 0;
+  const fallbackSizes = product.globalSizes?.length
+    ? product.globalSizes
+    : hasColorSpecificSizes
+      ? []
+      : product.sizes ?? [];
   return uniqueOptionValues(colorSizes.length ? colorSizes : fallbackSizes);
 }
 
@@ -2202,7 +2207,7 @@ function ProductCard({ product, onOpen }) {
 
 function ProductDetailModal({ product, onAdd, onClose }) {
   const colorOptions = getProductColorOptions(product);
-  const [selectedColor, setSelectedColor] = useState(colorOptions[0]?.value || "");
+  const [selectedColor, setSelectedColor] = useState("");
   const gallery = getProductGalleryForColor(product, selectedColor);
   const sizeOptions = getProductSizeOptions(product, selectedColor);
   const [activeImage, setActiveImage] = useState(gallery[0]);
@@ -2211,10 +2216,9 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const price = getProductPrice(product);
 
   useEffect(() => {
-    const nextColor = colorOptions[0]?.value || "";
-    const nextGallery = getProductGalleryForColor(product, nextColor);
-    const nextSizeOptions = getProductSizeOptions(product, nextColor);
-    setSelectedColor(nextColor);
+    const nextGallery = getProductGalleryForColor(product, "");
+    const nextSizeOptions = getProductSizeOptions(product, "");
+    setSelectedColor("");
     setActiveImage(nextGallery[0]);
     setSelectedSize(nextSizeOptions[0] || "");
     setQuantity(1);
@@ -2291,7 +2295,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             <div className="option-group">
               <div className="option-head">
                 <strong>Couleur</strong>
-                <span>{selectedColor}</span>
+                <span>{selectedColor || "A choisir"}</span>
               </div>
               <div className="option-list color-list">
                 {colorOptions.map((color) => (
@@ -2328,6 +2332,10 @@ function ProductDetailModal({ product, onAdd, onClose }) {
                 ))}
               </div>
             </div>
+          ) : null}
+
+          {colorOptions.length && !selectedColor && !sizeOptions.length ? (
+            <p className="variant-note">Choisis une couleur pour voir les tailles disponibles.</p>
           ) : null}
 
           {!sizeOptions.length && !colorOptions.length ? (
@@ -4519,7 +4527,7 @@ function AdminPage() {
       name: product.name || "",
       category: product.category || "",
       description: product.description || "",
-      sizes: (product.sizes ?? []).join(", "),
+      sizes: (product.globalSizes ?? product.sizes ?? []).join(", "),
       sizesByColor: formatSizesByColorText(product.sizesByColor ?? {}, product.colors ?? []),
       colors: formatColorText(product.colors ?? []),
       price: String(getProductPrice(product) || ""),
@@ -4577,6 +4585,10 @@ function AdminPage() {
     const costPrice = purchasePriceResult.value + extraCostResult.value;
     const sizes = splitOptionText(productForm.sizes);
     const sizesByColor = parseSizesByColorText(productForm.sizesByColor);
+    const allSizes = uniqueOptionValues([
+      ...sizes,
+      ...Object.values(sizesByColor).flat(),
+    ]);
     const colors = parseColorText(productForm.colors);
 
     const stockResult = parseGnfInput(productForm.stock, "Stock", {
@@ -4613,6 +4625,11 @@ function AdminPage() {
       color: productForm.imageColors[index] || "",
     }));
     const imagesByColor = buildImagesByColor(imageEntries);
+    const coverImage =
+      imageEntries.find((entry) => !String(entry.color || "").trim())?.imageUrl ||
+      imageEntries[0]?.imageUrl ||
+      existingProduct?.image ||
+      "";
 
     const productPayload = {
       name: productForm.name.trim(),
@@ -4623,7 +4640,7 @@ function AdminPage() {
       purchasePrice: purchasePriceResult.value,
       costPrice,
       stock: stockResult.value,
-      image: imageEntries[0]?.imageUrl ?? existingProduct?.image ?? "",
+      image: coverImage,
       sizes,
       sizesByColor,
       colors,
@@ -4678,7 +4695,8 @@ function AdminPage() {
         : existingProduct?.imagesByColor ?? data.imagesByColor,
       purchasePrice: purchasePriceResult.value,
       costPrice,
-      sizes,
+      globalSizes: sizes,
+      sizes: allSizes,
       sizesByColor,
       colors,
     };
