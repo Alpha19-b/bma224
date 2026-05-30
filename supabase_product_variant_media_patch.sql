@@ -16,6 +16,9 @@ add column if not exists parent_value text;
 alter table public.product_options
 add column if not exists sort_order integer not null default 0;
 
+alter table public.product_options
+add column if not exists stock_quantity integer check (stock_quantity is null or stock_quantity >= 0);
+
 do $bma_variant_constraints$
 begin
   if exists (
@@ -44,11 +47,20 @@ on public.product_options(product_id, option_type, coalesce(parent_value, ''), v
 create index if not exists idx_product_options_product_parent
 on public.product_options(product_id, option_type, parent_value, sort_order);
 
+create or replace function public.bma_variant_key(p_value text)
+returns text
+language sql
+immutable
+as $bma_variant_key$
+  select lower(trim(coalesce(p_value, '')));
+$bma_variant_key$;
+
 create or replace function public.bma_replace_product_options(
   p_product_id uuid,
   p_sizes jsonb default '[]'::jsonb,
   p_colors jsonb default '[]'::jsonb,
-  p_sizes_by_color jsonb default '{}'::jsonb
+  p_sizes_by_color jsonb default '{}'::jsonb,
+  p_stock_by_color jsonb default '{}'::jsonb
 )
 returns void
 language plpgsql
@@ -61,6 +73,7 @@ declare
   v_color_value text;
   v_color_key text;
   v_hex text;
+  v_stock_quantity integer;
   v_index integer := 0;
   v_color_index integer := 0;
   v_size_index integer := 0;
@@ -108,11 +121,20 @@ begin
     v_hex := nullif(trim(coalesce(v_color ->> 'hex', '')), '');
 
     if v_color_value is not null then
+      v_stock_quantity := null;
+
+      if coalesce(p_stock_by_color, '{}'::jsonb) ? public.bma_variant_key(v_color_value) then
+        v_stock_quantity := nullif(p_stock_by_color ->> public.bma_variant_key(v_color_value), '')::integer;
+      elsif coalesce(p_stock_by_color, '{}'::jsonb) ? v_color_value then
+        v_stock_quantity := nullif(p_stock_by_color ->> v_color_value, '')::integer;
+      end if;
+
       insert into public.product_options (
         product_id,
         option_type,
         value,
         hex_color,
+        stock_quantity,
         parent_value,
         sort_order,
         is_active
@@ -122,6 +144,7 @@ begin
         'color',
         v_color_value,
         v_hex,
+        v_stock_quantity,
         null,
         v_index,
         true
@@ -219,8 +242,186 @@ begin
 end;
 $bma_replace_product_images$;
 
-grant execute on function public.bma_replace_product_options(uuid, jsonb, jsonb, jsonb)
+grant execute on function public.bma_replace_product_options(uuid, jsonb, jsonb, jsonb, jsonb)
 to authenticated;
 
 grant execute on function public.bma_replace_product_images(uuid, jsonb)
 to authenticated;
+
+create or replace function public.bma_apply_color_stock_delta(
+  p_product_id uuid,
+  p_color_value text,
+  p_quantity_delta integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $bma_apply_color_stock_delta$
+declare
+  v_option_id uuid;
+  v_stock_before integer;
+  v_stock_after integer;
+begin
+  if p_product_id is null
+    or nullif(trim(coalesce(p_color_value, '')), '') is null
+    or coalesce(p_quantity_delta, 0) = 0
+  then
+    return;
+  end if;
+
+  select id, stock_quantity
+  into v_option_id, v_stock_before
+  from public.product_options
+  where product_id = p_product_id
+    and option_type = 'color'
+    and public.bma_variant_key(value) = public.bma_variant_key(p_color_value)
+  order by sort_order asc
+  limit 1
+  for update;
+
+  if v_option_id is null or v_stock_before is null then
+    return;
+  end if;
+
+  v_stock_after := v_stock_before + p_quantity_delta;
+
+  if v_stock_after < 0 then
+    raise exception 'Stock couleur insuffisant pour %. Stock actuel: %, demande: %',
+      p_color_value,
+      v_stock_before,
+      abs(p_quantity_delta);
+  end if;
+
+  update public.product_options
+  set stock_quantity = v_stock_after
+  where id = v_option_id;
+end;
+$bma_apply_color_stock_delta$;
+
+create or replace function public.bma_reserve_order_item_color_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $bma_reserve_order_item_color_stock$
+begin
+  perform public.bma_apply_color_stock_delta(
+    new.product_id,
+    new.selected_color,
+    -greatest(1, coalesce(new.quantity, 1))
+  );
+
+  return new;
+end;
+$bma_reserve_order_item_color_stock$;
+
+drop trigger if exists bma_reserve_order_item_color_stock on public.order_items;
+create trigger bma_reserve_order_item_color_stock
+after insert on public.order_items
+for each row execute function public.bma_reserve_order_item_color_stock();
+
+create or replace function public.bma_adjust_order_item_color_stock_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $bma_adjust_order_item_color_stock_update$
+declare
+  v_released_at timestamptz;
+begin
+  select stock_released_at
+  into v_released_at
+  from public.orders
+  where id = new.order_id;
+
+  if v_released_at is not null then
+    return new;
+  end if;
+
+  perform public.bma_apply_color_stock_delta(
+    old.product_id,
+    old.selected_color,
+    greatest(1, coalesce(old.quantity, 1))
+  );
+
+  perform public.bma_apply_color_stock_delta(
+    new.product_id,
+    new.selected_color,
+    -greatest(1, coalesce(new.quantity, 1))
+  );
+
+  return new;
+end;
+$bma_adjust_order_item_color_stock_update$;
+
+drop trigger if exists bma_adjust_order_item_color_stock_update on public.order_items;
+create trigger bma_adjust_order_item_color_stock_update
+after update of product_id, quantity, selected_color on public.order_items
+for each row execute function public.bma_adjust_order_item_color_stock_update();
+
+create or replace function public.bma_restore_order_item_color_stock_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $bma_restore_order_item_color_stock_delete$
+declare
+  v_released_at timestamptz;
+begin
+  select stock_released_at
+  into v_released_at
+  from public.orders
+  where id = old.order_id;
+
+  if v_released_at is null then
+    perform public.bma_apply_color_stock_delta(
+      old.product_id,
+      old.selected_color,
+      greatest(1, coalesce(old.quantity, 1))
+    );
+  end if;
+
+  return old;
+end;
+$bma_restore_order_item_color_stock_delete$;
+
+drop trigger if exists bma_restore_order_item_color_stock_delete on public.order_items;
+create trigger bma_restore_order_item_color_stock_delete
+after delete on public.order_items
+for each row execute function public.bma_restore_order_item_color_stock_delete();
+
+create or replace function public.bma_restore_cancelled_order_color_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $bma_restore_cancelled_order_color_stock$
+declare
+  v_item record;
+begin
+  if new.order_status::text = 'cancelled'
+    and old.order_status::text is distinct from 'cancelled'
+    and old.stock_released_at is null
+  then
+    for v_item in
+      select product_id, selected_color, quantity
+      from public.order_items
+      where order_id = new.id
+    loop
+      perform public.bma_apply_color_stock_delta(
+        v_item.product_id,
+        v_item.selected_color,
+        greatest(1, coalesce(v_item.quantity, 1))
+      );
+    end loop;
+  end if;
+
+  return new;
+end;
+$bma_restore_cancelled_order_color_stock$;
+
+drop trigger if exists bma_restore_cancelled_order_color_stock on public.orders;
+create trigger bma_restore_cancelled_order_color_stock
+before update of order_status on public.orders
+for each row execute function public.bma_restore_cancelled_order_color_stock();

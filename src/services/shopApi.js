@@ -87,6 +87,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
     ...globalSizes,
     ...Object.values(sizesByColor).flat(),
   ]);
+  const stockByColor = options.stockByColor ?? {};
 
   return {
     id: product.id,
@@ -110,6 +111,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
     globalSizes,
     sizes,
     sizesByColor,
+    stockByColor,
     colors: options.colors ?? [],
   };
 }
@@ -439,10 +441,22 @@ export async function fetchProducts() {
 
     let { data: optionRows, error: optionError } = await supabase
       .from("product_options")
-      .select("product_id, option_type, value, hex_color, parent_value, sort_order")
+      .select("product_id, option_type, value, hex_color, parent_value, stock_quantity, sort_order")
       .in("product_id", productIds)
       .eq("is_active", true)
       .order("sort_order", { ascending: true });
+
+    if (optionError && /stock_quantity/i.test(optionError.message || "")) {
+      const fallbackOptions = await supabase
+        .from("product_options")
+        .select("product_id, option_type, value, hex_color, parent_value, sort_order")
+        .in("product_id", productIds)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+
+      optionRows = fallbackOptions.data;
+      optionError = fallbackOptions.error;
+    }
 
     if (optionError && /parent_value/i.test(optionError.message || "")) {
       const fallbackOptions = await supabase
@@ -462,6 +476,7 @@ export async function fetchProducts() {
           sizes: [],
           colors: [],
           sizesByColor: {},
+          stockByColor: {},
         };
 
         if (option.option_type === "size") {
@@ -478,10 +493,19 @@ export async function fetchProducts() {
         }
 
         if (option.option_type === "color") {
+          const stockQuantity =
+            option.stock_quantity === null || option.stock_quantity === undefined
+              ? null
+              : Number(option.stock_quantity);
           grouped[option.product_id].colors.push({
             value: option.value,
             hex: option.hex_color,
+            stock: stockQuantity,
           });
+
+          if (stockQuantity !== null) {
+            grouped[option.product_id].stockByColor[normalizeVariantKey(option.value)] = stockQuantity;
+          }
         }
 
         return grouped;
@@ -682,6 +706,7 @@ export async function createProduct(product) {
         sizes: product.sizes ?? [],
         colors: product.colors ?? [],
         sizesByColor: product.sizesByColor ?? {},
+        stockByColor: product.stockByColor ?? {},
         imageEntries: product.imageEntries ?? [],
         imagesByColor: product.imagesByColor ?? {},
       },
@@ -753,6 +778,7 @@ export async function updateProduct(productId, product) {
         sizes: product.sizes ?? [],
         colors: product.colors ?? [],
         sizesByColor: product.sizesByColor ?? {},
+        stockByColor: product.stockByColor ?? {},
         imageEntries: product.imageEntries ?? [],
         imagesByColor: product.imagesByColor ?? {},
       },
@@ -762,16 +788,32 @@ export async function updateProduct(productId, product) {
   };
 }
 
-export async function replaceProductOptions(productId, { sizes = [], colors = [], sizesByColor = {} }) {
+export async function replaceProductOptions(
+  productId,
+  { sizes = [], colors = [], sizesByColor = {}, stockByColor = {} }
+) {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
   }
+
+  const stockByColorPayload = { ...(stockByColor ?? {}) };
+  colors.forEach((color) => {
+    const label = color.value;
+    const normalizedKey = normalizeVariantKey(label);
+    const quantity = stockByColor[normalizedKey] ?? stockByColor[label];
+
+    if (quantity !== undefined && quantity !== null) {
+      stockByColorPayload[label] = Number(quantity);
+      stockByColorPayload[normalizedKey] = Number(quantity);
+    }
+  });
 
   const rpcResult = await supabase.rpc("bma_replace_product_options", {
     p_product_id: productId,
     p_sizes: uniqueTextValues(sizes),
     p_colors: colors,
     p_sizes_by_color: sizesByColor ?? {},
+    p_stock_by_color: stockByColorPayload,
   });
 
   if (!rpcResult.error) {
@@ -804,6 +846,8 @@ export async function replaceProductOptions(productId, { sizes = [], colors = []
     option_type: "color",
     value: color.value,
     hex_color: color.hex || null,
+    stock_quantity:
+      stockByColor[normalizeVariantKey(color.value)] ?? stockByColor[color.value] ?? null,
     sort_order: index,
   }));
 
@@ -824,6 +868,13 @@ export async function replaceProductOptions(productId, { sizes = [], colors = []
 
   let { data, error } = await supabase.from("product_options").insert(rows).select();
 
+  if (error && /stock_quantity/i.test(error.message || "")) {
+    const fallbackRows = rows.map(({ stock_quantity, ...row }) => row);
+    const fallback = await supabase.from("product_options").insert(fallbackRows).select();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error && /parent_value/i.test(error.message || "")) {
     const fallbackSizeRows = uniqueTextValues([
       ...sizes,
@@ -834,7 +885,9 @@ export async function replaceProductOptions(productId, { sizes = [], colors = []
       value,
       sort_order: index,
     }));
-    const fallbackRows = [...fallbackSizeRows, ...colorRows];
+    const fallbackRows = [...fallbackSizeRows, ...colorRows].map(
+      ({ parent_value, stock_quantity, ...row }) => row
+    );
     const fallback = fallbackRows.length
       ? await supabase.from("product_options").insert(fallbackRows).select()
       : { data: [], error: null };

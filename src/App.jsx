@@ -453,6 +453,17 @@ function getProductGalleryForColor(product, colorValue = "") {
   return colorGallery.length ? colorGallery : fallbackGallery;
 }
 
+function getProductStockForColor(product, colorValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const stockByColor = product.stockByColor ?? {};
+
+  if (colorKey && stockByColor[colorKey] !== undefined && stockByColor[colorKey] !== null) {
+    return Math.max(0, Number(stockByColor[colorKey]) || 0);
+  }
+
+  return Math.max(0, Number(product.stock || 0));
+}
+
 function getProductImageEntries(product) {
   const entries = product.imageEntries?.length
     ? product.imageEntries
@@ -586,6 +597,46 @@ function formatSizesByColorText(sizesByColor = {}, colors = []) {
     const key = normalizeVariantKey(color);
     if (usedKeys.has(key) || !sizes?.length) return;
     lines.push(`${color}: ${sizes.join(", ")}`);
+  });
+
+  return lines.join("\n");
+}
+
+function parseStockByColorText(value) {
+  return String(value ?? "")
+    .split(/\n+/)
+    .reduce((grouped, line) => {
+      const [colorPart, ...quantityParts] = line.split(":");
+      const color = colorPart?.trim();
+      const quantity = Number(String(quantityParts.join(":")).replace(/[^\d]/g, ""));
+
+      if (color && Number.isFinite(quantity)) {
+        grouped[normalizeVariantKey(color)] = Math.max(0, quantity);
+      }
+
+      return grouped;
+    }, {});
+}
+
+function formatStockByColorText(stockByColor = {}, colors = []) {
+  const lines = [];
+  const usedKeys = new Set();
+
+  colors.forEach((color) => {
+    const label = typeof color === "string" ? color : color?.value;
+    const key = normalizeVariantKey(label);
+    const quantity = stockByColor[key] ?? stockByColor[label];
+
+    if (label && quantity !== undefined && quantity !== null) {
+      lines.push(`${label}: ${quantity}`);
+      usedKeys.add(key);
+    }
+  });
+
+  Object.entries(stockByColor).forEach(([color, quantity]) => {
+    const key = normalizeVariantKey(color);
+    if (usedKeys.has(key) || quantity === undefined || quantity === null) return;
+    lines.push(`${color}: ${quantity}`);
   });
 
   return lines.join("\n");
@@ -1267,17 +1318,17 @@ function ClientPage() {
   );
 
   function addToCart(product, options = {}) {
-    const firstColor = getProductColorOptions(product)[0];
     const selectedSize = options.size || getProductSizeOptions(product)[0] || "";
-    const selectedColor = options.color || firstColor?.value || "";
-    const requestedQuantity = clampQuantity(options.quantity ?? 1, product.stock);
+    const selectedColor = options.color || "";
+    const stockLimit = getProductStockForColor(product, selectedColor);
+    const requestedQuantity = clampQuantity(options.quantity ?? 1, stockLimit);
     const cartKey = `${product.id}|${selectedSize || "no-size"}|${selectedColor || "no-color"}`;
 
     setCart((current) => {
       const existing = current[cartKey];
       const nextQuantity = clampQuantity(
         (existing?.quantity ?? 0) + requestedQuantity,
-        product.stock
+        stockLimit
       );
 
       return {
@@ -1289,6 +1340,7 @@ function ClientPage() {
           selectedSize,
           selectedColor,
           quantity: nextQuantity,
+          stock: stockLimit,
         },
       };
     });
@@ -2220,6 +2272,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const [selectedColor, setSelectedColor] = useState("");
   const gallery = getProductGalleryForColor(product, selectedColor);
   const sizeOptions = getProductSizeOptions(product, selectedColor);
+  const selectedStock = getProductStockForColor(product, selectedColor);
   const [activeImage, setActiveImage] = useState(gallery[0]);
   const [selectedSize, setSelectedSize] = useState(sizeOptions[0] || "");
   const [quantity, setQuantity] = useState(1);
@@ -2244,6 +2297,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
     setSelectedSize((current) =>
       nextSizeOptions.includes(current) ? current : nextSizeOptions[0] || ""
     );
+    setQuantity((current) => clampQuantity(current, getProductStockForColor(product, selectedColor)));
   }, [product.id, selectedColor]);
 
   useEffect(() => {
@@ -2296,7 +2350,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
           {product.description ? <p>{product.description}</p> : null}
           {product.stock > 0 ? (
             <div className="detail-stock-note">
-              <strong>{lowStockLabel(product.stock)}</strong>
+              <strong>{lowStockLabel(selectedStock)}</strong>
               <span>Taille, couleur et quantité enregistrées dans la commande.</span>
             </div>
           ) : null}
@@ -2355,13 +2409,13 @@ function ProductDetailModal({ product, onAdd, onClose }) {
           <div className="detail-actions">
             <QuantityControl
               value={quantity}
-              max={product.stock}
-              onChange={(value) => setQuantity(clampQuantity(value, product.stock))}
+              max={selectedStock}
+              onChange={(value) => setQuantity(clampQuantity(value, selectedStock))}
             />
             <button
               className="btn"
               type="button"
-              disabled={product.stock <= 0}
+              disabled={product.stock <= 0 || (colorOptions.length > 0 && !selectedColor) || selectedStock <= 0}
               onClick={() =>
                 onAdd(product, {
                   quantity,
@@ -3069,6 +3123,7 @@ function AdminPage() {
     description: "",
     sizes: "",
     sizesByColor: "",
+    stockByColor: "",
     colors: "",
     price: "",
     purchasePrice: "",
@@ -4508,6 +4563,7 @@ function AdminPage() {
       description: "",
       sizes: "",
       sizesByColor: "",
+      stockByColor: "",
       colors: "",
       price: "",
       purchasePrice: "",
@@ -4556,6 +4612,7 @@ function AdminPage() {
       description: product.description || "",
       sizes: (product.globalSizes ?? product.sizes ?? []).join(", "),
       sizesByColor: formatSizesByColorText(product.sizesByColor ?? {}, product.colors ?? []),
+      stockByColor: formatStockByColorText(product.stockByColor ?? {}, product.colors ?? []),
       colors: formatColorText(product.colors ?? []),
       price: String(getProductPrice(product) || ""),
       purchasePrice: String(getPurchasePrice(product) || ""),
@@ -4617,9 +4674,16 @@ function AdminPage() {
       ...Object.values(sizesByColor).flat(),
     ]);
     const colors = parseColorText(productForm.colors);
+    const stockByColor = parseStockByColorText(productForm.stockByColor);
+    const hasStockByColor = Object.keys(stockByColor).length > 0;
+    const stockByColorTotal = Object.values(stockByColor).reduce(
+      (sum, quantity) => sum + Number(quantity || 0),
+      0
+    );
 
     const stockResult = parseGnfInput(productForm.stock, "Stock", {
-      required: true,
+      required: !hasStockByColor,
+      fallback: 0,
     });
 
     if (stockResult.error) {
@@ -4668,11 +4732,12 @@ function AdminPage() {
       promoPrice: null,
       purchasePrice: purchasePriceResult.value,
       costPrice,
-      stock: stockResult.value,
+      stock: hasStockByColor ? stockByColorTotal : stockResult.value,
       image: coverImage,
       sizes: allSizes,
       globalSizes: sizes,
       sizesByColor,
+      stockByColor,
       colors,
       imageEntries,
       imagesByColor,
@@ -4691,7 +4756,12 @@ function AdminPage() {
       return;
     }
 
-    const optionsResult = await replaceProductOptions(data.id, { sizes, colors, sizesByColor });
+    const optionsResult = await replaceProductOptions(data.id, {
+      sizes,
+      colors,
+      sizesByColor,
+      stockByColor,
+    });
 
     if (optionsResult.error) {
       showToast(
@@ -4728,7 +4798,9 @@ function AdminPage() {
       globalSizes: sizes,
       sizes: allSizes,
       sizesByColor,
+      stockByColor,
       colors,
+      stock: hasStockByColor ? stockByColorTotal : stockResult.value,
     };
 
     setAdminProducts((current) =>
@@ -5546,6 +5618,17 @@ function AdminPage() {
               />
               <small className="muted">
                 Optionnel. Si une couleur a ses propres tailles, elle remplace la liste generale.
+              </small>
+            </div>
+            <div className="field">
+              <label>Quantite selon la couleur</label>
+              <textarea
+                placeholder={"Noir: 57\nBlanc: 40\nRose: 40"}
+                value={productForm.stockByColor}
+                onChange={(event) => updateProductForm("stockByColor", event.target.value)}
+              />
+              <small className="muted">
+                Optionnel. Si rempli, le stock total est calcule avec ces quantites.
               </small>
             </div>
             <div className="price-form-grid">
