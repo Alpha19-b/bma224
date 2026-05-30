@@ -767,6 +767,21 @@ export async function replaceProductOptions(productId, { sizes = [], colors = []
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
   }
 
+  const rpcResult = await supabase.rpc("bma_replace_product_options", {
+    p_product_id: productId,
+    p_sizes: uniqueTextValues(sizes),
+    p_colors: colors,
+    p_sizes_by_color: sizesByColor ?? {},
+  });
+
+  if (!rpcResult.error) {
+    return { data: [], error: null };
+  }
+
+  if (!isMissingRpc(rpcResult.error)) {
+    return { data: [], error: rpcResult.error };
+  }
+
   const sizeRows = uniqueTextValues(sizes).map((value, index) => ({
     product_id: productId,
     option_type: "size",
@@ -907,6 +922,19 @@ export async function createProductImages(productId, imageEntries) {
 export async function replaceProductImages(productId, imageEntries) {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const rpcResult = await supabase.rpc("bma_replace_product_images", {
+    p_product_id: productId,
+    p_images: (imageEntries ?? []).map(normalizeProductImageEntry),
+  });
+
+  if (!rpcResult.error) {
+    return { data: [], error: null };
+  }
+
+  if (!isMissingRpc(rpcResult.error)) {
+    return { data: [], error: rpcResult.error };
   }
 
   const { error: deleteError } = await supabase

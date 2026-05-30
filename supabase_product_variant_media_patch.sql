@@ -43,3 +43,184 @@ on public.product_options(product_id, option_type, coalesce(parent_value, ''), v
 
 create index if not exists idx_product_options_product_parent
 on public.product_options(product_id, option_type, parent_value, sort_order);
+
+create or replace function public.bma_replace_product_options(
+  p_product_id uuid,
+  p_sizes jsonb default '[]'::jsonb,
+  p_colors jsonb default '[]'::jsonb,
+  p_sizes_by_color jsonb default '{}'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $bma_replace_product_options$
+declare
+  v_size text;
+  v_color jsonb;
+  v_color_value text;
+  v_color_key text;
+  v_hex text;
+  v_index integer := 0;
+  v_color_index integer := 0;
+  v_size_index integer := 0;
+begin
+  if not public.is_admin() then
+    raise exception 'Acces refuse: seul un membre interne peut modifier les options produit.';
+  end if;
+
+  delete from public.product_options
+  where product_id = p_product_id;
+
+  v_index := 0;
+  for v_size in
+    select distinct trim(item.value)
+    from jsonb_array_elements_text(coalesce(p_sizes, '[]'::jsonb)) as item(value)
+    where trim(item.value) <> ''
+  loop
+    insert into public.product_options (
+      product_id,
+      option_type,
+      value,
+      parent_value,
+      sort_order,
+      is_active
+    )
+    values (
+      p_product_id,
+      'size',
+      v_size,
+      null,
+      v_index,
+      true
+    )
+    on conflict do nothing;
+
+    v_index := v_index + 1;
+  end loop;
+
+  v_index := 0;
+  for v_color in
+    select item.value
+    from jsonb_array_elements(coalesce(p_colors, '[]'::jsonb)) as item(value)
+  loop
+    v_color_value := nullif(trim(coalesce(v_color ->> 'value', '')), '');
+    v_hex := nullif(trim(coalesce(v_color ->> 'hex', '')), '');
+
+    if v_color_value is not null then
+      insert into public.product_options (
+        product_id,
+        option_type,
+        value,
+        hex_color,
+        parent_value,
+        sort_order,
+        is_active
+      )
+      values (
+        p_product_id,
+        'color',
+        v_color_value,
+        v_hex,
+        null,
+        v_index,
+        true
+      )
+      on conflict do nothing;
+
+      v_index := v_index + 1;
+    end if;
+  end loop;
+
+  v_color_index := 0;
+  for v_color_key in
+    select item.key
+    from jsonb_object_keys(coalesce(p_sizes_by_color, '{}'::jsonb)) as item(key)
+  loop
+    v_size_index := 0;
+
+    for v_size in
+      select distinct trim(item.value)
+      from jsonb_array_elements_text(coalesce(p_sizes_by_color -> v_color_key, '[]'::jsonb)) as item(value)
+      where trim(item.value) <> ''
+    loop
+      insert into public.product_options (
+        product_id,
+        option_type,
+        value,
+        parent_value,
+        sort_order,
+        is_active
+      )
+      values (
+        p_product_id,
+        'size',
+        v_size,
+        v_color_key,
+        1000 + (v_color_index * 100) + v_size_index,
+        true
+      )
+      on conflict do nothing;
+
+      v_size_index := v_size_index + 1;
+    end loop;
+
+    v_color_index := v_color_index + 1;
+  end loop;
+end;
+$bma_replace_product_options$;
+
+create or replace function public.bma_replace_product_images(
+  p_product_id uuid,
+  p_images jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $bma_replace_product_images$
+declare
+  v_image jsonb;
+  v_image_url text;
+  v_color_value text;
+  v_index integer := 0;
+begin
+  if not public.is_admin() then
+    raise exception 'Acces refuse: seul un membre interne peut modifier les photos produit.';
+  end if;
+
+  delete from public.product_images
+  where product_id = p_product_id;
+
+  for v_image in
+    select item.value
+    from jsonb_array_elements(coalesce(p_images, '[]'::jsonb)) as item(value)
+  loop
+    v_image_url := nullif(trim(coalesce(v_image ->> 'imageUrl', v_image ->> 'image_url', '')), '');
+    v_color_value := nullif(trim(coalesce(v_image ->> 'color', v_image ->> 'color_value', '')), '');
+
+    if v_image_url is not null then
+      insert into public.product_images (
+        product_id,
+        image_url,
+        color_value,
+        sort_order
+      )
+      values (
+        p_product_id,
+        v_image_url,
+        v_color_value,
+        v_index
+      );
+
+      v_index := v_index + 1;
+    end if;
+  end loop;
+end;
+$bma_replace_product_images$;
+
+grant execute on function public.bma_replace_product_options(uuid, jsonb, jsonb, jsonb)
+to authenticated;
+
+grant execute on function public.bma_replace_product_images(uuid, jsonb)
+to authenticated;

@@ -476,6 +476,16 @@ function buildImagesByColor(imageEntries = []) {
   }, {});
 }
 
+function sortImageEntriesForCover(imageEntries = []) {
+  return [...imageEntries].sort((first, second) => {
+    const firstHasColor = Boolean(String(first.color || "").trim());
+    const secondHasColor = Boolean(String(second.color || "").trim());
+
+    if (firstHasColor === secondHasColor) return 0;
+    return firstHasColor ? 1 : -1;
+  });
+}
+
 function getSessionProfile(session, profile = null) {
   const metadata = session?.user?.user_metadata ?? {};
   const firstName = profile?.firstName ?? metadata.first_name ?? "";
@@ -4620,10 +4630,12 @@ function AdminPage() {
     const finalImageUrls = imageUrls.length
       ? imageUrls
       : productForm.imagePreviews.filter((imageUrl) => imageUrl && !String(imageUrl).startsWith("blob:"));
-    const imageEntries = finalImageUrls.map((imageUrl, index) => ({
-      imageUrl,
-      color: productForm.imageColors[index] || "",
-    }));
+    const imageEntries = sortImageEntriesForCover(
+      finalImageUrls.map((imageUrl, index) => ({
+        imageUrl,
+        color: productForm.imageColors[index] || "",
+      }))
+    );
     const imagesByColor = buildImagesByColor(imageEntries);
     const coverImage =
       imageEntries.find((entry) => !String(entry.color || "").trim())?.imageUrl ||
@@ -4641,7 +4653,8 @@ function AdminPage() {
       costPrice,
       stock: stockResult.value,
       image: coverImage,
-      sizes,
+      sizes: allSizes,
+      globalSizes: sizes,
       sizesByColor,
       colors,
       imageEntries,
