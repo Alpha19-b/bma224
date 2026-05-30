@@ -4479,6 +4479,23 @@ function AdminPage() {
     }));
   }
 
+  function removeProductImage(index) {
+    setProductForm((current) => {
+      const removedPreview = current.imagePreviews[index];
+
+      if (removedPreview && String(removedPreview).startsWith("blob:")) {
+        URL.revokeObjectURL(removedPreview);
+      }
+
+      return {
+        ...current,
+        imageFiles: current.imageFiles.filter((_, imageIndex) => imageIndex !== index),
+        imagePreviews: current.imagePreviews.filter((_, imageIndex) => imageIndex !== index),
+        imageColors: current.imageColors.filter((_, imageIndex) => imageIndex !== index),
+      };
+    });
+  }
+
   function updateAccountingForm(field, value) {
     setAccountingForm((current) => ({ ...current, [field]: value }));
   }
@@ -5453,11 +5470,20 @@ function AdminPage() {
                 <div className="image-preview-grid">
                   {productForm.imagePreviews.map((imageUrl, index) => (
                     <div className="image-preview-card" key={`${imageUrl}-${index}`}>
-                    <img
-                      className="image-preview"
-                      src={imageUrl}
-                      alt="Aperçu article"
-                    />
+                      <button
+                        className="image-remove-btn"
+                        type="button"
+                        aria-label="Retirer cette photo"
+                        title="Retirer cette photo"
+                        onClick={() => removeProductImage(index)}
+                      >
+                        X
+                      </button>
+                      <img
+                        className="image-preview"
+                        src={imageUrl}
+                        alt="Aperçu article"
+                      />
                       <select
                         aria-label="Couleur de la photo"
                         value={productForm.imageColors[index] || ""}

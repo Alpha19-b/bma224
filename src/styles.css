@@ -2389,9 +2389,30 @@ textarea {
 }
 
 .image-preview-card {
+  position: relative;
   min-width: 0;
   display: grid;
   gap: 6px;
+}
+
+.image-remove-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(190, 18, 60, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #b91c1c;
+  font-weight: 1000;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgba(17, 24, 32, 0.14);
+}
+
+.image-remove-btn:hover {
+  background: #fff1f2;
 }
 
 .image-preview-card select {
