@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   adjustProductColorStock,
   adjustProductStock,
+  adjustProductVariantStock,
   confirmDjomiPayment,
   createAccountingEntry,
   createDjomiPaymentSession,
@@ -465,6 +466,169 @@ function getProductStockForColor(product, colorValue = "") {
   return Math.max(0, Number(product.stock || 0));
 }
 
+function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const sizeKey = normalizeVariantKey(sizeValue);
+  const stockByVariant = product.stockByVariant ?? {};
+  const exactStock = colorKey && sizeKey ? stockByVariant[colorKey]?.[sizeKey] : undefined;
+
+  if (exactStock !== undefined && exactStock !== null) {
+    return Math.max(0, Number(exactStock) || 0);
+  }
+
+  return getProductStockForColor(product, colorValue);
+}
+
+function hasExactVariantStock(product, colorValue = "", sizeValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const sizeKey = normalizeVariantKey(sizeValue);
+  return Boolean(
+    colorKey &&
+      sizeKey &&
+      product.stockByVariant?.[colorKey]?.[sizeKey] !== undefined &&
+      product.stockByVariant?.[colorKey]?.[sizeKey] !== null
+  );
+}
+
+function getSizeCandidatesForColor(sizesByColor = {}, globalSizes = [], colorValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const colorSizes = sizesByColor[colorKey] ?? sizesByColor[colorValue] ?? [];
+  return uniqueOptionValues(colorSizes.length ? colorSizes : globalSizes);
+}
+
+function parseStockDetailText(value, sizesByColor = {}, globalSizes = []) {
+  return String(value ?? "")
+    .split(/\n+/)
+    .reduce(
+      (result, line) => {
+        const [colorPart, ...detailParts] = line.split(":");
+        const color = colorPart?.trim();
+        const detail = detailParts.join(":").trim();
+
+        if (!color || !detail) return result;
+
+        const colorKey = normalizeVariantKey(color);
+        const sizeCandidates = getSizeCandidatesForColor(sizesByColor, globalSizes, color);
+        const pieces = detail
+          .split(",")
+          .map((piece) => piece.trim())
+          .filter(Boolean);
+
+        pieces.forEach((piece) => {
+          const numericOnly = piece.match(/^\d+$/);
+          const quantityMatch = piece.match(/^(.*?)(?:\s*[=:x*]\s*|\s+)(\d+)$/i);
+          const quantity = Number(numericOnly?.[0] ?? quantityMatch?.[2]);
+
+          if (!Number.isFinite(quantity)) return;
+
+          const rawSize = numericOnly
+            ? sizeCandidates.length === 1
+              ? sizeCandidates[0]
+              : ""
+            : quantityMatch?.[1]?.replace(/^taille\s+/i, "").trim();
+
+          result.stockByColor[colorKey] = (result.stockByColor[colorKey] ?? 0) + Math.max(0, quantity);
+
+          if (!rawSize) return;
+
+          const sizeKey = normalizeVariantKey(rawSize);
+          result.stockByVariant[colorKey] = result.stockByVariant[colorKey] || {};
+          result.stockByVariant[colorKey][sizeKey] =
+            (result.stockByVariant[colorKey][sizeKey] ?? 0) + Math.max(0, quantity);
+          result.sizesByColor[colorKey] = uniqueOptionValues([
+            ...(result.sizesByColor[colorKey] ?? []),
+            rawSize,
+          ]);
+        });
+
+        return result;
+      },
+      { stockByVariant: {}, stockByColor: {}, sizesByColor: {} }
+    );
+}
+
+function mergeSizesByColor(primary = {}, additions = {}) {
+  const merged = { ...primary };
+
+  Object.entries(additions).forEach(([colorKey, sizes]) => {
+    merged[colorKey] = uniqueOptionValues([...(merged[colorKey] ?? []), ...(sizes ?? [])]);
+  });
+
+  return merged;
+}
+
+function formatStockDetailText(stockByVariant = {}, sizesByColor = {}, colors = []) {
+  const lines = [];
+  const usedKeys = new Set();
+
+  function addLine(colorLabel, colorKey) {
+    const stockForColor = stockByVariant[colorKey] ?? stockByVariant[colorLabel] ?? {};
+    const sizes = sizesByColor[colorKey] ?? sizesByColor[colorLabel] ?? Object.keys(stockForColor);
+    const parts = uniqueOptionValues(sizes)
+      .map((size) => {
+        const quantity = stockForColor[normalizeVariantKey(size)] ?? stockForColor[size];
+        return quantity === undefined || quantity === null ? "" : `${size} ${quantity}`;
+      })
+      .filter(Boolean);
+
+    if (colorLabel && parts.length) {
+      lines.push(`${colorLabel}: ${parts.join(", ")}`);
+      usedKeys.add(colorKey);
+    }
+  }
+
+  colors.forEach((color) => {
+    const label = typeof color === "string" ? color : color?.value;
+    addLine(label, normalizeVariantKey(label));
+  });
+
+  Object.entries(stockByVariant).forEach(([colorKey, stockForColor]) => {
+    if (usedKeys.has(colorKey)) return;
+    const sizes = sizesByColor[colorKey] ?? Object.keys(stockForColor);
+    addLine(colorKey, colorKey, sizes);
+  });
+
+  return lines.join("\n");
+}
+
+function getProductStockBreakdown(product, limit = 3) {
+  const lines = [];
+  const colors = getProductColorOptions(product);
+  const usedKeys = new Set();
+
+  colors.forEach((color) => {
+    const colorKey = normalizeVariantKey(color.value);
+    const stockForColor = product.stockByVariant?.[colorKey] ?? {};
+    const sizes = getProductSizeOptions(product, color.value);
+    const sizeParts = sizes
+      .map((size) => {
+        const quantity = stockForColor[normalizeVariantKey(size)];
+        return quantity === undefined || quantity === null ? "" : `${size} ${quantity}`;
+      })
+      .filter(Boolean);
+
+    if (sizeParts.length) {
+      lines.push(`${color.value}: ${sizeParts.join(", ")}`);
+    } else if (product.stockByColor?.[colorKey] !== undefined) {
+      lines.push(`${color.value}: ${product.stockByColor[colorKey]}`);
+    }
+
+    usedKeys.add(colorKey);
+  });
+
+  Object.entries(product.stockByVariant ?? {}).forEach(([colorKey, stockForColor]) => {
+    if (usedKeys.has(colorKey)) return;
+    const parts = Object.entries(stockForColor).map(([sizeKey, quantity]) => `${sizeKey} ${quantity}`);
+    if (parts.length) lines.push(`${colorKey}: ${parts.join(", ")}`);
+  });
+
+  if (!lines.length) return "";
+
+  return lines.length > limit
+    ? `${lines.slice(0, limit).join(" · ")} · +${lines.length - limit}`
+    : lines.join(" · ");
+}
+
 function parseManualVariantRows(rawText, product) {
   const lines = String(rawText || "")
     .split(/\r?\n/)
@@ -523,6 +687,38 @@ function getManualSaleColorDeltas(product, accountingForm, quantity) {
   }
 
   return [...grouped.values()].filter((row) => row.color && row.quantity > 0);
+}
+
+function getManualSaleVariantDeltas(product, accountingForm, quantity) {
+  if (!product) return [];
+
+  const grouped = new Map();
+  const rows = parseManualVariantRows(accountingForm.saleVariantLines, product);
+  const usefulRows = rows.filter((row) => row.color && row.size);
+
+  if (usefulRows.length) {
+    usefulRows.forEach((row) => {
+      const key = `${normalizeVariantKey(row.color)}|${normalizeVariantKey(row.size)}`;
+      const current = grouped.get(key) || {
+        color: row.color,
+        size: row.size,
+        quantity: 0,
+      };
+      current.quantity += row.quantity;
+      grouped.set(key, current);
+    });
+  } else if (accountingForm.saleColor && accountingForm.saleSize) {
+    const key = `${normalizeVariantKey(accountingForm.saleColor)}|${normalizeVariantKey(accountingForm.saleSize)}`;
+    grouped.set(key, {
+      color: accountingForm.saleColor,
+      size: accountingForm.saleSize,
+      quantity,
+    });
+  }
+
+  return [...grouped.values()].filter(
+    (row) => row.color && row.size && row.quantity > 0
+  );
 }
 
 function getProductImageEntries(product) {
@@ -1381,7 +1577,7 @@ function ClientPage() {
   function addToCart(product, options = {}) {
     const selectedSize = options.size || getProductSizeOptions(product)[0] || "";
     const selectedColor = options.color || "";
-    const stockLimit = getProductStockForColor(product, selectedColor);
+    const stockLimit = getProductStockForSelection(product, selectedColor, selectedSize);
     const requestedQuantity = clampQuantity(options.quantity ?? 1, stockLimit);
     const cartKey = `${product.id}|${selectedSize || "no-size"}|${selectedColor || "no-color"}`;
 
@@ -2233,6 +2429,7 @@ function ProductCard({ product, onOpen }) {
   const colorOptions = getProductColorOptions(product);
   const visibleColors = colorOptions.slice(0, 4);
   const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
+  const stockBreakdown = getProductStockBreakdown(product, 2);
 
   return (
     <article className="product" onClick={onOpen}>
@@ -2284,13 +2481,14 @@ function ProductCard({ product, onOpen }) {
             <>
               {product.sizes?.length ? <span>{product.sizes.slice(0, 4).join(", ")}</span> : null}
               {product.stock > 0 ? (
-                <span>{lowStock ? `${product.stock} restant${product.stock > 1 ? "s" : ""}` : "Stock dispo"}</span>
+                <span>{lowStock ? `${product.stock} restant${product.stock > 1 ? "s" : ""}` : `${product.stock} en stock`}</span>
               ) : null}
             </>
           ) : (
             <span>Prêt à rejoindre le panier</span>
           )}
         </div>
+        {stockBreakdown ? <p className="product-stock-line">{stockBreakdown}</p> : null}
         {visibleColors.length ? (
           <div className="product-color-row" aria-label="Couleurs disponibles">
             {visibleColors.map((color) => (
@@ -2334,9 +2532,9 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const [selectedColor, setSelectedColor] = useState("");
   const gallery = getProductGalleryForColor(product, selectedColor);
   const sizeOptions = getProductSizeOptions(product, selectedColor);
-  const selectedStock = getProductStockForColor(product, selectedColor);
   const [activeImage, setActiveImage] = useState(gallery[0]);
   const [selectedSize, setSelectedSize] = useState(sizeOptions[0] || "");
+  const selectedStock = getProductStockForSelection(product, selectedColor, selectedSize);
   const [quantity, setQuantity] = useState(1);
   const price = getProductPrice(product);
 
@@ -2359,8 +2557,19 @@ function ProductDetailModal({ product, onAdd, onClose }) {
     setSelectedSize((current) =>
       nextSizeOptions.includes(current) ? current : nextSizeOptions[0] || ""
     );
-    setQuantity((current) => clampQuantity(current, getProductStockForColor(product, selectedColor)));
+    setQuantity((current) =>
+      clampQuantity(
+        current,
+        getProductStockForSelection(product, selectedColor, nextSizeOptions[0] || "")
+      )
+    );
   }, [product.id, selectedColor]);
+
+  useEffect(() => {
+    setQuantity((current) =>
+      clampQuantity(current, getProductStockForSelection(product, selectedColor, selectedSize))
+    );
+  }, [product.id, selectedColor, selectedSize]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -2448,12 +2657,27 @@ function ProductDetailModal({ product, onAdd, onClose }) {
               <div className="option-list">
                 {sizeOptions.map((size) => (
                   <button
-                    className={selectedSize === size ? "active" : ""}
+                    className={[
+                      selectedSize === size ? "active" : "",
+                      hasExactVariantStock(product, selectedColor, size) &&
+                      getProductStockForSelection(product, selectedColor, size) <= 0
+                        ? "is-out"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    disabled={
+                      hasExactVariantStock(product, selectedColor, size) &&
+                      getProductStockForSelection(product, selectedColor, size) <= 0
+                    }
                     key={size}
                     type="button"
                     onClick={() => setSelectedSize(size)}
                   >
-                    {size}
+                    <span>{size}</span>
+                    {hasExactVariantStock(product, selectedColor, size) ? (
+                      <small>{getProductStockForSelection(product, selectedColor, size)}</small>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -3186,6 +3410,7 @@ function AdminPage() {
     sizes: "",
     sizesByColor: "",
     stockByColor: "",
+    stockDetails: "",
     colors: "",
     price: "",
     purchasePrice: "",
@@ -4668,6 +4893,7 @@ function AdminPage() {
       sizes: "",
       sizesByColor: "",
       stockByColor: "",
+      stockDetails: "",
       colors: "",
       price: "",
       purchasePrice: "",
@@ -4717,6 +4943,11 @@ function AdminPage() {
       sizes: (product.globalSizes ?? product.sizes ?? []).join(", "),
       sizesByColor: formatSizesByColorText(product.sizesByColor ?? {}, product.colors ?? []),
       stockByColor: formatStockByColorText(product.stockByColor ?? {}, product.colors ?? []),
+      stockDetails: formatStockDetailText(
+        product.stockByVariant ?? {},
+        product.sizesByColor ?? {},
+        product.colors ?? []
+      ),
       colors: formatColorText(product.colors ?? []),
       price: String(getProductPrice(product) || ""),
       purchasePrice: String(getPurchasePrice(product) || ""),
@@ -4772,13 +5003,18 @@ function AdminPage() {
 
     const costPrice = purchasePriceResult.value + extraCostResult.value;
     const sizes = splitOptionText(productForm.sizes);
-    const sizesByColor = parseSizesByColorText(productForm.sizesByColor);
+    const declaredSizesByColor = parseSizesByColorText(productForm.sizesByColor);
+    const exactStock = parseStockDetailText(productForm.stockDetails, declaredSizesByColor, sizes);
+    const sizesByColor = mergeSizesByColor(declaredSizesByColor, exactStock.sizesByColor);
     const allSizes = uniqueOptionValues([
       ...sizes,
       ...Object.values(sizesByColor).flat(),
     ]);
     const colors = parseColorText(productForm.colors);
-    const stockByColor = parseStockByColorText(productForm.stockByColor);
+    const stockByColor = {
+      ...parseStockByColorText(productForm.stockByColor),
+      ...exactStock.stockByColor,
+    };
     const hasStockByColor = Object.keys(stockByColor).length > 0;
     const stockByColorTotal = Object.values(stockByColor).reduce(
       (sum, quantity) => sum + Number(quantity || 0),
@@ -4850,6 +5086,7 @@ function AdminPage() {
       globalSizes: sizes,
       sizesByColor,
       stockByColor,
+      stockByVariant: exactStock.stockByVariant,
       colors,
       imageEntries,
       imagesByColor,
@@ -4873,6 +5110,7 @@ function AdminPage() {
       colors,
       sizesByColor,
       stockByColor,
+      stockByVariant: exactStock.stockByVariant,
     });
 
     if (optionsResult.error) {
@@ -4911,6 +5149,7 @@ function AdminPage() {
       sizes: allSizes,
       sizesByColor,
       stockByColor,
+      stockByVariant: exactStock.stockByVariant,
       colors,
       stock: hasStockByColor ? stockByColorTotal : stockResult.value,
     };
@@ -5039,6 +5278,9 @@ function AdminPage() {
     const manualColorDeltas = selectedSaleProduct
       ? getManualSaleColorDeltas(selectedSaleProduct, accountingForm, saleQuantity)
       : [];
+    const manualVariantDeltas = selectedSaleProduct
+      ? getManualSaleVariantDeltas(selectedSaleProduct, accountingForm, saleQuantity)
+      : [];
 
     if (
       selectedSaleProduct &&
@@ -5071,6 +5313,22 @@ function AdminPage() {
       if (colorDelta.quantity > colorStock) {
         showToast(
           `Stock insuffisant pour ${colorDelta.color} : il reste ${colorStock} article(s).`,
+          "issue"
+        );
+        return;
+      }
+    }
+
+    for (const variantDelta of manualVariantDeltas) {
+      const variantStock = getProductStockForSelection(
+        selectedSaleProduct,
+        variantDelta.color,
+        variantDelta.size
+      );
+
+      if (variantDelta.quantity > variantStock) {
+        showToast(
+          `Stock insuffisant pour ${variantDelta.color} / ${variantDelta.size} : il reste ${variantStock} article(s).`,
           "issue"
         );
         return;
@@ -5163,6 +5421,7 @@ function AdminPage() {
 
     setAccountingRecords((current) => (data ? [data, ...current] : current));
     let colorStockError = null;
+    let variantStockError = null;
 
     if (selectedSaleProduct && !error && manualColorDeltas.length) {
       for (const colorDelta of manualColorDeltas) {
@@ -5178,6 +5437,22 @@ function AdminPage() {
 
         if (colorResult.error) {
           colorStockError = colorResult.error;
+          break;
+        }
+      }
+    }
+
+    if (selectedSaleProduct && !error && manualVariantDeltas.length) {
+      for (const variantDelta of manualVariantDeltas) {
+        const variantResult = await adjustProductVariantStock({
+          productId: selectedSaleProduct.id,
+          color: variantDelta.color,
+          size: variantDelta.size,
+          quantityDelta: -variantDelta.quantity,
+        });
+
+        if (variantResult.error) {
+          variantStockError = variantResult.error;
           break;
         }
       }
@@ -5204,6 +5479,25 @@ function AdminPage() {
                 0,
                 getProductStockForColor(nextProduct, colorDelta.color) - colorDelta.quantity
               );
+            });
+          }
+
+          if (!variantStockError && manualVariantDeltas.length) {
+            nextProduct.stockByVariant = { ...(product.stockByVariant ?? {}) };
+            manualVariantDeltas.forEach((variantDelta) => {
+              const colorKey = normalizeVariantKey(variantDelta.color);
+              const sizeKey = normalizeVariantKey(variantDelta.size);
+              if (!(colorKey in nextProduct.stockByVariant)) return;
+              if (!(sizeKey in (nextProduct.stockByVariant[colorKey] ?? {}))) return;
+
+              nextProduct.stockByVariant[colorKey] = {
+                ...nextProduct.stockByVariant[colorKey],
+                [sizeKey]: Math.max(
+                  0,
+                  getProductStockForSelection(nextProduct, variantDelta.color, variantDelta.size) -
+                    variantDelta.quantity
+                ),
+              };
             });
           }
 
@@ -5248,10 +5542,12 @@ function AdminPage() {
     showToast(
       error
         ? `Vente enregistrée, mais stock à vérifier : ${getFriendlyErrorMessage(error, "stock")}`
+        : variantStockError
+          ? `Vente enregistrée. Stock détaillé à vérifier : ${getFriendlyErrorMessage(variantStockError, "stock")}`
         : colorStockError
           ? `Vente enregistrée. Stock couleur à vérifier : ${getFriendlyErrorMessage(colorStockError, "stock")}`
           : "Vente enregistrée et stock mis à jour.",
-      error || colorStockError ? "waiting" : "paid"
+      error || colorStockError || variantStockError ? "waiting" : "paid"
     );
   }
 
@@ -5663,6 +5959,11 @@ function AdminPage() {
                         <span className={`stock-pill ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}>
                           {product.stock}
                         </span>
+                        {getProductStockBreakdown(product, 2) ? (
+                          <small className="stock-detail-text">
+                            {getProductStockBreakdown(product, 2)}
+                          </small>
+                        ) : null}
                       </td>
                       <td data-label="Actions">
                         <div className="inline-actions">
@@ -5838,6 +6139,17 @@ function AdminPage() {
               />
               <small className="muted">
                 Optionnel. Si rempli, le stock total est calcule avec ces quantites.
+              </small>
+            </div>
+            <div className="field">
+              <label>Détail exact du stock</label>
+              <textarea
+                placeholder={"Noir: L 1, XL 1\nBlanc: L 2\nOrange: 2"}
+                value={productForm.stockDetails}
+                onChange={(event) => updateProductForm("stockDetails", event.target.value)}
+              />
+              <small className="muted">
+                Optionnel. Pour couleur + taille exacte. Si une couleur n'a qu'une taille, un simple nombre suffit.
               </small>
             </div>
             <div className="price-form-grid">

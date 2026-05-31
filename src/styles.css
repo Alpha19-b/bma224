@@ -1519,6 +1519,17 @@ main {
   box-shadow: inset 0 0 0 1px rgba(15, 138, 95, 0.28);
 }
 
+.option-list button.is-out {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.option-list button small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .color-list button {
   display: inline-flex;
   gap: 8px;
@@ -1994,6 +2005,18 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.product-stock-line {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .product-color-row {
@@ -2946,6 +2969,16 @@ textarea {
 .stock-pill.out {
   background: #ffeceb;
   color: #b42318;
+}
+
+.stock-detail-text {
+  display: block;
+  max-width: 240px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .stock-tabs {

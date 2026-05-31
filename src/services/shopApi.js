@@ -88,6 +88,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
     ...Object.values(sizesByColor).flat(),
   ]);
   const stockByColor = options.stockByColor ?? {};
+  const stockByVariant = options.stockByVariant ?? {};
 
   return {
     id: product.id,
@@ -112,6 +113,7 @@ function mapProductRow(product, gallery = [], options = { sizes: [], colors: [] 
     sizes,
     sizesByColor,
     stockByColor,
+    stockByVariant,
     colors: options.colors ?? [],
   };
 }
@@ -477,16 +479,29 @@ export async function fetchProducts() {
           colors: [],
           sizesByColor: {},
           stockByColor: {},
+          stockByVariant: {},
         };
 
         if (option.option_type === "size") {
           const parentValue = String(option.parent_value ?? "").trim();
+          const stockQuantity =
+            option.stock_quantity === null || option.stock_quantity === undefined
+              ? null
+              : Number(option.stock_quantity);
 
           if (parentValue) {
             const parentKey = normalizeVariantKey(parentValue);
             grouped[option.product_id].sizesByColor[parentKey] =
               grouped[option.product_id].sizesByColor[parentKey] || [];
             grouped[option.product_id].sizesByColor[parentKey].push(option.value);
+
+            if (stockQuantity !== null) {
+              grouped[option.product_id].stockByVariant[parentKey] =
+                grouped[option.product_id].stockByVariant[parentKey] || {};
+              grouped[option.product_id].stockByVariant[parentKey][
+                normalizeVariantKey(option.value)
+              ] = stockQuantity;
+            }
           } else {
             grouped[option.product_id].sizes.push(option.value);
           }
@@ -790,7 +805,7 @@ export async function updateProduct(productId, product) {
 
 export async function replaceProductOptions(
   productId,
-  { sizes = [], colors = [], sizesByColor = {}, stockByColor = {} }
+  { sizes = [], colors = [], sizesByColor = {}, stockByColor = {}, stockByVariant = {} }
 ) {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
@@ -808,13 +823,24 @@ export async function replaceProductOptions(
     }
   });
 
-  const rpcResult = await supabase.rpc("bma_replace_product_options", {
+  let rpcResult = await supabase.rpc("bma_replace_product_options_v2", {
     p_product_id: productId,
     p_sizes: uniqueTextValues(sizes),
     p_colors: colors,
     p_sizes_by_color: sizesByColor ?? {},
     p_stock_by_color: stockByColorPayload,
+    p_stock_by_variant: stockByVariant ?? {},
   });
+
+  if (isMissingRpc(rpcResult.error)) {
+    rpcResult = await supabase.rpc("bma_replace_product_options", {
+      p_product_id: productId,
+      p_sizes: uniqueTextValues(sizes),
+      p_colors: colors,
+      p_sizes_by_color: sizesByColor ?? {},
+      p_stock_by_color: stockByColorPayload,
+    });
+  }
 
   if (!rpcResult.error) {
     return { data: [], error: null };
@@ -837,6 +863,10 @@ export async function replaceProductOptions(
       option_type: "size",
       value,
       parent_value: colorValue,
+      stock_quantity:
+        stockByVariant[normalizeVariantKey(colorValue)]?.[normalizeVariantKey(value)] ??
+        stockByVariant[colorValue]?.[value] ??
+        null,
       sort_order: 1000 + colorIndex * 100 + sizeIndex,
     }))
   );
@@ -1990,6 +2020,43 @@ export async function adjustProductColorStock({
       data: null,
       error: new Error(
         "Fonction Supabase de stock couleur manquante. Exécute le patch variantes dans SQL Editor."
+      ),
+    };
+  }
+
+  return { data: null, error };
+}
+
+export async function adjustProductVariantStock({
+  productId,
+  color,
+  size,
+  quantityDelta,
+}) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  if (!productId || !color || !size || !Number(quantityDelta)) {
+    return { data: null, error: null };
+  }
+
+  const { data, error } = await supabase.rpc("adjust_product_variant_stock", {
+    p_product_id: productId,
+    p_color_value: color,
+    p_size_value: size,
+    p_quantity_delta: Number(quantityDelta),
+  });
+
+  if (!error) {
+    return { data, error: null };
+  }
+
+  if (isMissingRpc(error)) {
+    return {
+      data: null,
+      error: new Error(
+        "Fonction Supabase de stock détaillé manquante. Exécute le patch variantes dans SQL Editor."
       ),
     };
   }
