@@ -2950,6 +2950,7 @@ textarea {
 .watch-row b,
 .stock-pill {
   min-width: 34px;
+  border: 0;
   border-radius: 999px;
   padding: 5px 8px;
   display: inline-grid;
@@ -2975,10 +2976,129 @@ textarea {
   display: block;
   max-width: 240px;
   margin-top: 6px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   line-height: 1.35;
+  text-align: left;
+}
+
+.stock-pill-button,
+.stock-detail-button {
+  cursor: pointer;
+}
+
+.stock-detail-button:hover {
+  color: var(--green-dark);
+  text-decoration: underline;
+}
+
+.stock-detail-body {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.stock-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stock-detail-summary div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.stock-detail-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stock-detail-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.stock-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stock-detail-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  display: grid;
+  gap: 10px;
+}
+
+.stock-detail-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.stock-detail-card-head strong {
+  min-width: 0;
+  flex: 1;
+}
+
+.stock-detail-card-head b {
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #eaf1ff;
+  color: var(--blue);
+}
+
+.stock-detail-card-head b.low,
+.stock-size-grid span.low {
+  background: #fff3df;
+  color: #9a5a00;
+}
+
+.stock-detail-card-head b.out,
+.stock-size-grid span.out {
+  background: #ffeceb;
+  color: #b42318;
+}
+
+.stock-size-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stock-size-grid span {
+  border-radius: 999px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f4f7fa;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.stock-size-grid b {
+  color: var(--green-dark);
+}
+
+.stock-detail-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .stock-tabs {
@@ -6699,6 +6819,14 @@ textarea {
 }
 
 @media (max-width: 430px) {
+  .stock-detail-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-detail-body {
+    padding: 12px;
+  }
+
   .store-logo-mark {
     width: 76px;
     height: 34px;

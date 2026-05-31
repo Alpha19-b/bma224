@@ -629,6 +629,68 @@ function getProductStockBreakdown(product, limit = 3) {
     : lines.join(" · ");
 }
 
+function getProductStockDetailRows(product) {
+  const rows = [];
+  const colors = getProductColorOptions(product);
+  const usedKeys = new Set();
+
+  colors.forEach((color) => {
+    const colorKey = normalizeVariantKey(color.value);
+    const stockForColor = product.stockByVariant?.[colorKey] ?? {};
+    const sizeRows = getProductSizeOptions(product, color.value)
+      .map((size) => ({
+        size,
+        quantity: stockForColor[normalizeVariantKey(size)],
+      }))
+      .filter((row) => row.quantity !== undefined && row.quantity !== null);
+    const colorTotal =
+      product.stockByColor?.[colorKey] ??
+      (sizeRows.length
+        ? sizeRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+        : null);
+
+    if (colorTotal !== null || sizeRows.length) {
+      rows.push({
+        color: color.value,
+        hex: color.hex,
+        total: Math.max(0, Number(colorTotal || 0)),
+        sizes: sizeRows,
+      });
+    }
+
+    usedKeys.add(colorKey);
+  });
+
+  Object.entries(product.stockByColor ?? {}).forEach(([colorKey, quantity]) => {
+    if (usedKeys.has(colorKey)) return;
+    rows.push({
+      color: colorKey,
+      hex: getKnownColorHex(colorKey),
+      total: Math.max(0, Number(quantity || 0)),
+      sizes: [],
+    });
+    usedKeys.add(colorKey);
+  });
+
+  Object.entries(product.stockByVariant ?? {}).forEach(([colorKey, stockForColor]) => {
+    if (usedKeys.has(colorKey)) return;
+
+    const sizes = Object.entries(stockForColor).map(([size, quantity]) => ({
+      size,
+      quantity,
+    }));
+
+    rows.push({
+      color: colorKey,
+      hex: getKnownColorHex(colorKey),
+      total: sizes.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
+      sizes,
+    });
+  });
+
+  return rows;
+}
+
 function parseManualVariantRows(rawText, product) {
   const lines = String(rawText || "")
     .split(/\r?\n/)
@@ -2719,6 +2781,77 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   );
 }
 
+function ProductStockDetailPanel({ product, onClose }) {
+  const rows = getProductStockDetailRows(product);
+  const lowRows = rows.filter((row) => row.total > 0 && row.total <= 3);
+  const outRows = rows.filter((row) => row.total <= 0);
+
+  return (
+    <section className="section admin-action-panel stock-detail-panel" role="dialog" aria-modal="true">
+      <div className="section-head">
+        <div>
+          <h2>Stock de {product.name}</h2>
+          <span>Total, couleurs, tailles et ruptures</span>
+        </div>
+        <button className="icon-btn" type="button" onClick={onClose}>
+          Fermer
+        </button>
+      </div>
+      <div className="stock-detail-body">
+        <div className="stock-detail-summary">
+          <div>
+            <span>Total article</span>
+            <strong>{product.stock}</strong>
+          </div>
+          <div>
+            <span>Couleurs suivies</span>
+            <strong>{rows.length}</strong>
+          </div>
+          <div>
+            <span>À surveiller</span>
+            <strong>{lowRows.length + outRows.length}</strong>
+          </div>
+        </div>
+
+        {rows.length ? (
+          <div className="stock-detail-list">
+            {rows.map((row) => (
+              <article className="stock-detail-card" key={row.color}>
+                <div className="stock-detail-card-head">
+                  <span className="color-dot" style={{ background: row.hex || getKnownColorHex(row.color) }} />
+                  <strong>{row.color}</strong>
+                  <b className={row.total <= 0 ? "out" : row.total <= 3 ? "low" : ""}>
+                    {row.total}
+                  </b>
+                </div>
+                {row.sizes.length ? (
+                  <div className="stock-size-grid">
+                    {row.sizes.map((sizeRow) => (
+                      <span
+                        className={Number(sizeRow.quantity || 0) <= 0 ? "out" : Number(sizeRow.quantity || 0) <= 1 ? "low" : ""}
+                        key={`${row.color}-${sizeRow.size}`}
+                      >
+                        {sizeRow.size}
+                        <b>{sizeRow.quantity}</b>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p>Stock suivi uniquement par couleur.</p>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state compact">
+            Aucun détail couleur/taille enregistré pour cet article.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ClientAuthPanel({
   form,
   locationStatus,
@@ -3399,6 +3532,7 @@ function AdminPage() {
   const [isDepositSubmitting, setIsDepositSubmitting] = useState(false);
   const [depositMessage, setDepositMessage] = useState(null);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [stockDetailProductId, setStockDetailProductId] = useState("");
   const [productEditorOpen, setProductEditorOpen] = useState(false);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
   const [depositPanelOpen, setDepositPanelOpen] = useState(false);
@@ -3666,7 +3800,11 @@ function AdminPage() {
 
   useEffect(() => {
     const hasBlockingPanel =
-      adminAccountOpen || productEditorOpen || manualSaleOpen || depositPanelOpen;
+      adminAccountOpen ||
+      productEditorOpen ||
+      manualSaleOpen ||
+      depositPanelOpen ||
+      Boolean(stockDetailProductId);
 
     if (!hasBlockingPanel) return undefined;
 
@@ -3679,6 +3817,7 @@ function AdminPage() {
       setProductEditorOpen(false);
       setManualSaleOpen(false);
       setDepositPanelOpen(false);
+      setStockDetailProductId("");
       setDepositMessage(null);
       setEditingProductId(null);
     }
@@ -3689,7 +3828,7 @@ function AdminPage() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [adminAccountOpen, productEditorOpen, manualSaleOpen, depositPanelOpen]);
+  }, [adminAccountOpen, productEditorOpen, manualSaleOpen, depositPanelOpen, stockDetailProductId]);
 
   const totalRevenue = accountingRecords.reduce(
     (sum, record) => sum + Number(record.saleAmount || 0),
@@ -3724,6 +3863,7 @@ function AdminPage() {
   const selectedSaleProduct = adminProducts.find(
     (product) => product.id === accountingForm.saleProductId
   );
+  const stockDetailProduct = adminProducts.find((product) => product.id === stockDetailProductId);
   const availableAdminProducts = adminProducts.filter((product) => Number(product.stock || 0) > 0);
   const outOfStockProducts = adminProducts.filter((product) => Number(product.stock || 0) <= 0);
   const displayedAdminProducts =
@@ -4915,6 +5055,14 @@ function AdminPage() {
     setProductEditorOpen(false);
   }
 
+  function openProductStockDetails(product) {
+    setStockDetailProductId(product.id);
+  }
+
+  function closeProductStockDetails() {
+    setStockDetailProductId("");
+  }
+
   function openManualSalePanel() {
     setManualSaleOpen(true);
   }
@@ -5956,13 +6104,22 @@ function AdminPage() {
                       <td data-label="Achat">{formatMoney(getPurchasePrice(product))}</td>
                       <td data-label="Revient">{formatMoney(getCostPrice(product))}</td>
                       <td data-label="Stock">
-                        <span className={`stock-pill ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}>
+                        <button
+                          className={`stock-pill stock-pill-button ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}
+                          type="button"
+                          title={`Voir le détail du stock de ${product.name}`}
+                          onClick={() => openProductStockDetails(product)}
+                        >
                           {product.stock}
-                        </span>
+                        </button>
                         {getProductStockBreakdown(product, 2) ? (
-                          <small className="stock-detail-text">
+                          <button
+                            className="stock-detail-text stock-detail-button"
+                            type="button"
+                            onClick={() => openProductStockDetails(product)}
+                          >
                             {getProductStockBreakdown(product, 2)}
-                          </small>
+                          </button>
                         ) : null}
                       </td>
                       <td data-label="Actions">
@@ -6207,6 +6364,20 @@ function AdminPage() {
             </button>
           </form>
         </section>
+          </div>
+        ) : null}
+
+        {stockDetailProduct ? (
+          <div
+            className="admin-action-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeProductStockDetails();
+            }}
+          >
+            <ProductStockDetailPanel
+              product={stockDetailProduct}
+              onClose={closeProductStockDetails}
+            />
           </div>
         ) : null}
       </div>
