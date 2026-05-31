@@ -4601,12 +4601,21 @@ function AdminPage() {
   }
 
   function updateProductImages(files) {
-    const imageFiles = Array.from(files ?? []).slice(0, 6);
+    const nextFiles = Array.from(files ?? []);
+
+    if (!nextFiles.length) return;
+
     setProductForm((current) => ({
       ...current,
-      imageFiles,
-      imagePreviews: imageFiles.map((file) => URL.createObjectURL(file)),
-      imageColors: imageFiles.map((_, index) => current.imageColors[index] || ""),
+      imageFiles: [
+        ...current.imagePreviews.map((_, index) => current.imageFiles[index] ?? null),
+        ...nextFiles,
+      ],
+      imagePreviews: [
+        ...current.imagePreviews,
+        ...nextFiles.map((file) => URL.createObjectURL(file)),
+      ],
+      imageColors: [...current.imageColors, ...nextFiles.map(() => "")],
     }));
   }
 
@@ -4713,7 +4722,7 @@ function AdminPage() {
       purchasePrice: String(getPurchasePrice(product) || ""),
       extraCost: String(Math.max(0, getCostPrice(product) - getPurchasePrice(product)) || ""),
       stock: String(product.stock ?? ""),
-      imageFiles: [],
+      imageFiles: imageEntries.map(() => null),
       imagePreviews: imageEntries.map((entry) => entry.imageUrl),
       imageColors: imageEntries.map((entry) => entry.color || ""),
     });
@@ -4786,9 +4795,21 @@ function AdminPage() {
       return;
     }
 
-    const imageUrls = [];
+    const existingProduct = adminProducts.find((product) => product.id === editingProductId);
+    const finalImageUrls = [];
 
-    for (const imageFile of productForm.imageFiles) {
+    for (const [index, imagePreview] of productForm.imagePreviews.entries()) {
+      if (!imagePreview) continue;
+
+      if (!String(imagePreview).startsWith("blob:")) {
+        finalImageUrls.push(imagePreview);
+        continue;
+      }
+
+      const imageFile = productForm.imageFiles[index];
+
+      if (!imageFile) continue;
+
       const uploadResult = await uploadProductImage(imageFile);
 
       if (uploadResult.error) {
@@ -4799,13 +4820,9 @@ function AdminPage() {
         return;
       }
 
-      if (uploadResult.data) imageUrls.push(uploadResult.data);
+      if (uploadResult.data) finalImageUrls.push(uploadResult.data);
     }
 
-    const existingProduct = adminProducts.find((product) => product.id === editingProductId);
-    const finalImageUrls = imageUrls.length
-      ? imageUrls
-      : productForm.imagePreviews.filter((imageUrl) => imageUrl && !String(imageUrl).startsWith("blob:"));
     const imageEntries = sortImageEntriesForCover(
       finalImageUrls.map((imageUrl, index) => ({
         imageUrl,
@@ -5724,8 +5741,14 @@ function AdminPage() {
                 accept="image/*"
                 multiple
                 type="file"
-                onChange={(event) => updateProductImages(event.target.files)}
+                onChange={(event) => {
+                  updateProductImages(event.target.files);
+                  event.target.value = "";
+                }}
               />
+              <span className="muted">
+                Ajoute autant de photos que nécessaire. Les nouvelles photos s'ajoutent à la galerie existante.
+              </span>
               {productForm.imagePreviews.length ? (
                 <div className="image-preview-grid">
                   {productForm.imagePreviews.map((imageUrl, index) => (
@@ -5759,9 +5782,7 @@ function AdminPage() {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <span className="muted">Jusqu'à 6 photos pour montrer matière, coupe et détails.</span>
-              )}
+              ) : null}
             </div>
             <Field
               label="Nom"
