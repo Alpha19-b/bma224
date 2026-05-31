@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  adjustProductColorStock,
   adjustProductStock,
   confirmDjomiPayment,
   createAccountingEntry,
@@ -462,6 +463,66 @@ function getProductStockForColor(product, colorValue = "") {
   }
 
   return Math.max(0, Number(product.stock || 0));
+}
+
+function parseManualVariantRows(rawText, product) {
+  const lines = String(rawText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length || !product) return [];
+
+  const colorOptions = getProductColorOptions(product);
+  const allSizes = uniqueOptionValues([
+    ...getProductSizeOptions(product),
+    ...colorOptions.flatMap((color) => getProductSizeOptions(product, color.value)),
+  ]);
+
+  return lines.map((line) => {
+    const quantityMatch =
+      line.match(/(?:x|\*)\s*(\d+)\s*$/i) ||
+      line.match(/:\s*(\d+)\s*$/) ||
+      line.match(/\b(?:qte|qté|quantite|quantité|nombre|nb)\s*(\d+)\s*$/i);
+    const quantity = Math.max(1, Number(quantityMatch?.[1] || 1));
+    const searchable = quantityMatch ? line.slice(0, quantityMatch.index).trim() : line;
+    const normalizedLine = normalizeVariantKey(searchable || line);
+    const color = colorOptions.find((option) =>
+      normalizedLine.includes(normalizeVariantKey(option.value))
+    )?.value;
+    const size = allSizes.find((option) =>
+      normalizedLine.includes(normalizeVariantKey(option))
+    );
+
+    return {
+      line,
+      color: color || "",
+      size: size || "",
+      quantity,
+    };
+  });
+}
+
+function getManualSaleColorDeltas(product, accountingForm, quantity) {
+  if (!product) return [];
+
+  const grouped = new Map();
+  const rows = parseManualVariantRows(accountingForm.saleVariantLines, product);
+  const usefulRows = rows.filter((row) => row.color);
+
+  if (usefulRows.length) {
+    usefulRows.forEach((row) => {
+      const key = normalizeVariantKey(row.color);
+      const current = grouped.get(key) || { color: row.color, quantity: 0 };
+      current.quantity += row.quantity;
+      grouped.set(key, current);
+    });
+  } else if (accountingForm.saleColor) {
+    const key = normalizeVariantKey(accountingForm.saleColor);
+    grouped.set(key, { color: accountingForm.saleColor, quantity });
+  }
+
+  return [...grouped.values()].filter((row) => row.color && row.quantity > 0);
 }
 
 function getProductImageEntries(product) {
@@ -3137,6 +3198,9 @@ function AdminPage() {
     orderId: "",
     saleProductId: "",
     saleQuantity: "1",
+    saleColor: "",
+    saleSize: "",
+    saleVariantLines: "",
     date: getTodayDateInput(),
     customer: "",
     saleAmount: "",
@@ -3439,6 +3503,26 @@ function AdminPage() {
   const displayedAdminProducts =
     productStockView === "out_of_stock" ? outOfStockProducts : availableAdminProducts;
   const saleQuantity = Math.max(1, getDraftAmount(accountingForm.saleQuantity, 1));
+  const selectedSaleColorOptions = selectedSaleProduct
+    ? getProductColorOptions(selectedSaleProduct)
+    : [];
+  const selectedSaleSizeOptions = selectedSaleProduct
+    ? getProductSizeOptions(selectedSaleProduct, accountingForm.saleColor)
+    : [];
+  const manualVariantRows = selectedSaleProduct
+    ? parseManualVariantRows(accountingForm.saleVariantLines, selectedSaleProduct)
+    : [];
+  const manualVariantQuantity = manualVariantRows.reduce(
+    (sum, row) => sum + Number(row.quantity || 0),
+    0
+  );
+  const showManualVariantFields =
+    Boolean(selectedSaleProduct) &&
+    (selectedSaleColorOptions.length > 0 || selectedSaleSizeOptions.length > 0);
+  const selectedSaleColorStock =
+    selectedSaleProduct && accountingForm.saleColor
+      ? getProductStockForColor(selectedSaleProduct, accountingForm.saleColor)
+      : Number(selectedSaleProduct?.stock || 0);
   const selectedSaleBaseAmount = selectedSaleProduct
     ? getProductPrice(selectedSaleProduct) * saleQuantity
     : accountingSalePreview;
@@ -4555,6 +4639,16 @@ function AdminPage() {
     setAccountingForm((current) => ({ ...current, [field]: value }));
   }
 
+  function selectManualSaleProduct(productId) {
+    setAccountingForm((current) => ({
+      ...current,
+      saleProductId: productId,
+      saleColor: "",
+      saleSize: "",
+      saleVariantLines: "",
+    }));
+  }
+
   function resetProductForm() {
     setEditingProductId(null);
     setProductForm({
@@ -4924,6 +5018,47 @@ function AdminPage() {
       return;
     }
 
+    const manualColorDeltas = selectedSaleProduct
+      ? getManualSaleColorDeltas(selectedSaleProduct, accountingForm, saleQuantity)
+      : [];
+
+    if (
+      selectedSaleProduct &&
+      accountingForm.saleVariantLines.trim() &&
+      manualVariantQuantity !== saleQuantity
+    ) {
+      showToast(
+        `Le détail couleurs/tailles indique ${manualVariantQuantity} article(s), mais la quantité est ${saleQuantity}.`,
+        "issue"
+      );
+      return;
+    }
+
+    if (
+      selectedSaleProduct &&
+      accountingForm.saleColor &&
+      !manualColorDeltas.length &&
+      saleQuantity > selectedSaleColorStock
+    ) {
+      showToast(
+        `Stock insuffisant pour ${accountingForm.saleColor} : il reste ${selectedSaleColorStock} article(s).`,
+        "issue"
+      );
+      return;
+    }
+
+    for (const colorDelta of manualColorDeltas) {
+      const colorStock = getProductStockForColor(selectedSaleProduct, colorDelta.color);
+
+      if (colorDelta.quantity > colorStock) {
+        showToast(
+          `Stock insuffisant pour ${colorDelta.color} : il reste ${colorStock} article(s).`,
+          "issue"
+        );
+        return;
+      }
+    }
+
     const saleAmountResult = selectedSaleProduct
       ? { value: selectedSaleBaseAmount }
       : parseGnfInput(accountingForm.saleAmount, "Prix de vente", {
@@ -4962,10 +5097,18 @@ function AdminPage() {
     const costAmount = purchaseAmountResult.value + extraCostResult.value;
 
     const generatedSaleReference = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
+    const variantNotes = [
+      accountingForm.saleColor ? `Couleur : ${accountingForm.saleColor}` : "",
+      accountingForm.saleSize ? `Taille : ${accountingForm.saleSize}` : "",
+      accountingForm.saleVariantLines.trim()
+        ? `Détail couleurs/tailles :\n${accountingForm.saleVariantLines.trim()}`
+        : "",
+    ].filter(Boolean);
     const saleNotes = [
       accountingForm.note?.trim(),
       selectedSaleProduct ? `Article : ${selectedSaleProduct.name}` : "Vente libre",
       `Quantité : ${saleQuantity}`,
+      ...variantNotes,
       discountAmountResult.value ? `Remise : ${formatMoney(discountAmountResult.value)}` : "",
     ].filter(Boolean);
 
@@ -5001,14 +5144,53 @@ function AdminPage() {
     }
 
     setAccountingRecords((current) => (data ? [data, ...current] : current));
+    let colorStockError = null;
+
+    if (selectedSaleProduct && !error && manualColorDeltas.length) {
+      for (const colorDelta of manualColorDeltas) {
+        const colorResult = await adjustProductColorStock({
+          productId: selectedSaleProduct.id,
+          color: colorDelta.color,
+          quantityDelta: -colorDelta.quantity,
+          reason: "manual_sale",
+          referenceType: "accounting_entry",
+          referenceId: data?.id || record.orderId,
+          note: record.note,
+        });
+
+        if (colorResult.error) {
+          colorStockError = colorResult.error;
+          break;
+        }
+      }
+    }
+
     if (selectedSaleProduct && !error) {
       const nextStock = Math.max(0, Number(selectedSaleProduct.stock || 0) - saleQuantity);
       setAdminProducts((current) =>
-        current.map((product) =>
-          product.id === selectedSaleProduct.id
-            ? { ...product, stock: Math.max(0, Number(product.stock || 0) - saleQuantity) }
-            : product
-        )
+        current.map((product) => {
+          if (product.id !== selectedSaleProduct.id) return product;
+
+          const nextProduct = {
+            ...product,
+            stock: Math.max(0, Number(product.stock || 0) - saleQuantity),
+          };
+
+          if (!colorStockError && manualColorDeltas.length) {
+            nextProduct.stockByColor = { ...(product.stockByColor ?? {}) };
+            manualColorDeltas.forEach((colorDelta) => {
+              const key = normalizeVariantKey(colorDelta.color);
+              if (!(key in nextProduct.stockByColor)) return;
+
+              nextProduct.stockByColor[key] = Math.max(
+                0,
+                getProductStockForColor(nextProduct, colorDelta.color) - colorDelta.quantity
+              );
+            });
+          }
+
+          return nextProduct;
+        })
       );
       setStockMovements((current) => [
         {
@@ -5032,6 +5214,9 @@ function AdminPage() {
       orderId: "",
       saleProductId: "",
       saleQuantity: "1",
+      saleColor: "",
+      saleSize: "",
+      saleVariantLines: "",
       date: getTodayDateInput(),
       customer: "",
       saleAmount: "",
@@ -5045,8 +5230,10 @@ function AdminPage() {
     showToast(
       error
         ? `Vente enregistrée, mais stock à vérifier : ${getFriendlyErrorMessage(error, "stock")}`
-        : "Vente enregistrée et stock mis à jour.",
-      error ? "waiting" : "paid"
+        : colorStockError
+          ? `Vente enregistrée. Stock couleur à vérifier : ${getFriendlyErrorMessage(colorStockError, "stock")}`
+          : "Vente enregistrée et stock mis à jour.",
+      error || colorStockError ? "waiting" : "paid"
     );
   }
 
@@ -6088,9 +6275,7 @@ function AdminPage() {
                 <label>Article vendu</label>
                 <select
                   value={accountingForm.saleProductId}
-                  onChange={(event) =>
-                    updateAccountingForm("saleProductId", event.target.value)
-                  }
+                  onChange={(event) => selectManualSaleProduct(event.target.value)}
                 >
                   <option value="">Vente libre sans article</option>
                   {availableAdminProducts.map((product) => (
@@ -6106,6 +6291,71 @@ function AdminPage() {
                   <strong>
                     {selectedSaleProduct.name} - {formatMoney(getProductPrice(selectedSaleProduct))} / article
                   </strong>
+                  {accountingForm.saleColor ? (
+                    <small>
+                      Stock {accountingForm.saleColor} : {selectedSaleColorStock} article(s)
+                    </small>
+                  ) : null}
+                </div>
+              ) : null}
+              {showManualVariantFields ? (
+                <div className="manual-variant-box full">
+                  <div className="manual-variant-head">
+                    <strong>Options vendues</strong>
+                    <span>Choisis seulement si nécessaire.</span>
+                  </div>
+                  <div className="manual-variant-grid">
+                    {selectedSaleColorOptions.length ? (
+                      <div className="field">
+                        <label>Couleur</label>
+                        <select
+                          value={accountingForm.saleColor}
+                          onChange={(event) => {
+                            updateAccountingForm("saleColor", event.target.value);
+                            updateAccountingForm("saleSize", "");
+                          }}
+                        >
+                          <option value="">Non précisée</option>
+                          {selectedSaleColorOptions.map((color) => (
+                            <option value={color.value} key={color.value}>
+                              {color.value} - stock {getProductStockForColor(selectedSaleProduct, color.value)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    {selectedSaleSizeOptions.length ? (
+                      <div className="field">
+                        <label>Taille / pointure</label>
+                        <select
+                          value={accountingForm.saleSize}
+                          onChange={(event) => updateAccountingForm("saleSize", event.target.value)}
+                        >
+                          <option value="">Non précisée</option>
+                          {selectedSaleSizeOptions.map((size) => (
+                            <option value={size} key={size}>
+                              {size}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="field">
+                    <label>Plusieurs couleurs / tailles</label>
+                    <textarea
+                      value={accountingForm.saleVariantLines}
+                      placeholder={"Optionnel. Exemple :\nNoir / M x2\nBlanc / L x1"}
+                      onChange={(event) =>
+                        updateAccountingForm("saleVariantLines", event.target.value)
+                      }
+                    />
+                  </div>
+                  {manualVariantRows.length ? (
+                    <p className="manual-variant-note">
+                      Total détaillé : {manualVariantQuantity} article(s).
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               <Field
@@ -6117,7 +6367,7 @@ function AdminPage() {
                 onChange={(value) => updateAccountingForm("saleQuantity", value)}
               />
               <Field
-                label="Référence vente / commande"
+                label="Numéro du client"
                 value={accountingForm.orderId}
                 onChange={(value) => updateAccountingForm("orderId", value)}
               />

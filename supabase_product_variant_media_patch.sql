@@ -299,6 +299,44 @@ begin
 end;
 $bma_apply_color_stock_delta$;
 
+create or replace function public.adjust_product_color_stock(
+  p_product_id uuid,
+  p_color_value text,
+  p_quantity_delta integer,
+  p_reason text default 'adjustment',
+  p_reference_type text default null,
+  p_reference_id text default null,
+  p_note text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $bma_adjust_product_color_stock$
+begin
+  if not public.is_admin() then
+    raise exception 'Acces refuse: seul un membre interne peut ajuster le stock couleur.';
+  end if;
+
+  perform public.bma_apply_color_stock_delta(
+    p_product_id,
+    p_color_value,
+    p_quantity_delta
+  );
+end;
+$bma_adjust_product_color_stock$;
+
+grant execute on function public.adjust_product_color_stock(
+  uuid,
+  text,
+  integer,
+  text,
+  text,
+  text,
+  text
+)
+to authenticated;
+
 create or replace function public.bma_reserve_order_item_color_stock()
 returns trigger
 language plpgsql

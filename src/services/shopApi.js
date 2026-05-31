@@ -1954,6 +1954,49 @@ export async function adjustProductStock({
   return updateProductStock(productId, nextStock);
 }
 
+export async function adjustProductColorStock({
+  productId,
+  color,
+  quantityDelta,
+  reason = "adjustment",
+  referenceType = "",
+  referenceId = "",
+  note = "",
+}) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  if (!productId || !color || !Number(quantityDelta)) {
+    return { data: null, error: null };
+  }
+
+  const { data, error } = await supabase.rpc("adjust_product_color_stock", {
+    p_product_id: productId,
+    p_color_value: color,
+    p_quantity_delta: Number(quantityDelta),
+    p_reason: reason,
+    p_reference_type: referenceType || null,
+    p_reference_id: referenceId || null,
+    p_note: note || null,
+  });
+
+  if (!error) {
+    return { data, error: null };
+  }
+
+  if (isMissingRpc(error)) {
+    return {
+      data: null,
+      error: new Error(
+        "Fonction Supabase de stock couleur manquante. Exécute le patch variantes dans SQL Editor."
+      ),
+    };
+  }
+
+  return { data: null, error };
+}
+
 export async function createOrangeMoneyDeposit({
   record,
   reference,
