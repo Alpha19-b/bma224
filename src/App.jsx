@@ -1973,10 +1973,11 @@ function ClientPage() {
         <button
           className="store-logo"
           type="button"
+          aria-label="BMA Family"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
-          <span className="brand-mark">BMA</span>
-          <span>BMA Family</span>
+          <LogoMark className="store-logo-mark" />
+          <span>Family</span>
         </button>
 
         <div className="store-actions">
@@ -7326,7 +7327,7 @@ function AdminLogin({ authReady, loginForm, message, onChange, onSubmit }) {
     <div className="admin-login-layout">
       <section className="section auth-panel admin-login-card">
         <div className="login-card-head">
-          <div className="brand-mark">BMA</div>
+          <LogoMark className="login-logo-mark" />
           <h1>Connexion</h1>
         </div>
         {message?.tone === "issue" ? (
@@ -7361,7 +7362,7 @@ function AdminAccessMessage({ title, text, actionLabel, onAction }) {
     <div className="admin-login-layout">
       <section className="section auth-panel admin-login-card admin-access-card">
         <div className="login-card-head">
-          <div className="brand-mark">BMA</div>
+          <LogoMark className="login-logo-mark" />
           <h1>{title}</h1>
         </div>
         <p className="admin-access-text">{text}</p>
@@ -7774,10 +7775,18 @@ function DetailPanel({ title, emptyText, children, onClose }) {
   );
 }
 
+function LogoMark({ className = "" }) {
+  return (
+    <span className={`logo-frame ${className}`.trim()} aria-hidden="true">
+      <img className="bma-logo-image" src="/bma-logo.png" alt="" />
+    </span>
+  );
+}
+
 function Brand({ subtitle }) {
   return (
     <div className="brand">
-      <div className="brand-mark">BMA</div>
+      <LogoMark className="brand-logo-mark" />
       <div>
         <strong>BMA</strong>
         <span>{subtitle}</span>

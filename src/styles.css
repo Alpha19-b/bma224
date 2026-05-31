@@ -94,6 +94,32 @@ video {
   align-items: center;
 }
 
+.logo-frame {
+  width: 90px;
+  height: 42px;
+  padding: 6px 8px;
+  border: 1px solid rgba(17, 24, 32, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 22px rgba(17, 24, 32, 0.08);
+  flex: 0 0 auto;
+}
+
+.bma-logo-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.brand-logo-mark {
+  width: 92px;
+  height: 42px;
+}
+
 .brand-mark {
   width: 46px;
   height: 42px;
@@ -283,6 +309,11 @@ main {
   background: transparent;
   color: var(--ink);
   font-weight: 900;
+}
+
+.store-logo-mark {
+  width: 104px;
+  height: 44px;
 }
 
 .store-logo span:last-child {
@@ -3892,6 +3923,12 @@ textarea {
   justify-items: start;
 }
 
+.login-logo-mark {
+  width: 128px;
+  height: 54px;
+  padding: 7px 10px;
+}
+
 .login-card-head h1 {
   margin: 0;
   font-size: 26px;
@@ -6629,6 +6666,27 @@ textarea {
 }
 
 @media (max-width: 430px) {
+  .store-logo-mark {
+    width: 76px;
+    height: 34px;
+    padding: 5px 6px;
+  }
+
+  .admin-shell .brand-logo-mark {
+    width: 74px;
+    height: 34px;
+    padding: 5px 6px;
+  }
+
+  .admin-shell .brand strong {
+    display: none;
+  }
+
+  .login-logo-mark {
+    width: 116px;
+    height: 50px;
+  }
+
   .admin-main .section-head {
     padding: 12px 10px;
   }
