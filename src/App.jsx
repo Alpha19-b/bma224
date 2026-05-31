@@ -206,6 +206,7 @@ const commonColorSwatches = {
   Noir: "#111820",
   Blanc: "#ffffff",
   Bleu: "#2563eb",
+  "Bleu clair": "#93c5fd",
   "Bleu ciel": "#7dd3fc",
   Rouge: "#c94136",
   Orange: "#f97316",
