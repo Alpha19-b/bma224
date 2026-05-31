@@ -206,13 +206,20 @@ const commonColorSwatches = {
   Noir: "#111820",
   Blanc: "#ffffff",
   Bleu: "#2563eb",
+  "Bleu ciel": "#7dd3fc",
   Rouge: "#c94136",
+  Orange: "#f97316",
   Vert: "#0f8a5f",
   Beige: "#d8c3a5",
+  Kaki: "#8a8f45",
   Marron: "#7a4a28",
   Jaune: "#f4c542",
   Rose: "#ec4899",
   Gris: "#667085",
+  "Gris clair": "#cbd5e1",
+  "Gris fonce": "#344054",
+  "Gris foncé": "#344054",
+  Violet: "#7c3aed",
 };
 
 function getKnownColorHex(label) {
@@ -231,6 +238,26 @@ function getKnownColorHex(label) {
   );
 
   return match?.[1] || "";
+}
+
+function getColorParts(label) {
+  return uniqueOptionValues(
+    String(label || "")
+      .split(/\s*(?:\/|\+|,|&|\bet\b)\s*/i)
+      .map((part) => part.trim())
+  );
+}
+
+function getSwatchStops(colors) {
+  const segment = 100 / colors.length;
+
+  return colors
+    .map((color, index) => {
+      const start = Math.round(segment * index);
+      const end = Math.round(segment * (index + 1));
+      return `${color} ${start}% ${end}%`;
+    })
+    .join(", ");
 }
 
 function ActionIcon({ name }) {
@@ -445,7 +472,21 @@ function getProductColorOptions(product) {
 function getColorSwatchStyle(color) {
   const label = typeof color === "string" ? color : color?.value;
   const hex = typeof color === "string" ? "" : color?.hex;
-  return { background: hex || getKnownColorHex(label) || "#d9e1ea" };
+  const parts = getColorParts(label);
+  const colors = parts
+    .map((part) => getKnownColorHex(part))
+    .filter(Boolean);
+
+  if (colors.length > 1) {
+    return {
+      background:
+        colors.length === 2
+          ? `linear-gradient(135deg, ${colors[0]} 0 50%, ${colors[1]} 50% 100%)`
+          : `conic-gradient(${getSwatchStops(colors)})`,
+    };
+  }
+
+  return { background: hex || colors[0] || getKnownColorHex(label) || "#d9e1ea" };
 }
 
 function getProductGalleryForColor(product, colorValue = "") {
@@ -2818,7 +2859,7 @@ function ProductStockDetailPanel({ product, onClose }) {
             {rows.map((row) => (
               <article className="stock-detail-card" key={row.color}>
                 <div className="stock-detail-card-head">
-                  <span className="color-dot" style={{ background: row.hex || getKnownColorHex(row.color) }} />
+                  <span className="color-dot" style={getColorSwatchStyle({ value: row.color, hex: row.hex })} />
                   <strong>{row.color}</strong>
                   <b className={row.total <= 0 ? "out" : row.total <= 3 ? "low" : ""}>
                     {row.total}

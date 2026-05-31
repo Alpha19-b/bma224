@@ -1350,6 +1350,8 @@ main {
   min-width: 0;
   padding: 18px;
   display: grid;
+  grid-template-rows: auto auto;
+  align-content: start;
   gap: 12px;
   background: #f5f7fa;
 }
@@ -1378,6 +1380,7 @@ main {
 }
 
 .detail-thumbs button {
+  aspect-ratio: 1 / 1;
   min-height: 68px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1537,6 +1540,7 @@ main {
 }
 
 .color-dot {
+  flex: 0 0 16px;
   width: 16px;
   height: 16px;
   border: 1px solid rgba(17, 24, 32, 0.2);
