@@ -494,10 +494,25 @@ function getColorSwatchStyle(color) {
 }
 
 function getProductGalleryForColor(product, colorValue = "") {
-  const fallbackGallery = (product.images?.length ? product.images : [product.image]).filter(Boolean);
+  const allGallery = uniqueOptionValues([
+    ...(product.imageEntries ?? []).map((entry) => entry.imageUrl || entry.image_url || entry.url || ""),
+    ...(product.images ?? []),
+    product.image,
+  ]);
   const colorKey = normalizeVariantKey(colorValue);
-  const colorGallery = colorKey ? product.imagesByColor?.[colorKey] ?? [] : [];
-  return colorGallery.length ? colorGallery : fallbackGallery;
+
+  if (!colorKey) {
+    return allGallery;
+  }
+
+  const colorGallery = uniqueOptionValues([
+    ...((product.imageEntries ?? [])
+      .filter((entry) => normalizeVariantKey(entry.color || entry.color_value) === colorKey)
+      .map((entry) => entry.imageUrl || entry.image_url || entry.url || "")),
+    ...(product.imagesByColor?.[colorKey] ?? []),
+  ]);
+
+  return colorGallery.length ? colorGallery : allGallery;
 }
 
 function getProductStockForColor(product, colorValue = "") {
@@ -2530,13 +2545,13 @@ function ClientPage() {
 
 function ProductCard({ product, onOpen }) {
   const price = getProductPrice(product);
-  const gallery = product.images?.length ? product.images : [product.image];
+  const gallery = getProductGalleryForColor(product, "");
   const [activeImage, setActiveImage] = useState(gallery[0]);
   const hasOptions = Boolean(product.sizes?.length || product.colors?.length);
   const colorOptions = getProductColorOptions(product);
   const visibleColors = colorOptions.slice(0, 4);
   const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
-  const stockBreakdown = getProductStockBreakdown(product, 2);
+  const sizeCount = uniqueOptionValues(product.sizes ?? []).length;
 
   return (
     <article className="product" onClick={onOpen}>
@@ -2586,16 +2601,17 @@ function ProductCard({ product, onOpen }) {
         <div className="product-mini-facts">
           {hasOptions ? (
             <>
-              {product.sizes?.length ? <span>{product.sizes.slice(0, 4).join(", ")}</span> : null}
-              {product.stock > 0 ? (
-                <span>{lowStock ? `${product.stock} restant${product.stock > 1 ? "s" : ""}` : `${product.stock} en stock`}</span>
+              {colorOptions.length ? (
+                <span>{colorOptions.length} couleur{colorOptions.length > 1 ? "s" : ""}</span>
+              ) : null}
+              {sizeCount ? (
+                <span>{sizeCount} taille{sizeCount > 1 ? "s" : ""}</span>
               ) : null}
             </>
           ) : (
-            <span>Prêt à rejoindre le panier</span>
+            <span>Voir les détails</span>
           )}
         </div>
-        {stockBreakdown ? <p className="product-stock-line">{stockBreakdown}</p> : null}
         {visibleColors.length ? (
           <div className="product-color-row" aria-label="Couleurs disponibles">
             {visibleColors.map((color) => (
@@ -2643,7 +2659,40 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const [selectedSize, setSelectedSize] = useState(sizeOptions[0] || "");
   const selectedStock = getProductStockForSelection(product, selectedColor, selectedSize);
   const [quantity, setQuantity] = useState(1);
+  const swipeStartRef = useRef(null);
   const price = getProductPrice(product);
+
+  function moveGallery(direction) {
+    if (gallery.length <= 1) return;
+
+    const currentIndex = Math.max(0, gallery.indexOf(activeImage));
+    const nextIndex = (currentIndex + direction + gallery.length) % gallery.length;
+    setActiveImage(gallery[nextIndex]);
+  }
+
+  function handleGalleryTouchStart(event) {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    swipeStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  }
+
+  function handleGalleryTouchEnd(event) {
+    const start = swipeStartRef.current;
+    const touch = event.changedTouches?.[0];
+    swipeStartRef.current = null;
+
+    if (!start || !touch || gallery.length <= 1) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+
+    if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+
+    moveGallery(deltaX < 0 ? 1 : -1);
+  }
 
   useEffect(() => {
     const nextGallery = getProductGalleryForColor(product, "");
@@ -2699,12 +2748,16 @@ function ProductDetailModal({ product, onAdd, onClose }) {
         </button>
 
         <div className="detail-gallery">
-          <div className="detail-main-image">
+          <div
+            className="detail-main-image"
+            onTouchStart={handleGalleryTouchStart}
+            onTouchEnd={handleGalleryTouchEnd}
+          >
             <img src={activeImage} alt={product.name} />
           </div>
           {gallery.length > 1 ? (
             <div className="detail-thumbs">
-              {gallery.slice(0, 6).map((imageUrl, index) => (
+              {gallery.map((imageUrl, index) => (
                 <button
                   className={activeImage === imageUrl ? "active" : ""}
                   key={imageUrl}
