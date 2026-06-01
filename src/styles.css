@@ -6921,3 +6921,25 @@ textarea {
     grid-template-columns: 86px minmax(0, 1fr);
   }
 }
+
+.product-detail .detail-gallery {
+  align-content: start !important;
+}
+
+.product-detail .detail-main-image {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  overflow: visible !important;
+}
+
+.product-detail .detail-main-image > img {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
