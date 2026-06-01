@@ -2450,7 +2450,7 @@ textarea {
 
 .image-preview {
   width: 100%;
-  aspect-ratio: 4 / 5;
+  height: 112px;
   border: 1px solid var(--line);
   border-radius: 8px;
   object-fit: contain;
@@ -2460,6 +2460,7 @@ textarea {
 .image-preview-card {
   position: relative;
   min-width: 0;
+  max-width: 124px;
   display: grid;
   gap: 6px;
 }
@@ -2497,7 +2498,7 @@ textarea {
 
 .image-preview-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 124px));
   gap: 8px;
 }
 
@@ -6630,10 +6631,7 @@ textarea {
 
 .product-main-image,
 .detail-main-image > img,
-.detail-thumbs img,
-.image-preview,
-.product-cell img,
-.watch-row img {
+.detail-thumbs img {
   width: 100% !important;
   height: 100% !important;
   max-width: 100% !important;
@@ -6643,10 +6641,7 @@ textarea {
   background: #fff;
 }
 
-.detail-thumbs button,
-.image-preview,
-.product-cell img,
-.watch-row img {
+.detail-thumbs button {
   overflow: hidden;
 }
 
