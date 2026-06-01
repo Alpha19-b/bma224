@@ -6620,6 +6620,36 @@ textarea {
   }
 }
 
+.product-media,
+.detail-main-image,
+.detail-thumbs button,
+.image-preview {
+  display: grid;
+  place-items: center;
+}
+
+.product-main-image,
+.detail-main-image > img,
+.detail-thumbs img,
+.image-preview,
+.product-cell img,
+.watch-row img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: #fff;
+}
+
+.detail-thumbs button,
+.image-preview,
+.product-cell img,
+.watch-row img {
+  overflow: hidden;
+}
+
 @media (max-width: 380px) {
   .detail-actions {
     grid-template-columns: 1fr;

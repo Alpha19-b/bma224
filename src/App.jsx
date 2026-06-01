@@ -207,6 +207,7 @@ const commonColorSwatches = {
   Blanc: "#ffffff",
   Bleu: "#2563eb",
   "Bleu clair": "#93c5fd",
+  "Bleu claire": "#93c5fd",
   "Bleu ciel": "#7dd3fc",
   Rouge: "#c94136",
   Orange: "#f97316",
@@ -223,19 +224,21 @@ const commonColorSwatches = {
   Violet: "#7c3aed",
 };
 
-function getKnownColorHex(label) {
-  const normalizedLabel = String(label || "")
+function normalizeColorLookupLabel(label) {
+  return String(label || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .trim();
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function getKnownColorHex(label) {
+  const normalizedLabel = normalizeColorLookupLabel(label);
 
   const match = Object.entries(commonColorSwatches).find(
-    ([name]) =>
-      name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase() === normalizedLabel
+    ([name]) => normalizeColorLookupLabel(name) === normalizedLabel
   );
 
   return match?.[1] || "";
