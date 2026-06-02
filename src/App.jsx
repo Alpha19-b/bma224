@@ -4033,8 +4033,13 @@ function AdminPage() {
           )
         : getProductStockForColor(selectedSaleProduct, accountingForm.saleVariantDraftColor)
       : Number(selectedSaleProduct?.stock || 0);
-  const selectedSaleBaseAmount = selectedSaleProduct
+  const selectedSaleExpectedAmount = selectedSaleProduct
     ? getProductPrice(selectedSaleProduct) * saleQuantity
+    : accountingSalePreview;
+  const selectedSaleBaseAmount = selectedSaleProduct
+    ? accountingForm.saleAmount === ""
+      ? selectedSaleExpectedAmount
+      : accountingSalePreview
     : accountingSalePreview;
   const selectedPurchaseAmount = selectedSaleProduct
     ? getPurchasePrice(selectedSaleProduct) * saleQuantity
@@ -5190,6 +5195,28 @@ function AdminPage() {
     setAccountingForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateManualSaleQuantity(value) {
+    setAccountingForm((current) => {
+      const product = adminProducts.find((item) => item.id === current.saleProductId);
+      if (!product) return { ...current, saleQuantity: value };
+
+      const previousQuantity = Math.max(1, getDraftAmount(current.saleQuantity, 1));
+      const nextQuantity = Math.max(1, getDraftAmount(value, 1));
+      const previousExpectedAmount = getProductPrice(product) * previousQuantity;
+      const currentSaleAmount = getDraftAmount(current.saleAmount, previousExpectedAmount);
+      const shouldFollowExpectedAmount =
+        !String(current.saleAmount ?? "").trim() || currentSaleAmount === previousExpectedAmount;
+
+      return {
+        ...current,
+        saleQuantity: value,
+        saleAmount: shouldFollowExpectedAmount
+          ? String(getProductPrice(product) * nextQuantity)
+          : current.saleAmount,
+      };
+    });
+  }
+
   function getManualVariantLineText({ color, size, quantity }) {
     return `${[color, size].filter(Boolean).join(" / ")} x${Math.max(1, Number(quantity || 1))}`;
   }
@@ -5211,13 +5238,27 @@ function AdminPage() {
       0
     );
 
-    setAccountingForm((current) => ({
-      ...current,
-      saleVariantLines: nextText,
-      saleQuantity: nextQuantity > 0 ? String(nextQuantity) : current.saleQuantity,
-      saleColor: nextQuantity > 0 ? "" : current.saleColor,
-      saleSize: nextQuantity > 0 ? "" : current.saleSize,
-    }));
+    setAccountingForm((current) => {
+      const product = adminProducts.find((item) => item.id === current.saleProductId);
+      const previousQuantity = Math.max(1, getDraftAmount(current.saleQuantity, 1));
+      const previousExpectedAmount = product ? getProductPrice(product) * previousQuantity : 0;
+      const currentSaleAmount = getDraftAmount(current.saleAmount, previousExpectedAmount);
+      const shouldFollowExpectedAmount =
+        product &&
+        (!String(current.saleAmount ?? "").trim() || currentSaleAmount === previousExpectedAmount);
+
+      return {
+        ...current,
+        saleVariantLines: nextText,
+        saleQuantity: nextQuantity > 0 ? String(nextQuantity) : current.saleQuantity,
+        saleColor: nextQuantity > 0 ? "" : current.saleColor,
+        saleSize: nextQuantity > 0 ? "" : current.saleSize,
+        saleAmount:
+          shouldFollowExpectedAmount && nextQuantity > 0
+            ? String(getProductPrice(product) * nextQuantity)
+            : current.saleAmount,
+      };
+    });
   }
 
   function addManualVariantSelection() {
@@ -5264,13 +5305,22 @@ function AdminPage() {
   function selectManualSaleProduct(productId) {
     setAccountingForm((current) => ({
       ...current,
-      saleProductId: productId,
-      saleColor: "",
-      saleSize: "",
-      saleVariantLines: "",
-      saleVariantDraftColor: "",
-      saleVariantDraftSize: "",
-      saleVariantDraftQuantity: "1",
+      ...(() => {
+        const product = adminProducts.find((item) => item.id === productId);
+
+        return {
+          saleProductId: productId,
+          saleColor: "",
+          saleSize: "",
+          saleVariantLines: "",
+          saleVariantDraftColor: "",
+          saleVariantDraftSize: "",
+          saleVariantDraftQuantity: "1",
+          saleAmount: product
+            ? String(getProductPrice(product) * Math.max(1, getDraftAmount(current.saleQuantity, 1)))
+            : "",
+        };
+      })(),
     }));
   }
 
@@ -5733,12 +5783,16 @@ function AdminPage() {
       }
     }
 
-    const saleAmountResult = selectedSaleProduct
-      ? { value: selectedSaleBaseAmount }
-      : parseGnfInput(accountingForm.saleAmount, "Prix de vente", {
-          required: true,
-          allowZero: false,
-        });
+    const saleAmountResult = parseGnfInput(
+      selectedSaleProduct && accountingForm.saleAmount === ""
+        ? selectedSaleExpectedAmount
+        : accountingForm.saleAmount,
+      selectedSaleProduct ? "Prix encaissé réel" : "Prix de vente",
+      {
+        required: true,
+        allowZero: false,
+      }
+    );
     const purchaseAmountResult = selectedSaleProduct
       ? { value: selectedPurchaseAmount }
       : parseGnfInput(accountingForm.purchaseAmount, "Prix d'achat", { fallback: 0 });
@@ -7261,7 +7315,7 @@ function AdminPage() {
                 type="number"
                 min="1"
                 step="1"
-                onChange={(value) => updateAccountingForm("saleQuantity", value)}
+                onChange={updateManualSaleQuantity}
               />
               <Field
                 label="Numéro du client"
@@ -7280,14 +7334,18 @@ function AdminPage() {
                 onChange={(value) => updateAccountingForm("customer", value)}
               />
               <Field
-                label="Prix vente total avant remise"
-                value={selectedSaleProduct ? selectedSaleBaseAmount : accountingForm.saleAmount}
+                label={selectedSaleProduct ? "Prix encaissé réel" : "Prix vente total avant remise"}
+                value={accountingForm.saleAmount}
                 type="number"
                 min="1"
                 step="1"
-                disabled={Boolean(selectedSaleProduct)}
                 onChange={(value) => updateAccountingForm("saleAmount", value)}
               />
+              {selectedSaleProduct ? (
+                <div className="manual-sale-price-note">
+                  Prix prévu : {formatMoney(selectedSaleExpectedAmount)}. Tu peux mettre plus si la vente est mieux négociée.
+                </div>
+              ) : null}
               {canSeeAccountingFinancials ? (
                 <>
                   <Field
