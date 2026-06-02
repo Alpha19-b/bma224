@@ -2299,14 +2299,6 @@ function ClientPage() {
         </button>
 
         <div className="store-actions">
-          <div className="store-search-wrap">
-            <input
-              className="search store-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un article"
-            />
-          </div>
           {customerSession ? (
             <>
               <button
@@ -2447,6 +2439,14 @@ function ClientPage() {
               ) : null}
             </div>
             <div className="catalog-controls">
+              <div className="catalog-search-wrap">
+                <input
+                  className="search catalog-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Rechercher un article"
+                />
+              </div>
               <div className="style-filters">
                 {visibleFilters.map(([value, label]) => (
                   <button
