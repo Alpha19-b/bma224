@@ -3660,6 +3660,9 @@ function AdminPage() {
     saleColor: "",
     saleSize: "",
     saleVariantLines: "",
+    saleVariantDraftColor: "",
+    saleVariantDraftSize: "",
+    saleVariantDraftQuantity: "1",
     date: getTodayDateInput(),
     customer: "",
     saleAmount: "",
@@ -3999,6 +4002,9 @@ function AdminPage() {
   const selectedSaleSizeOptions = selectedSaleProduct
     ? getProductSizeOptions(selectedSaleProduct, accountingForm.saleColor)
     : [];
+  const selectedSaleDraftSizeOptions = selectedSaleProduct
+    ? getProductSizeOptions(selectedSaleProduct, accountingForm.saleVariantDraftColor)
+    : [];
   const manualVariantRows = selectedSaleProduct
     ? parseManualVariantRows(accountingForm.saleVariantLines, selectedSaleProduct)
     : [];
@@ -4012,6 +4018,20 @@ function AdminPage() {
   const selectedSaleColorStock =
     selectedSaleProduct && accountingForm.saleColor
       ? getProductStockForColor(selectedSaleProduct, accountingForm.saleColor)
+      : Number(selectedSaleProduct?.stock || 0);
+  const manualVariantDraftQuantity = Math.max(
+    1,
+    getDraftAmount(accountingForm.saleVariantDraftQuantity, 1)
+  );
+  const selectedSaleDraftStock =
+    selectedSaleProduct && accountingForm.saleVariantDraftColor
+      ? accountingForm.saleVariantDraftSize
+        ? getProductStockForSelection(
+            selectedSaleProduct,
+            accountingForm.saleVariantDraftColor,
+            accountingForm.saleVariantDraftSize
+          )
+        : getProductStockForColor(selectedSaleProduct, accountingForm.saleVariantDraftColor)
       : Number(selectedSaleProduct?.stock || 0);
   const selectedSaleBaseAmount = selectedSaleProduct
     ? getProductPrice(selectedSaleProduct) * saleQuantity
@@ -5170,6 +5190,77 @@ function AdminPage() {
     setAccountingForm((current) => ({ ...current, [field]: value }));
   }
 
+  function getManualVariantLineText({ color, size, quantity }) {
+    return `${[color, size].filter(Boolean).join(" / ")} x${Math.max(1, Number(quantity || 1))}`;
+  }
+
+  function getManualVariantLines() {
+    return String(accountingForm.saleVariantLines || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  function updateManualVariantLines(nextLines) {
+    const nextText = nextLines.join("\n");
+    const nextRows = selectedSaleProduct
+      ? parseManualVariantRows(nextText, selectedSaleProduct)
+      : [];
+    const nextQuantity = nextRows.reduce(
+      (sum, row) => sum + Number(row.quantity || 0),
+      0
+    );
+
+    setAccountingForm((current) => ({
+      ...current,
+      saleVariantLines: nextText,
+      saleQuantity: nextQuantity > 0 ? String(nextQuantity) : current.saleQuantity,
+      saleColor: nextQuantity > 0 ? "" : current.saleColor,
+      saleSize: nextQuantity > 0 ? "" : current.saleSize,
+    }));
+  }
+
+  function addManualVariantSelection() {
+    if (!selectedSaleProduct) return;
+
+    const color = accountingForm.saleVariantDraftColor.trim();
+    const size = accountingForm.saleVariantDraftSize.trim();
+
+    if (selectedSaleColorOptions.length && !color) {
+      showToast("Choisis une couleur à ajouter.", "issue");
+      return;
+    }
+
+    if (manualVariantDraftQuantity > selectedSaleDraftStock) {
+      showToast(
+        `Stock insuffisant pour ${[color, size].filter(Boolean).join(" / ")} : il reste ${selectedSaleDraftStock} article(s).`,
+        "issue"
+      );
+      return;
+    }
+
+    const nextLines = [
+      ...getManualVariantLines(),
+      getManualVariantLineText({
+        color: color || "Option non précisée",
+        size,
+        quantity: manualVariantDraftQuantity,
+      }),
+    ];
+
+    updateManualVariantLines(nextLines);
+    setAccountingForm((current) => ({
+      ...current,
+      saleVariantDraftSize: "",
+      saleVariantDraftQuantity: "1",
+    }));
+  }
+
+  function removeManualVariantSelection(index) {
+    const nextLines = getManualVariantLines().filter((_, lineIndex) => lineIndex !== index);
+    updateManualVariantLines(nextLines);
+  }
+
   function selectManualSaleProduct(productId) {
     setAccountingForm((current) => ({
       ...current,
@@ -5177,6 +5268,9 @@ function AdminPage() {
       saleColor: "",
       saleSize: "",
       saleVariantLines: "",
+      saleVariantDraftColor: "",
+      saleVariantDraftSize: "",
+      saleVariantDraftQuantity: "1",
     }));
   }
 
@@ -5833,6 +5927,9 @@ function AdminPage() {
       saleColor: "",
       saleSize: "",
       saleVariantLines: "",
+      saleVariantDraftColor: "",
+      saleVariantDraftSize: "",
+      saleVariantDraftQuantity: "1",
       date: getTodayDateInput(),
       customer: "",
       saleAmount: "",
@@ -6993,7 +7090,11 @@ function AdminPage() {
                   <strong>
                     {selectedSaleProduct.name} - {formatMoney(getProductPrice(selectedSaleProduct))} / article
                   </strong>
-                  {accountingForm.saleColor ? (
+                  {manualVariantRows.length ? (
+                    <small>
+                      Vente détaillée : {manualVariantRows.length} ligne(s), {manualVariantQuantity} article(s)
+                    </small>
+                  ) : accountingForm.saleColor ? (
                     <small>
                       Stock {accountingForm.saleColor} : {selectedSaleColorStock} article(s)
                     </small>
@@ -7043,16 +7144,110 @@ function AdminPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="field">
-                    <label>Plusieurs couleurs / tailles</label>
+                  <div className="manual-variant-builder">
+                    <div className="manual-variant-head compact">
+                      <strong>Plusieurs couleurs en même temps</strong>
+                      <span>Ajoute une ligne par couleur, taille et quantité.</span>
+                    </div>
+                    <div className="manual-variant-add-row">
+                      {selectedSaleColorOptions.length ? (
+                        <div className="field">
+                          <label>Couleur</label>
+                          <select
+                            value={accountingForm.saleVariantDraftColor}
+                            onChange={(event) => {
+                              updateAccountingForm("saleVariantDraftColor", event.target.value);
+                              updateAccountingForm("saleVariantDraftSize", "");
+                            }}
+                          >
+                            <option value="">Choisir</option>
+                            {selectedSaleColorOptions.map((color) => (
+                              <option value={color.value} key={color.value}>
+                                {color.value} - stock {getProductStockForColor(selectedSaleProduct, color.value)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
+                      {selectedSaleDraftSizeOptions.length ? (
+                        <div className="field">
+                          <label>Taille / pointure</label>
+                          <select
+                            value={accountingForm.saleVariantDraftSize}
+                            onChange={(event) =>
+                              updateAccountingForm("saleVariantDraftSize", event.target.value)
+                            }
+                          >
+                            <option value="">Non précisée</option>
+                            {selectedSaleDraftSizeOptions.map((size) => (
+                              <option value={size} key={size}>
+                                {size}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
+                      <div className="field">
+                        <label>Quantité</label>
+                        <input
+                          min="1"
+                          step="1"
+                          type="number"
+                          value={accountingForm.saleVariantDraftQuantity}
+                          onChange={(event) =>
+                            updateAccountingForm("saleVariantDraftQuantity", event.target.value)
+                          }
+                        />
+                      </div>
+                      <button
+                        className="icon-btn manual-variant-add"
+                        type="button"
+                        onClick={addManualVariantSelection}
+                      >
+                        Ajouter
+                      </button>
+                    </div>
+                    {accountingForm.saleVariantDraftColor ? (
+                      <p className="manual-variant-note">
+                        Stock disponible : {selectedSaleDraftStock} article(s).
+                      </p>
+                    ) : null}
+                    {manualVariantRows.length ? (
+                      <div className="manual-variant-lines">
+                        {manualVariantRows.map((row, index) => (
+                          <div className="manual-variant-line" key={`${row.line}-${index}`}>
+                            <span>
+                              <strong>{row.color || "Option"}</strong>
+                              {row.size ? ` / ${row.size}` : ""}
+                            </span>
+                            <b>x{row.quantity}</b>
+                            <button
+                              type="button"
+                              aria-label={`Retirer ${row.line}`}
+                              onClick={() => removeManualVariantSelection(index)}
+                            >
+                              Retirer
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <details className="manual-variant-raw">
+                    <summary>Saisie rapide</summary>
                     <textarea
                       value={accountingForm.saleVariantLines}
-                      placeholder={"Optionnel. Exemple :\nNoir / M x2\nBlanc / L x1"}
+                      placeholder={"Exemple :\nNoir / M x2\nBlanc / L x1"}
                       onChange={(event) =>
-                        updateAccountingForm("saleVariantLines", event.target.value)
+                        updateManualVariantLines(
+                          event.target.value
+                            .split(/\r?\n/)
+                            .map((line) => line.trim())
+                            .filter(Boolean)
+                        )
                       }
                     />
-                  </div>
+                  </details>
                   {manualVariantRows.length ? (
                     <p className="manual-variant-note">
                       Total détaillé : {manualVariantQuantity} article(s).
