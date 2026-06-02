@@ -333,7 +333,7 @@ export async function uploadProductImage(file) {
   return { data: data.publicUrl, error: null };
 }
 
-export async function fetchProducts() {
+async function fetchProductRows({ includeCosts = false } = {}) {
   if (!supabase) {
     return { data: [], error: new Error("Configuration de la boutique indisponible.") };
   }
@@ -346,8 +346,7 @@ export async function fetchProducts() {
         name,
         description,
         price,
-        purchase_price,
-        cost_price,
+        ${includeCosts ? "purchase_price, cost_price," : ""}
         promo_price,
         stock,
         main_image_url,
@@ -547,6 +546,14 @@ export async function fetchProducts() {
     }),
     error: null,
   };
+}
+
+export async function fetchProducts() {
+  return fetchProductRows({ includeCosts: false });
+}
+
+export async function fetchAdminProducts() {
+  return fetchProductRows({ includeCosts: true });
 }
 
 export async function createCheckoutOrder(payload) {

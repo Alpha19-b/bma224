@@ -13,6 +13,7 @@ import {
   deleteOrderAsOwner,
   deleteProductAsOwner,
   fetchAccountingEntries,
+  fetchAdminProducts,
   fetchAdminOrders,
   fetchCurrentAdminContext,
   fetchCustomerOrders,
@@ -3749,13 +3750,28 @@ function AdminPage() {
       setAdminContext(contextResult.data);
       setAdminAccessStatus("allowed");
 
-      const syncResult = await syncDjomiPayments({ limit: 50 });
-      const productsResult = await fetchProducts();
-      const ordersResult = await fetchAdminOrders();
-      const accountingResult = await fetchAccountingEntries();
-      const stockMovementsResult = await fetchStockMovements();
-      const permissionsResult = await fetchRolePermissions();
-      const staffResult = contextResult.data?.isOwner
+      const canReadManagementData =
+        contextResult.data?.isOwner || contextResult.data?.role === "manager";
+      const syncResult = canReadManagementData
+        ? await syncDjomiPayments({ limit: 50 })
+        : { data: null, error: null };
+      const productsResult = canReadManagementData
+        ? await fetchAdminProducts()
+        : await fetchProducts();
+      const ordersResult = canReadManagementData
+        ? await fetchAdminOrders()
+        : { data: [], error: null };
+      const accountingResult = canReadManagementData
+        ? await fetchAccountingEntries()
+        : { data: [], error: null };
+      const stockMovementsResult = canReadManagementData
+        ? await fetchStockMovements()
+        : { data: [], error: null };
+      const permissionsResult = canReadManagementData
+        ? await fetchRolePermissions()
+        : { data: [], error: null };
+      const canLoadStaffMembers = canReadManagementData;
+      const staffResult = canLoadStaffMembers
         ? await fetchStaffMembers()
         : { data: null, error: null };
 
@@ -3792,7 +3808,7 @@ function AdminPage() {
       }
 
       setStaffMembers(
-        contextResult.data?.isOwner && !staffResult.error
+        canLoadStaffMembers && !staffResult.error
           ? staffResult.data?.members ?? []
           : []
       );
@@ -3836,7 +3852,9 @@ function AdminPage() {
   }, [authReady, session]);
 
   useEffect(() => {
-    if (!session || adminAccessStatus !== "allowed") return undefined;
+    if (!session || adminAccessStatus !== "allowed" || adminContext?.role === "staff") {
+      return undefined;
+    }
 
     let cancelled = false;
 
@@ -3881,7 +3899,7 @@ function AdminPage() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [session, adminAccessStatus]);
+  }, [session, adminAccessStatus, adminContext?.role]);
 
   useEffect(() => {
     if (!session) {
@@ -3948,6 +3966,14 @@ function AdminPage() {
   );
   const adminDisplayName = getAdminDisplayName(session);
   const isSuperAdmin = Boolean(adminContext?.isOwner);
+  const adminRole = adminContext?.role || (adminContext?.isOwner ? "owner" : "");
+  const isManager = adminRole === "manager";
+  const isSeller = adminRole === "staff";
+  const canViewTeamSettings = isSuperAdmin || isManager;
+  const canViewDeleteControls = isSuperAdmin || isManager;
+  const canSeeAccountingFinancials = !isSeller;
+  const ownerDeleteMessage =
+    "Action réservée au super admin. Rapproche-toi du super admin pour supprimer.";
   const productSalePreview = getDraftAmount(productForm.price);
   const productPurchasePreview = getDraftAmount(productForm.purchasePrice);
   const productExtraCostPreview = getDraftAmount(productForm.extraCost);
@@ -4307,10 +4333,15 @@ function AdminPage() {
     { id: "orders", label: "Commandes", hint: "A préparer" },
     { id: "customers", label: "Clients", hint: "Historique" },
     { id: "products", label: "Articles", hint: "Stock & photos" },
-    { id: "accounting", label: "Ventes & caisse", hint: "Manuel + dépôts" },
+    {
+      id: "accounting",
+      label: isSeller ? "Vendre" : "Ventes & caisse",
+      hint: isSeller ? "Vente simple" : "Manuel + dépôts",
+    },
     { id: "audit", label: "Audit", hint: "Argent + stock" },
     { id: "settings", label: "Réglages", hint: "Permissions" },
   ];
+  const visibleNavItems = navItems.filter((item) => canAccessAdminSection(item.id));
   const sectionMeta = {
     dashboard: {
       title: "Accueil",
@@ -4329,8 +4360,10 @@ function AdminPage() {
       description: "Regrouper les commandes par client et repérer les fidèles.",
     },
     accounting: {
-      title: "Ventes & caisse",
-      description: "Vente manuelle, marge, liquide encaissé et dépôts Orange Money.",
+      title: isSeller ? "Vendre" : "Ventes & caisse",
+      description: isSeller
+        ? "Enregistrer une vente sans afficher les marges ni les chiffres sensibles."
+        : "Vente manuelle, marge, liquide encaissé et dépôts Orange Money.",
     },
     audit: {
       title: "Audit",
@@ -4342,9 +4375,33 @@ function AdminPage() {
     },
   }[activeSection];
 
+  useEffect(() => {
+    if (adminAccessStatus !== "allowed") return;
+
+    if (!canAccessAdminSection(activeSection)) {
+      setActiveSection(isSeller ? "accounting" : "dashboard");
+      setAdminNavOpen(false);
+    }
+  }, [activeSection, adminAccessStatus, isSeller]);
+
+  function canAccessAdminSection(sectionId) {
+    if (!adminContext?.isInternal) return false;
+    if (isSeller) return sectionId === "accounting";
+    return isSuperAdmin || isManager;
+  }
+
   function navigateAdmin(sectionId) {
+    if (!canAccessAdminSection(sectionId)) {
+      showToast("Cet espace est réservé aux managers et au super admin.", "issue");
+      return;
+    }
+
     setActiveSection(sectionId);
     setAdminNavOpen(false);
+  }
+
+  function showOwnerDeleteBlocked() {
+    showToast(ownerDeleteMessage, "issue");
   }
 
   function showToast(text, tone = "paid") {
@@ -4374,11 +4431,12 @@ function AdminPage() {
   }
 
   async function refreshAdminLists({ keepSelected = true } = {}) {
+    const canRefreshManagementData = isSuperAdmin || isManager;
     const [productsResult, ordersResult, accountingResult, stockMovementsResult] = await Promise.all([
-      fetchProducts(),
-      fetchAdminOrders(),
-      fetchAccountingEntries(),
-      fetchStockMovements(),
+      canRefreshManagementData ? fetchAdminProducts() : fetchProducts(),
+      canRefreshManagementData ? fetchAdminOrders() : { data: [], error: null },
+      canRefreshManagementData ? fetchAccountingEntries() : { data: [], error: null },
+      canRefreshManagementData ? fetchStockMovements() : { data: [], error: null },
     ]);
 
     if (!productsResult.error) {
@@ -4627,7 +4685,7 @@ function AdminPage() {
 
   async function deleteProductOwnerOnly(product) {
     if (!isSuperAdmin) {
-      showToast("Suppression reservee au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -4655,7 +4713,7 @@ function AdminPage() {
 
   async function deleteOrderOwnerOnly(order) {
     if (!isSuperAdmin) {
-      showToast("Suppression reservee au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -4682,7 +4740,7 @@ function AdminPage() {
 
   async function deleteAccountingOwnerOnly(record) {
     if (!isSuperAdmin) {
-      showToast("Suppression reservee au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -4754,7 +4812,7 @@ function AdminPage() {
 
   async function bulkDeleteProducts() {
     if (!isSuperAdmin) {
-      showToast("Suppression réservée au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -4836,7 +4894,7 @@ function AdminPage() {
 
   async function bulkDeleteOrders() {
     if (!isSuperAdmin) {
-      showToast("Suppression reservee au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -4893,7 +4951,7 @@ function AdminPage() {
 
   async function bulkDeleteAccountingRecords() {
     if (!isSuperAdmin) {
-      showToast("Suppression réservée au super admin.", "issue");
+      showOwnerDeleteBlocked();
       return;
     }
 
@@ -5892,6 +5950,11 @@ function AdminPage() {
   }
 
   async function toggleRolePermission(permission) {
+    if (!isSuperAdmin) {
+      showToast("Seul le super admin peut modifier les permissions de l'équipe.", "issue");
+      return;
+    }
+
     const nextValue = !permission.is_enabled;
     const { data, error } = await updateRolePermission(
       permission.role,
@@ -5922,7 +5985,7 @@ function AdminPage() {
   }
 
   async function refreshStaffMembers({ silent = false } = {}) {
-    if (!isSuperAdmin) return;
+    if (!canViewTeamSettings) return;
 
     setIsStaffLoading(true);
     const { data, error } = await fetchStaffMembers();
@@ -5971,6 +6034,11 @@ function AdminPage() {
   async function handleStaffRoleChange(member, nextRole) {
     if (member.role === nextRole) return;
 
+    if (!isSuperAdmin) {
+      showToast("Seul le super admin peut modifier les rôles du personnel.", "issue");
+      return;
+    }
+
     setStaffActionId(member.id);
     const { data, error } = await updateStaffMemberRole(member.id, nextRole);
     setStaffActionId("");
@@ -5985,6 +6053,11 @@ function AdminPage() {
   }
 
   function requestRemoveStaffMember(member) {
+    if (!isSuperAdmin) {
+      showOwnerDeleteBlocked();
+      return;
+    }
+
     requestAdminConfirm({
       title: "Retirer l'accès admin",
       message: `Retirer ${member.email || member.name || "ce membre"} du personnel BMA ? Son compte client restera intact.`,
@@ -6106,7 +6179,7 @@ function AdminPage() {
                 disabled={!displayedAdminProducts.length}
                 onClick={toggleAllDisplayedProductsSelection}
               />
-              {isSuperAdmin ? (
+              {canViewDeleteControls ? (
                 <ActionButton
                   icon="trash"
                   label="Supprimer"
@@ -6241,7 +6314,7 @@ function AdminPage() {
                             title={`Retirer une pièce du stock de ${product.name}`}
                             onClick={() => adjustStock(product.id, -1)}
                           />
-                          {isSuperAdmin ? (
+                          {canViewDeleteControls ? (
                             <ActionButton
                               icon="trash"
                               label="Supprimer"
@@ -6530,7 +6603,7 @@ function AdminPage() {
             disabled={!canCancelSelectedOrders || updatingOrderId === "bulk"}
             onClick={() => bulkUpdateOrders("cancelled")}
           />
-          {isSuperAdmin ? (
+          {canViewDeleteControls ? (
             <ActionButton
               icon="trash"
               label="Supprimer"
@@ -6651,7 +6724,7 @@ function AdminPage() {
                       </span>
                     </div>
                   ) : null}
-                  {isSuperAdmin ? (
+                  {canViewDeleteControls ? (
                     <ActionButton
                       icon="trash"
                       label="Supprimer"
@@ -6673,6 +6746,30 @@ function AdminPage() {
   function renderAccounting() {
     return (
       <div className="admin-stack">
+        {isSeller ? (
+          <section className="section seller-sale-section">
+            <div className="section-head">
+              <div>
+                <h2>Enregistrer une vente</h2>
+                <span>Choisis l'article vendu, la quantité et le mode d'encaissement.</span>
+              </div>
+              <button
+                className="product-add-button"
+                type="button"
+                title="Ajouter une vente"
+                aria-label="Ajouter une vente"
+                onClick={openManualSalePanel}
+              >
+                <ActionIcon name="plus" />
+                <b>Vente</b>
+              </button>
+            </div>
+            <div className="empty-state compact">
+              Les données de marge, prix d'achat, audit et dépôts sont réservées aux managers.
+            </div>
+          </section>
+        ) : (
+          <>
         <div className="stats">
           <Stat label="CA total" value={formatCompact(totalRevenue)} />
           <Stat label="Coût revient" value={formatCompact(totalCost)} />
@@ -6702,7 +6799,7 @@ function AdminPage() {
                 disabled={!accountingRecords.length}
                 onClick={toggleAllAccountingSelection}
               />
-              {isSuperAdmin ? (
+              {canViewDeleteControls ? (
                 <ActionButton
                   icon="trash"
                   label="Supprimer"
@@ -6755,7 +6852,7 @@ function AdminPage() {
                   <th>Revient</th>
                   <th>Marge</th>
                   <th>Encaissement</th>
-                  {isSuperAdmin ? <th>Admin</th> : null}
+                  {canViewDeleteControls ? <th>Actions</th> : null}
                   <th>Dépôt OM</th>
                   <th>Reçu</th>
                 </tr>
@@ -6799,8 +6896,8 @@ function AdminPage() {
                         <br />
                         <span className="muted">Par: {record.collectedBy}</span>
                       </td>
-                      {isSuperAdmin ? (
-                        <td data-label="Admin">
+                      {canViewDeleteControls ? (
+                        <td data-label="Actions">
                           <ActionButton
                             icon="trash"
                             label="Supprimer"
@@ -6846,7 +6943,7 @@ function AdminPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={isSuperAdmin ? 12 : 11}>
+                    <td colSpan={canViewDeleteControls ? 12 : 11}>
                       <div className="empty-state compact">Aucune ligne comptable enregistrée.</div>
                     </td>
                   </tr>
@@ -6855,6 +6952,8 @@ function AdminPage() {
             </table>
           </div>
         </section>
+          </>
+        )}
 
         {manualSaleOpen ? (
           <div
@@ -6994,24 +7093,28 @@ function AdminPage() {
                 disabled={Boolean(selectedSaleProduct)}
                 onChange={(value) => updateAccountingForm("saleAmount", value)}
               />
-              <Field
-                label="Prix achat total"
-                value={selectedSaleProduct ? selectedPurchaseAmount : accountingForm.purchaseAmount}
-                type="number"
-                min="0"
-                step="1"
-                disabled={Boolean(selectedSaleProduct)}
-                onChange={(value) => updateAccountingForm("purchaseAmount", value)}
-              />
-              <Field
-                label="Frais annexes total"
-                value={selectedSaleProduct ? selectedExtraCostAmount : accountingForm.extraCost}
-                type="number"
-                min="0"
-                step="1"
-                disabled={Boolean(selectedSaleProduct)}
-                onChange={(value) => updateAccountingForm("extraCost", value)}
-              />
+              {canSeeAccountingFinancials ? (
+                <>
+                  <Field
+                    label="Prix achat total"
+                    value={selectedSaleProduct ? selectedPurchaseAmount : accountingForm.purchaseAmount}
+                    type="number"
+                    min="0"
+                    step="1"
+                    disabled={Boolean(selectedSaleProduct)}
+                    onChange={(value) => updateAccountingForm("purchaseAmount", value)}
+                  />
+                  <Field
+                    label="Frais annexes total"
+                    value={selectedSaleProduct ? selectedExtraCostAmount : accountingForm.extraCost}
+                    type="number"
+                    min="0"
+                    step="1"
+                    disabled={Boolean(selectedSaleProduct)}
+                    onChange={(value) => updateAccountingForm("extraCost", value)}
+                  />
+                </>
+              ) : null}
               <Field
                 label="Remise GNF"
                 value={accountingForm.discountAmount}
@@ -7046,16 +7149,20 @@ function AdminPage() {
                   <span>Total encaissé</span>
                   <strong>{formatMoney(selectedSaleAmount)}</strong>
                 </div>
-                <div>
-                  <span>Revient calculé</span>
-                  <strong>{formatMoney(selectedCostAmount)}</strong>
-                </div>
-                <div>
-                  <span>Marge</span>
-                  <strong className={selectedMarginAmount < 0 ? "negative" : ""}>
-                    {formatMoney(selectedMarginAmount)}
-                  </strong>
-                </div>
+                {canSeeAccountingFinancials ? (
+                  <>
+                    <div>
+                      <span>Revient calculé</span>
+                      <strong>{formatMoney(selectedCostAmount)}</strong>
+                    </div>
+                    <div>
+                      <span>Marge</span>
+                      <strong className={selectedMarginAmount < 0 ? "negative" : ""}>
+                        {formatMoney(selectedMarginAmount)}
+                      </strong>
+                    </div>
+                  </>
+                ) : null}
                 <div>
                   <span>Encaissé par</span>
                   <strong>{adminDisplayName}</strong>
@@ -7069,7 +7176,7 @@ function AdminPage() {
           </div>
         ) : null}
 
-        {depositPanelOpen ? (
+        {depositPanelOpen && !isSeller ? (
           <div
             className="admin-action-overlay"
             onMouseDown={(event) => {
@@ -7585,12 +7692,16 @@ function AdminPage() {
           </section>
         ) : null}
 
-        {isSuperAdmin ? (
+        {canViewTeamSettings ? (
           <section className="section">
             <div className="section-head">
               <div>
                 <h2>Personnel</h2>
-                <span>Voir les accès, modifier les rôles ou retirer un membre</span>
+                <span>
+                  {isSuperAdmin
+                    ? "Voir les accès, modifier les rôles ou retirer un membre"
+                    : "Voir les accès de l'équipe. Les changements sont réservés au super admin."}
+                </span>
               </div>
               <ActionButton
                 icon="select"
@@ -7624,7 +7735,7 @@ function AdminPage() {
                     <select
                       aria-label={`Rôle de ${member.email || member.name}`}
                       value={member.role}
-                      disabled={member.is_current_user || staffActionId === member.id}
+                      disabled={!isSuperAdmin || member.is_current_user || staffActionId === member.id}
                       onChange={(event) => handleStaffRoleChange(member, event.target.value)}
                     >
                       <option value="staff">Vendeur</option>
@@ -7687,6 +7798,7 @@ function AdminPage() {
   }
 
   function renderActiveSection() {
+    if (!canAccessAdminSection(activeSection)) return renderAccounting();
     if (activeSection === "products") return renderProducts();
     if (activeSection === "orders") return renderOrders();
     if (activeSection === "customers") return renderCustomers();
@@ -7775,7 +7887,7 @@ function AdminPage() {
           id="admin-mobile-nav"
           aria-label="Navigation administration"
         >
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <button
               aria-current={activeSection === item.id ? "page" : undefined}
               className={activeSection === item.id ? "active" : ""}

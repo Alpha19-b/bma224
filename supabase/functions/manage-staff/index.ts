@@ -26,7 +26,10 @@ function getServiceClient() {
   );
 }
 
-async function assertOwner(request: Request, serviceClient: ReturnType<typeof getServiceClient>) {
+async function getStaffRequester(
+  request: Request,
+  serviceClient: ReturnType<typeof getServiceClient>
+) {
   const authHeader = request.headers.get("Authorization") || "";
   const authClient = createClient(
     getRequiredEnv("SUPABASE_URL"),
@@ -40,7 +43,7 @@ async function assertOwner(request: Request, serviceClient: ReturnType<typeof ge
   const { data: userData, error: userError } = await authClient.auth.getUser();
 
   if (userError || !userData.user) {
-    throw new Error("Acces refuse: session super admin requise.");
+    throw new Error("Acces refuse: session equipe requise.");
   }
 
   const { data: adminUser, error: adminError } = await serviceClient
@@ -49,11 +52,14 @@ async function assertOwner(request: Request, serviceClient: ReturnType<typeof ge
     .eq("id", userData.user.id)
     .maybeSingle();
 
-  if (adminError || adminUser?.role !== "owner") {
-    throw new Error("Acces refuse: seul le super admin peut gerer le personnel.");
+  if (adminError || !["owner", "manager"].includes(String(adminUser?.role || ""))) {
+    throw new Error("Acces refuse: personnel reserve au manager et au super admin.");
   }
 
-  return userData.user;
+  return {
+    ...userData.user,
+    role: String(adminUser?.role || ""),
+  };
 }
 
 async function listAllAuthUsers(serviceClient: ReturnType<typeof getServiceClient>) {
@@ -140,15 +146,18 @@ Deno.serve(async (request) => {
 
   try {
     const serviceClient = getServiceClient();
-    const owner = await assertOwner(request, serviceClient);
+    const requester = await getStaffRequester(request, serviceClient);
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || "list");
     const userId = String(body.user_id || "");
     const role = String(body.role || "").toLowerCase();
 
     if (action === "update_role") {
+      if (requester.role !== "owner") {
+        throw new Error("Action reservee au super admin: rapproche-toi du responsable.");
+      }
       if (!userId) throw new Error("Utilisateur manquant.");
-      if (userId === owner.id) {
+      if (userId === requester.id) {
         throw new Error("Tu ne peux pas modifier ton propre role depuis cette page.");
       }
       if (!allowedRoles.has(role)) {
@@ -166,8 +175,11 @@ Deno.serve(async (request) => {
     }
 
     if (action === "remove") {
+      if (requester.role !== "owner") {
+        throw new Error("Action reservee au super admin: rapproche-toi du responsable.");
+      }
       if (!userId) throw new Error("Utilisateur manquant.");
-      if (userId === owner.id) {
+      if (userId === requester.id) {
         throw new Error("Tu ne peux pas retirer ton propre acces admin.");
       }
 
@@ -185,7 +197,7 @@ Deno.serve(async (request) => {
       throw new Error("Action inconnue.");
     }
 
-    const members = await listStaffMembers(serviceClient, owner.id);
+    const members = await listStaffMembers(serviceClient, requester.id);
 
     return jsonResponse({
       success: true,
