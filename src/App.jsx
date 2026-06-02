@@ -1113,7 +1113,7 @@ function getPaymentCallbackConfig() {
 }
 
 function parseGnfInput(value, label, options = {}) {
-  const { required = false, fallback = null, allowZero = true } = options;
+  const { required = false, fallback = null, allowZero = true, allowNegative = false } = options;
   const rawValue = String(value ?? "").trim();
 
   if (!rawValue) {
@@ -1125,9 +1125,9 @@ function parseGnfInput(value, label, options = {}) {
   const number = Number(normalized);
   const minimum = allowZero ? 0 : 1;
 
-  if (!Number.isFinite(number) || number < minimum) {
+  if (!Number.isFinite(number) || (!allowNegative && number < minimum)) {
     return {
-      error: `${label} doit être un nombre ${allowZero ? "positif" : "supérieur à 0"}.`,
+      error: `${label} doit être un nombre ${allowNegative ? "valide" : allowZero ? "positif" : "supérieur à 0"}.`,
     };
   }
 
@@ -1326,6 +1326,14 @@ function getDraftAmount(value, fallback = 0) {
 
   const number = Number(rawValue.replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(number) ? Math.max(0, Math.round(number)) : fallback;
+}
+
+function getSignedDraftAmount(value, fallback = 0) {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) return fallback;
+
+  const number = Number(rawValue.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(number) ? Math.round(number) : fallback;
 }
 
 function getAdminDisplayName(session) {
@@ -3985,7 +3993,7 @@ function AdminPage() {
   const accountingSalePreview = getDraftAmount(accountingForm.saleAmount);
   const accountingPurchasePreview = getDraftAmount(accountingForm.purchaseAmount);
   const accountingExtraCostPreview = getDraftAmount(accountingForm.extraCost);
-  const accountingDiscountPreview = getDraftAmount(accountingForm.discountAmount);
+  const accountingAdjustmentPreview = getSignedDraftAmount(accountingForm.discountAmount);
   const accountingCostPreview = accountingPurchasePreview + accountingExtraCostPreview;
   const selectedSaleProduct = adminProducts.find(
     (product) => product.id === accountingForm.saleProductId
@@ -4033,13 +4041,8 @@ function AdminPage() {
           )
         : getProductStockForColor(selectedSaleProduct, accountingForm.saleVariantDraftColor)
       : Number(selectedSaleProduct?.stock || 0);
-  const selectedSaleExpectedAmount = selectedSaleProduct
-    ? getProductPrice(selectedSaleProduct) * saleQuantity
-    : accountingSalePreview;
   const selectedSaleBaseAmount = selectedSaleProduct
-    ? accountingForm.saleAmount === ""
-      ? selectedSaleExpectedAmount
-      : accountingSalePreview
+    ? getProductPrice(selectedSaleProduct) * saleQuantity
     : accountingSalePreview;
   const selectedPurchaseAmount = selectedSaleProduct
     ? getPurchasePrice(selectedSaleProduct) * saleQuantity
@@ -4048,7 +4051,7 @@ function AdminPage() {
     ? getCostPrice(selectedSaleProduct) * saleQuantity
     : accountingCostPreview;
   const selectedExtraCostAmount = Math.max(0, selectedCostAmount - selectedPurchaseAmount);
-  const selectedSaleAmount = Math.max(0, selectedSaleBaseAmount - accountingDiscountPreview);
+  const selectedSaleAmount = Math.max(0, selectedSaleBaseAmount + accountingAdjustmentPreview);
   const selectedMarginAmount = selectedSaleAmount - selectedCostAmount;
   const openOrders = adminOrders.filter(
     (order) => !["delivered", "cancelled"].includes(order.rawStatus)
@@ -5196,25 +5199,7 @@ function AdminPage() {
   }
 
   function updateManualSaleQuantity(value) {
-    setAccountingForm((current) => {
-      const product = adminProducts.find((item) => item.id === current.saleProductId);
-      if (!product) return { ...current, saleQuantity: value };
-
-      const previousQuantity = Math.max(1, getDraftAmount(current.saleQuantity, 1));
-      const nextQuantity = Math.max(1, getDraftAmount(value, 1));
-      const previousExpectedAmount = getProductPrice(product) * previousQuantity;
-      const currentSaleAmount = getDraftAmount(current.saleAmount, previousExpectedAmount);
-      const shouldFollowExpectedAmount =
-        !String(current.saleAmount ?? "").trim() || currentSaleAmount === previousExpectedAmount;
-
-      return {
-        ...current,
-        saleQuantity: value,
-        saleAmount: shouldFollowExpectedAmount
-          ? String(getProductPrice(product) * nextQuantity)
-          : current.saleAmount,
-      };
-    });
+    setAccountingForm((current) => ({ ...current, saleQuantity: value }));
   }
 
   function getManualVariantLineText({ color, size, quantity }) {
@@ -5238,27 +5223,13 @@ function AdminPage() {
       0
     );
 
-    setAccountingForm((current) => {
-      const product = adminProducts.find((item) => item.id === current.saleProductId);
-      const previousQuantity = Math.max(1, getDraftAmount(current.saleQuantity, 1));
-      const previousExpectedAmount = product ? getProductPrice(product) * previousQuantity : 0;
-      const currentSaleAmount = getDraftAmount(current.saleAmount, previousExpectedAmount);
-      const shouldFollowExpectedAmount =
-        product &&
-        (!String(current.saleAmount ?? "").trim() || currentSaleAmount === previousExpectedAmount);
-
-      return {
-        ...current,
-        saleVariantLines: nextText,
-        saleQuantity: nextQuantity > 0 ? String(nextQuantity) : current.saleQuantity,
-        saleColor: nextQuantity > 0 ? "" : current.saleColor,
-        saleSize: nextQuantity > 0 ? "" : current.saleSize,
-        saleAmount:
-          shouldFollowExpectedAmount && nextQuantity > 0
-            ? String(getProductPrice(product) * nextQuantity)
-            : current.saleAmount,
-      };
-    });
+    setAccountingForm((current) => ({
+      ...current,
+      saleVariantLines: nextText,
+      saleQuantity: nextQuantity > 0 ? String(nextQuantity) : current.saleQuantity,
+      saleColor: nextQuantity > 0 ? "" : current.saleColor,
+      saleSize: nextQuantity > 0 ? "" : current.saleSize,
+    }));
   }
 
   function addManualVariantSelection() {
@@ -5305,22 +5276,14 @@ function AdminPage() {
   function selectManualSaleProduct(productId) {
     setAccountingForm((current) => ({
       ...current,
-      ...(() => {
-        const product = adminProducts.find((item) => item.id === productId);
-
-        return {
-          saleProductId: productId,
-          saleColor: "",
-          saleSize: "",
-          saleVariantLines: "",
-          saleVariantDraftColor: "",
-          saleVariantDraftSize: "",
-          saleVariantDraftQuantity: "1",
-          saleAmount: product
-            ? String(getProductPrice(product) * Math.max(1, getDraftAmount(current.saleQuantity, 1)))
-            : "",
-        };
-      })(),
+      saleProductId: productId,
+      saleColor: "",
+      saleSize: "",
+      saleVariantLines: "",
+      saleVariantDraftColor: "",
+      saleVariantDraftSize: "",
+      saleVariantDraftQuantity: "1",
+      saleAmount: productId ? "" : current.saleAmount,
     }));
   }
 
@@ -5783,16 +5746,12 @@ function AdminPage() {
       }
     }
 
-    const saleAmountResult = parseGnfInput(
-      selectedSaleProduct && accountingForm.saleAmount === ""
-        ? selectedSaleExpectedAmount
-        : accountingForm.saleAmount,
-      selectedSaleProduct ? "Prix encaissé réel" : "Prix de vente",
-      {
-        required: true,
-        allowZero: false,
-      }
-    );
+    const saleAmountResult = selectedSaleProduct
+      ? { value: selectedSaleBaseAmount }
+      : parseGnfInput(accountingForm.saleAmount, "Prix de vente", {
+          required: true,
+          allowZero: false,
+        });
     const purchaseAmountResult = selectedSaleProduct
       ? { value: selectedPurchaseAmount }
       : parseGnfInput(accountingForm.purchaseAmount, "Prix d'achat", { fallback: 0 });
@@ -5801,27 +5760,32 @@ function AdminPage() {
       : parseGnfInput(accountingForm.extraCost, "Frais annexes", {
           fallback: 0,
         });
-    const discountAmountResult = parseGnfInput(accountingForm.discountAmount, "Remise", {
-      fallback: 0,
-    });
+    const adjustmentAmountResult = parseGnfInput(
+      accountingForm.discountAmount,
+      "Surplus / remise",
+      {
+        fallback: 0,
+        allowNegative: true,
+      }
+    );
 
     const validationError =
       saleAmountResult.error ||
       purchaseAmountResult.error ||
       extraCostResult.error ||
-      discountAmountResult.error;
+      adjustmentAmountResult.error;
 
     if (validationError) {
       showToast(validationError, "issue");
       return;
     }
 
-    if (discountAmountResult.value > saleAmountResult.value) {
-      showToast("La remise ne peut pas dépasser le prix de vente.", "issue");
+    const finalSaleAmount = saleAmountResult.value + adjustmentAmountResult.value;
+    if (finalSaleAmount <= 0) {
+      showToast("Le total encaissé doit rester supérieur à 0.", "issue");
       return;
     }
 
-    const finalSaleAmount = saleAmountResult.value - discountAmountResult.value;
     const costAmount = purchaseAmountResult.value + extraCostResult.value;
 
     const generatedSaleReference = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
@@ -5837,7 +5801,12 @@ function AdminPage() {
       selectedSaleProduct ? `Article : ${selectedSaleProduct.name}` : "Vente libre",
       `Quantité : ${saleQuantity}`,
       ...variantNotes,
-      discountAmountResult.value ? `Remise : ${formatMoney(discountAmountResult.value)}` : "",
+      adjustmentAmountResult.value > 0
+        ? `Surplus : ${formatMoney(adjustmentAmountResult.value)}`
+        : "",
+      adjustmentAmountResult.value < 0
+        ? `Remise : ${formatMoney(Math.abs(adjustmentAmountResult.value))}`
+        : "",
     ].filter(Boolean);
 
     const record = {
@@ -7334,18 +7303,14 @@ function AdminPage() {
                 onChange={(value) => updateAccountingForm("customer", value)}
               />
               <Field
-                label={selectedSaleProduct ? "Prix encaissé réel" : "Prix vente total avant remise"}
-                value={accountingForm.saleAmount}
+                label={selectedSaleProduct ? "Prix prévu total" : "Prix vente total avant ajustement"}
+                value={selectedSaleProduct ? selectedSaleBaseAmount : accountingForm.saleAmount}
                 type="number"
                 min="1"
                 step="1"
+                disabled={Boolean(selectedSaleProduct)}
                 onChange={(value) => updateAccountingForm("saleAmount", value)}
               />
-              {selectedSaleProduct ? (
-                <div className="manual-sale-price-note">
-                  Prix prévu : {formatMoney(selectedSaleExpectedAmount)}. Tu peux mettre plus si la vente est mieux négociée.
-                </div>
-              ) : null}
               {canSeeAccountingFinancials ? (
                 <>
                   <Field
@@ -7369,10 +7334,9 @@ function AdminPage() {
                 </>
               ) : null}
               <Field
-                label="Remise GNF"
+                label="Surplus / remise GNF"
                 value={accountingForm.discountAmount}
                 type="number"
-                min="0"
                 step="1"
                 onChange={(value) => updateAccountingForm("discountAmount", value)}
               />
