@@ -3682,6 +3682,7 @@ function AdminPage() {
   });
   const [depositForm, setDepositForm] = useState({
     recordId: "",
+    amount: "",
     orangeMoneyRef: "",
     receiptName: "",
     receiptFile: null,
@@ -3969,11 +3970,25 @@ function AdminPage() {
     .filter((record) => record.paymentMethod === "Liquide")
     .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
   const depositedCash = accountingRecords
-    .filter((record) => record.paymentMethod === "Liquide" && record.orangeMoneyRef)
-    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
+    .filter((record) => record.paymentMethod === "Liquide")
+    .reduce((sum, record) => sum + Number(record.depositAmount || 0), 0);
   const cashToDeposit = Math.max(0, totalCash - depositedCash);
   const pendingCashRecords = accountingRecords.filter(
-    (record) => record.paymentMethod === "Liquide" && !record.orangeMoneyRef
+    (record) =>
+      record.paymentMethod === "Liquide" &&
+      Number(record.remainingDepositAmount ?? record.saleAmount ?? 0) > 0
+  );
+  const selectedDepositRecordId = pendingCashRecords.some(
+    (record) => record.id === depositForm.recordId
+  )
+    ? depositForm.recordId
+    : pendingCashRecords[0]?.id || "";
+  const selectedDepositRecord = accountingRecords.find(
+    (record) => record.id === selectedDepositRecordId
+  );
+  const selectedDepositRemainingAmount = Math.max(
+    0,
+    Number(selectedDepositRecord?.remainingDepositAmount ?? selectedDepositRecord?.saleAmount ?? 0)
   );
   const adminDisplayName = getAdminDisplayName(session);
   const isSuperAdmin = Boolean(adminContext?.isOwner);
@@ -4291,21 +4306,21 @@ function AdminPage() {
       seller.costAmount += costAmount;
 
       if (record.paymentMethod === "Liquide") {
+        const depositedAmount = Number(record.depositAmount || 0);
+        const remainingAmount = Number(record.remainingDepositAmount ?? saleAmount);
+
         seller.cashCollected += saleAmount;
-        if (record.orangeMoneyRef) {
-          seller.cashDepositedFromSales += saleAmount;
-        } else {
-          seller.cashToDeposit += saleAmount;
-        }
+        seller.cashDepositedFromSales += depositedAmount;
+        seller.cashToDeposit += Math.max(0, remainingAmount);
       }
 
       if (record.paymentMethod === "Djomi") seller.djomiAmount += saleAmount;
       if (record.paymentMethod === "Orange Money") seller.orangeMoneyAmount += saleAmount;
 
-      if (record.depositedBy) {
+      if (record.depositedBy && Number(record.depositAmount || 0) > 0) {
         const depositor = ensurePerson(record.depositedBy);
         depositor.depositRecords.push(record);
-        depositor.depositsMade += saleAmount;
+        depositor.depositsMade += Number(record.depositAmount || 0);
       }
     });
 
@@ -4568,6 +4583,8 @@ function AdminPage() {
           Encaissement: record.paymentMethod,
           Encaisse_par: record.collectedBy,
           Depot_Orange_Money: record.orangeMoneyRef || "A deposer",
+          Montant_depose_GNF: record.depositAmount || 0,
+          Reste_a_deposer_GNF: record.remainingDepositAmount || 0,
           Recu: record.receiptUrl || record.receiptName || "",
           Note: record.note || "",
         })),
@@ -4684,6 +4701,8 @@ function AdminPage() {
           Marge_GNF: record.saleAmount - record.costAmount,
           Encaissement: record.paymentMethod,
           Depot_OM: record.orangeMoneyRef || "",
+          Montant_depose_GNF: record.depositAmount || 0,
+          Reste_a_deposer_GNF: record.remainingDepositAmount || 0,
         })),
       },
       {
@@ -5336,6 +5355,7 @@ function AdminPage() {
 
   function openDepositPanel() {
     setDepositMessage(null);
+    setDepositForm((current) => ({ ...current, amount: "" }));
     setDepositPanelOpen(true);
   }
 
@@ -5979,8 +5999,6 @@ function AdminPage() {
     event.preventDefault();
     if (isDepositSubmitting) return;
 
-    const selectedDepositRecordId = depositForm.recordId || pendingCashRecords[0]?.id || "";
-
     if (!selectedDepositRecordId || !depositForm.orangeMoneyRef) {
       const message = "Choisis une ligne et la référence Orange Money.";
       setDepositMessage({ tone: "issue", text: message });
@@ -5988,9 +6006,7 @@ function AdminPage() {
       return;
     }
 
-    const selectedRecord = accountingRecords.find(
-      (record) => record.id === selectedDepositRecordId
-    );
+    const selectedRecord = selectedDepositRecord;
 
     if (!selectedRecord) {
       const message = "Ligne comptable introuvable.";
@@ -6006,6 +6022,26 @@ function AdminPage() {
       return;
     }
 
+    const depositAmountResult = parseGnfInput(depositForm.amount, "Montant verse", {
+      required: true,
+      allowZero: false,
+    });
+
+    if (depositAmountResult.error) {
+      setDepositMessage({ tone: "issue", text: depositAmountResult.error });
+      showToast(depositAmountResult.error, "issue");
+      return;
+    }
+
+    if (depositAmountResult.value > selectedDepositRemainingAmount) {
+      const message = `Montant trop eleve : il reste seulement ${formatMoney(
+        selectedDepositRemainingAmount
+      )} a deposer pour cette vente.`;
+      setDepositMessage({ tone: "issue", text: message });
+      showToast(message, "issue");
+      return;
+    }
+
     setIsDepositSubmitting(true);
     setDepositMessage({ tone: "waiting", text: "Enregistrement du dépôt..." });
 
@@ -6016,6 +6052,7 @@ function AdminPage() {
       const { data, error } = await createOrangeMoneyDeposit({
         record: selectedRecord,
         reference: depositForm.orangeMoneyRef,
+        amount: depositAmountResult.value,
         receiptName: receiptUpload.data?.name || depositForm.receiptName,
         receiptPath: receiptUpload.data?.path || "",
         depositedBy: adminDisplayName,
@@ -6034,33 +6071,52 @@ function AdminPage() {
       setAccountingRecords((current) =>
         current.map((record) =>
           record.id === selectedDepositRecordId
-            ? {
-                ...record,
-                depositedBy: data.depositedBy,
-                orangeMoneyRef: data.orangeMoneyRef,
-                receiptName: data.receiptName,
-                receiptPath: data.receiptPath,
-                receiptUrl: data.receiptUrl,
-                depositedAt: data.depositedAt,
-              }
+            ? (() => {
+                const nextDepositAmount =
+                  Number(record.depositAmount || 0) + Number(data.depositAmount || 0);
+                const nextRemainingAmount = Math.max(
+                  0,
+                  Number(record.saleAmount || 0) - nextDepositAmount
+                );
+
+                return {
+                  ...record,
+                  depositedBy: data.depositedBy,
+                  orangeMoneyRef: data.orangeMoneyRef,
+                  receiptName: data.receiptName,
+                  receiptPath: data.receiptPath,
+                  receiptUrl: data.receiptUrl,
+                  depositedAt: data.depositedAt,
+                  depositAmount: nextDepositAmount,
+                  remainingDepositAmount: nextRemainingAmount,
+                  depositCount: Number(record.depositCount || 0) + 1,
+                };
+              })()
             : record
         )
       );
       setDepositForm({
         recordId: "",
+        amount: "",
         orangeMoneyRef: "",
         receiptName: "",
         receiptFile: null,
       });
 
+      const remainingAfterDeposit = Math.max(
+        0,
+        selectedDepositRemainingAmount - depositAmountResult.value
+      );
       const successMessage = receiptUploadFailed
         ? `Dépôt enregistré. ${getFriendlyErrorMessage(receiptUpload.error, "receipt_upload")}`
-        : "Dépôt Orange Money enregistré avec reçu.";
+        : remainingAfterDeposit > 0
+          ? `Dépôt partiel enregistré. Reste ${formatMoney(remainingAfterDeposit)}.`
+          : "Dépôt Orange Money enregistré avec reçu.";
       setDepositMessage({
         tone: receiptUploadFailed ? "waiting" : "paid",
         text: successMessage,
       });
-      if (!receiptUploadFailed) {
+      if (!receiptUploadFailed && remainingAfterDeposit <= 0) {
         setDepositPanelOpen(false);
       }
       showToast(successMessage, receiptUploadFailed ? "waiting" : "paid");
@@ -6981,6 +7037,12 @@ function AdminPage() {
                 {accountingRecords.length ? (
                   accountingRecords.map((record) => {
                     const isChecked = selectedAccountingIds.includes(record.id);
+                    const depositedAmount = Number(record.depositAmount || 0);
+                    const remainingAmount = Number(
+                      record.remainingDepositAmount ?? record.saleAmount ?? 0
+                    );
+                    const isPartiallyDeposited = depositedAmount > 0 && remainingAmount > 0;
+                    const isFullyDeposited = depositedAmount > 0 && remainingAmount <= 0;
 
                     return (
                     <tr className={isChecked ? "bulk-selected-row" : ""} key={record.id}>
@@ -7030,9 +7092,19 @@ function AdminPage() {
                         </td>
                       ) : null}
                       <td data-label="Dépôt OM">
-                        {record.orangeMoneyRef ? (
+                        {isFullyDeposited || isPartiallyDeposited ? (
                           <>
-                            <span className="status paid">Déposé</span>
+                            <span className={`status ${isFullyDeposited ? "paid" : "waiting"}`}>
+                              {isFullyDeposited ? "Déposé" : "Partiel"}
+                            </span>
+                            <br />
+                            <span>{formatMoney(depositedAmount)} / {formatMoney(record.saleAmount)}</span>
+                            {remainingAmount > 0 ? (
+                              <>
+                                <br />
+                                <span className="muted">Reste {formatMoney(remainingAmount)}</span>
+                              </>
+                            ) : null}
                             <br />
                             <span className="muted">
                               {record.orangeMoneyRef} - {record.depositedBy}
@@ -7421,13 +7493,14 @@ function AdminPage() {
                     setDepositForm((current) => ({
                       ...current,
                       recordId: event.target.value,
+                      amount: "",
                     }));
                     }
                   }
                 >
                   {pendingCashRecords.map((record) => (
                       <option value={record.id} key={record.id}>
-                        {record.orderId} - {formatMoney(record.saleAmount)}
+                        {record.orderId} - reste {formatMoney(record.remainingDepositAmount)}
                       </option>
                     ))}
                 </select>
@@ -7436,6 +7509,39 @@ function AdminPage() {
                   Aucun encaissement liquide en attente de dépôt.
                 </div>
               )}
+              {selectedDepositRecord ? (
+                <div className="deposit-summary">
+                  <span>
+                    Vente
+                    <strong>{formatMoney(selectedDepositRecord.saleAmount)}</strong>
+                  </span>
+                  <span>
+                    Déjà déposé
+                    <strong>{formatMoney(selectedDepositRecord.depositAmount)}</strong>
+                  </span>
+                  <span>
+                    Reste
+                    <strong>{formatMoney(selectedDepositRemainingAmount)}</strong>
+                  </span>
+                </div>
+              ) : null}
+              <Field
+                label="Montant versé maintenant"
+                value={depositForm.amount}
+                type="number"
+                min="1"
+                step="1"
+                disabled={!pendingCashRecords.length || isDepositSubmitting}
+                onChange={(value) =>
+                  {
+                    setDepositMessage(null);
+                  setDepositForm((current) => ({
+                    ...current,
+                    amount: value,
+                  }));
+                  }
+                }
+              />
               <Field
                 label="Référence Orange Money"
                 value={depositForm.orangeMoneyRef}
@@ -7579,7 +7685,13 @@ function AdminPage() {
                         </span>
                         <span>{record.quantity} art.</span>
                         <b>{formatMoney(record.saleAmount)}</b>
-                        <em>{record.orangeMoneyRef ? "Déposé" : record.paymentMethod}</em>
+                        <em>
+                          {Number(record.remainingDepositAmount || 0) <= 0 && Number(record.depositAmount || 0) > 0
+                            ? "Déposé"
+                            : Number(record.depositAmount || 0) > 0
+                              ? "Partiel"
+                              : record.paymentMethod}
+                        </em>
                       </div>
                     ))}
                   </div>
@@ -7592,7 +7704,7 @@ function AdminPage() {
                             <strong>{record.orangeMoneyRef || record.orderId}</strong>
                             <small>{record.depositedAt || record.date}</small>
                           </span>
-                          <b>{formatMoney(record.saleAmount)}</b>
+                          <b>{formatMoney(record.depositAmount)}</b>
                           <em>Orange Money</em>
                         </div>
                       ))}

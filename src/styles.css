@@ -2546,6 +2546,29 @@ textarea {
   font-weight: 900;
 }
 
+.deposit-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.deposit-summary span {
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 10px;
+}
+
+.deposit-summary strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
 .manual-variant-box {
   border: 1px solid #cdd7e1;
   border-radius: 8px;

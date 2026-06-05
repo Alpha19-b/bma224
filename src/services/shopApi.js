@@ -1586,6 +1586,21 @@ export async function deleteOrderAsOwner(orderId) {
 }
 
 function mapAccountingEntry(entry, deposit = null) {
+  const saleAmount = Number(entry.sale_amount ?? 0);
+  const hasDeposit = Boolean(deposit?.orange_money_reference || deposit?.deposited_amount);
+  const depositedAmount = Math.min(
+    saleAmount,
+    Math.max(
+      0,
+      Number(
+        deposit?.deposited_amount ??
+          deposit?.amount ??
+          (hasDeposit ? saleAmount : 0)
+      )
+    )
+  );
+  const remainingDepositAmount = Math.max(0, saleAmount - depositedAmount);
+
   return {
     id: entry.id,
     orderId: entry.order_number ?? "-",
@@ -1593,7 +1608,7 @@ function mapAccountingEntry(entry, deposit = null) {
     quantity: Number(entry.quantity ?? 1),
     date: entry.entry_date,
     customer: entry.customer_name ?? "Client",
-    saleAmount: Number(entry.sale_amount ?? 0),
+    saleAmount,
     purchaseAmount: Number(entry.purchase_amount ?? 0),
     extraCost: Math.max(
       0,
@@ -1609,6 +1624,9 @@ function mapAccountingEntry(entry, deposit = null) {
     receiptPath: deposit?.receipt_url ?? "",
     receiptUrl: deposit?.receipt_signed_url ?? "",
     depositedAt: deposit?.deposited_at?.slice(0, 10) ?? "",
+    depositAmount: depositedAmount,
+    remainingDepositAmount,
+    depositCount: Number(deposit?.deposit_count ?? (hasDeposit ? 1 : 0)),
   };
 }
 
@@ -1635,6 +1653,8 @@ async function mapAccountingEntryFromRpc(entry) {
       receipt_url: entry.deposit_receipt_url,
       receipt_file_name: entry.deposit_receipt_file_name,
       deposited_at: entry.deposit_deposited_at,
+      deposited_amount: entry.deposit_deposited_amount,
+      deposit_count: entry.deposit_count,
       receipt_signed_url: await createReceiptSignedUrl(entry.deposit_receipt_url),
     }
   );
@@ -1720,6 +1740,7 @@ export async function fetchAccountingEntries() {
       .select(
         `
           accounting_entry_id,
+          amount,
           orange_money_deposits (
             orange_money_reference,
             deposited_by_name,
@@ -1731,12 +1752,34 @@ export async function fetchAccountingEntries() {
       )
       .in("accounting_entry_id", entryIds);
 
-    depositsByEntryId = Object.fromEntries(
-      (depositItems ?? []).map((item) => [
-        item.accounting_entry_id,
-        item.orange_money_deposits,
-      ])
-    );
+    depositsByEntryId = (depositItems ?? []).reduce((groups, item) => {
+      const entryId = item.accounting_entry_id;
+      const deposit = item.orange_money_deposits ?? {};
+      const depositedAt = deposit.deposited_at || "";
+      const current = groups[entryId] ?? {
+        deposited_amount: 0,
+        deposit_count: 0,
+        orange_money_reference: "",
+        deposited_by_name: "",
+        receipt_url: "",
+        receipt_file_name: "",
+        deposited_at: "",
+      };
+
+      current.deposited_amount += Number(item.amount || 0);
+      current.deposit_count += 1;
+
+      if (!current.deposited_at || depositedAt > current.deposited_at) {
+        current.orange_money_reference = deposit.orange_money_reference ?? "";
+        current.deposited_by_name = deposit.deposited_by_name ?? "";
+        current.receipt_url = deposit.receipt_url ?? "";
+        current.receipt_file_name = deposit.receipt_file_name ?? "";
+        current.deposited_at = depositedAt;
+      }
+
+      groups[entryId] = current;
+      return groups;
+    }, {});
 
     const depositsWithReceiptLinks = await Promise.all(
       Object.entries(depositsByEntryId).map(async ([entryId, deposit]) => [
@@ -2074,6 +2117,7 @@ export async function adjustProductVariantStock({
 export async function createOrangeMoneyDeposit({
   record,
   reference,
+  amount,
   receiptName,
   receiptPath = "",
   depositedBy,
@@ -2083,11 +2127,16 @@ export async function createOrangeMoneyDeposit({
   }
 
   const currentUserId = await getCurrentUserId();
+  const depositAmount = Number(amount || 0);
+
+  if (!Number.isFinite(depositAmount) || depositAmount <= 0) {
+    return { data: null, error: new Error("Montant du dépôt invalide.") };
+  }
 
   let { data: deposit, error: depositError } = await supabase
     .from("orange_money_deposits")
     .insert({
-      amount: Number(record.saleAmount),
+      amount: depositAmount,
       deposited_by: currentUserId,
       deposited_by_name: depositedBy,
       orange_money_reference: reference,
@@ -2101,7 +2150,7 @@ export async function createOrangeMoneyDeposit({
     const fallbackDeposit = await supabase
       .from("orange_money_deposits")
       .insert({
-        amount: Number(record.saleAmount),
+        amount: depositAmount,
         deposited_by: currentUserId,
         deposited_by_name: depositedBy,
         orange_money_reference: reference,
@@ -2121,7 +2170,7 @@ export async function createOrangeMoneyDeposit({
   const { error: itemError } = await supabase.from("orange_money_deposit_items").insert({
     deposit_id: deposit.id,
     accounting_entry_id: record.id,
-    amount: Number(record.saleAmount),
+    amount: depositAmount,
   });
 
   if (itemError) {
@@ -2136,6 +2185,7 @@ export async function createOrangeMoneyDeposit({
       receiptPath: deposit.receipt_url || "",
       receiptUrl: await createReceiptSignedUrl(deposit.receipt_url),
       depositedAt: deposit.deposited_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      depositAmount,
     },
     error: null,
   };
