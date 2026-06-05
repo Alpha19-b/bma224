@@ -1348,6 +1348,24 @@ function getMarginRate(saleAmount, costAmount) {
   return Math.round(((saleAmount - costAmount) / saleAmount) * 100);
 }
 
+function getAccountingSourceLabel(source) {
+  const normalized = String(source || "").toLowerCase();
+
+  if (normalized.includes("order") || normalized.includes("site")) {
+    return "Commande du site";
+  }
+
+  if (normalized.includes("manual")) {
+    return "Vente manuelle";
+  }
+
+  if (normalized.includes("djomi")) {
+    return "Paiement Djomi";
+  }
+
+  return "Ligne comptable";
+}
+
 function App() {
   const host = window.location.hostname;
   const path = window.location.pathname;
@@ -3618,6 +3636,7 @@ function AdminPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
+  const [selectedAccountingDetailId, setSelectedAccountingDetailId] = useState("");
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
   const [selectedAuditPersonKey, setSelectedAuditPersonKey] = useState("");
@@ -3726,6 +3745,7 @@ function AdminPage() {
         setSelectedOrderIds([]);
         setSelectedProductIds([]);
         setSelectedAccountingIds([]);
+        setSelectedAccountingDetailId("");
         setSelectedCustomerKeys([]);
         setAdminConfirm(null);
         setAdminMessage("Connecte-toi avec ton compte admin pour gérer BMA.");
@@ -4259,6 +4279,11 @@ function AdminPage() {
   const selectedAccountingRecords = accountingRecords.filter((record) =>
     selectedAccountingIds.includes(record.id)
   );
+  const selectedAccountingDetail =
+    accountingRecords.find((record) => record.id === selectedAccountingDetailId) ?? null;
+  const selectedAccountingProduct = selectedAccountingDetail?.productId
+    ? adminProducts.find((product) => product.id === selectedAccountingDetail.productId)
+    : null;
   const allAccountingSelected =
     accountingRecords.length > 0 && selectedAccountingIds.length === accountingRecords.length;
   const selectedCustomers = customerGroups.filter((customer) =>
@@ -6920,6 +6945,39 @@ function AdminPage() {
   }
 
   function renderAccounting() {
+    const accountingDetailNoteLines = String(selectedAccountingDetail?.note || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const accountingDetailImage =
+      selectedAccountingProduct ? getProductImageEntries(selectedAccountingProduct)[0]?.imageUrl : "";
+    const accountingDetailTitle =
+      selectedAccountingProduct?.name ||
+      accountingDetailNoteLines
+        .find((line) => /^article\s*:/i.test(line))
+        ?.replace(/^article\s*:\s*/i, "") ||
+      selectedAccountingDetail?.orderId ||
+      "Vente";
+    const accountingDetailMargin = selectedAccountingDetail
+      ? Number(selectedAccountingDetail.saleAmount || 0) -
+        Number(selectedAccountingDetail.costAmount || 0)
+      : 0;
+    const accountingDetailDepositHistory = selectedAccountingDetail?.depositHistory ?? [];
+    const accountingDetailDeposits = accountingDetailDepositHistory.length
+      ? accountingDetailDepositHistory
+      : selectedAccountingDetail && Number(selectedAccountingDetail.depositAmount || 0) > 0
+        ? [
+            {
+              amount: selectedAccountingDetail.depositAmount,
+              orangeMoneyRef: selectedAccountingDetail.orangeMoneyRef,
+              depositedBy: selectedAccountingDetail.depositedBy,
+              receiptName: selectedAccountingDetail.receiptName,
+              receiptUrl: selectedAccountingDetail.receiptUrl,
+              depositedAt: selectedAccountingDetail.depositedAt,
+            },
+          ]
+        : [];
+
     return (
       <div className="admin-stack">
         {isSeller ? (
@@ -7045,9 +7103,29 @@ function AdminPage() {
                     const isFullyDeposited = depositedAmount > 0 && remainingAmount <= 0;
 
                     return (
-                    <tr className={isChecked ? "bulk-selected-row" : ""} key={record.id}>
+                    <tr
+                      className={[
+                        isChecked ? "bulk-selected-row" : "",
+                        selectedAccountingDetailId === record.id ? "active-row" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      key={record.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedAccountingDetailId(record.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedAccountingDetailId(record.id);
+                        }
+                      }}
+                    >
                       <td data-label="Date">
-                        <label className="order-select-control">
+                        <label
+                          className="order-select-control"
+                          onClick={(event) => event.stopPropagation()}
+                        >
                           <input
                             type="checkbox"
                             aria-label={`Sélectionner ${record.orderId}`}
@@ -7079,7 +7157,7 @@ function AdminPage() {
                         <span className="muted">Par: {record.collectedBy}</span>
                       </td>
                       {canViewDeleteControls ? (
-                        <td data-label="Actions">
+                        <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
                           <ActionButton
                             icon="trash"
                             label="Supprimer"
@@ -7121,6 +7199,7 @@ function AdminPage() {
                             href={record.receiptUrl}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
                           >
                             Voir le reçu
                           </a>
@@ -7144,6 +7223,151 @@ function AdminPage() {
             </table>
           </div>
         </section>
+        {selectedAccountingDetail ? (
+          <div
+            className="admin-action-overlay accounting-detail-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setSelectedAccountingDetailId("");
+            }}
+          >
+            <section className="section admin-action-panel accounting-detail-panel">
+              <div className="section-head">
+                <div>
+                  <h2>Détail de la vente</h2>
+                  <span>
+                    {selectedAccountingDetail.orderId} ·{" "}
+                    {getAccountingSourceLabel(selectedAccountingDetail.source)}
+                  </span>
+                </div>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  onClick={() => setSelectedAccountingDetailId("")}
+                >
+                  Fermer
+                </button>
+              </div>
+              <div className="accounting-detail-body">
+                <div className="accounting-detail-hero">
+                  {accountingDetailImage ? (
+                    <img src={accountingDetailImage} alt={accountingDetailTitle} />
+                  ) : (
+                    <div className="accounting-detail-image-fallback">
+                      {accountingDetailTitle.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <span className="status paid">
+                      {getAccountingSourceLabel(selectedAccountingDetail.source)}
+                    </span>
+                    <h3>{accountingDetailTitle}</h3>
+                    <p>
+                      {selectedAccountingDetail.customer} · {selectedAccountingDetail.date} ·{" "}
+                      {selectedAccountingDetail.quantity} article
+                      {selectedAccountingDetail.quantity > 1 ? "s" : ""}
+                    </p>
+                    <small>
+                      Encaissement : {selectedAccountingDetail.paymentMethod} par{" "}
+                      {selectedAccountingDetail.collectedBy}
+                    </small>
+                  </div>
+                </div>
+
+                <div className="accounting-detail-grid">
+                  <AuditRow label="Vente" value={formatMoney(selectedAccountingDetail.saleAmount)} tone="paid" />
+                  <AuditRow label="Achat" value={formatMoney(selectedAccountingDetail.purchaseAmount)} />
+                  <AuditRow label="Frais" value={formatMoney(selectedAccountingDetail.extraCost)} />
+                  <AuditRow label="Prix de revient" value={formatMoney(selectedAccountingDetail.costAmount)} />
+                  <AuditRow
+                    label="Marge"
+                    value={`${formatMoney(accountingDetailMargin)} · ${getMarginRate(
+                      selectedAccountingDetail.saleAmount,
+                      selectedAccountingDetail.costAmount
+                    )}%`}
+                    tone={accountingDetailMargin < 0 ? "warning" : "paid"}
+                  />
+                  <AuditRow
+                    label="Reste à déposer"
+                    value={formatMoney(selectedAccountingDetail.remainingDepositAmount)}
+                    tone={selectedAccountingDetail.remainingDepositAmount ? "warning" : "paid"}
+                  />
+                </div>
+
+                <div className="accounting-detail-section">
+                  <h3>Comment ça a été vendu</h3>
+                  {accountingDetailNoteLines.length ? (
+                    <div className="accounting-note-list">
+                      {accountingDetailNoteLines.map((line, index) => {
+                        const separatorIndex = line.indexOf(":");
+                        const label = separatorIndex > -1 ? line.slice(0, separatorIndex) : "";
+                        const value = separatorIndex > -1 ? line.slice(separatorIndex + 1).trim() : line;
+
+                        return (
+                          <div className="accounting-note-row" key={`${line}-${index}`}>
+                            {label ? <span>{label}</span> : null}
+                            <strong>{value}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="empty-state compact">
+                      Aucun détail saisi pour cette vente.
+                    </div>
+                  )}
+                </div>
+
+                <div className="accounting-detail-section">
+                  <h3>Dépôts Orange Money</h3>
+                  <div className="deposit-summary">
+                    <span>
+                      Déjà déposé
+                      <strong>{formatMoney(selectedAccountingDetail.depositAmount)}</strong>
+                    </span>
+                    <span>
+                      Reste
+                      <strong>{formatMoney(selectedAccountingDetail.remainingDepositAmount)}</strong>
+                    </span>
+                    <span>
+                      Versements
+                      <strong>{selectedAccountingDetail.depositCount || accountingDetailDeposits.length}</strong>
+                    </span>
+                  </div>
+                  {accountingDetailDeposits.length ? (
+                    <div className="deposit-history-list">
+                      {accountingDetailDeposits.map((deposit, index) => (
+                        <div className="deposit-history-row" key={`${deposit.orangeMoneyRef}-${index}`}>
+                          <span>
+                            <strong>{formatMoney(deposit.amount)}</strong>
+                            <small>
+                              {deposit.orangeMoneyRef || "Référence non précisée"} ·{" "}
+                              {deposit.depositedBy || "Responsable non précisé"}
+                            </small>
+                          </span>
+                          <span>{deposit.depositedAt || "-"}</span>
+                          {deposit.receiptUrl ? (
+                            <a
+                              className="receipt-link"
+                              href={deposit.receiptUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Reçu
+                            </a>
+                          ) : (
+                            <em>{deposit.receiptName || "Sans reçu"}</em>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state compact">Aucun dépôt enregistré.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
           </>
         )}
 

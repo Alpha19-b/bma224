@@ -2569,6 +2569,143 @@ textarea {
   margin-top: 4px;
 }
 
+.accounting-detail-panel {
+  width: min(860px, calc(100vw - 28px));
+}
+
+.accounting-detail-body {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.accounting-detail-hero {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.accounting-detail-hero img,
+.accounting-detail-image-fallback {
+  width: 92px;
+  height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.accounting-detail-hero img {
+  object-fit: contain;
+}
+
+.accounting-detail-image-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--green-dark);
+  font-size: 32px;
+  font-weight: 1000;
+}
+
+.accounting-detail-hero h3 {
+  margin: 8px 0 4px;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.accounting-detail-hero p,
+.accounting-detail-hero small {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.accounting-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.accounting-detail-section {
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-detail-section h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.accounting-note-list,
+.deposit-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.accounting-note-row,
+.deposit-history-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.accounting-note-row span,
+.deposit-history-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.accounting-note-row strong {
+  display: block;
+  margin-top: 2px;
+}
+
+.deposit-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.deposit-history-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+@media (max-width: 640px) {
+  .accounting-detail-body {
+    padding: 12px;
+  }
+
+  .accounting-detail-hero {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .accounting-detail-hero img,
+  .accounting-detail-image-fallback {
+    width: 72px;
+    height: 72px;
+  }
+
+  .accounting-detail-hero h3 {
+    font-size: 20px;
+  }
+
+  .accounting-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deposit-history-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .manual-variant-box {
   border: 1px solid #cdd7e1;
   border-radius: 8px;
@@ -4161,6 +4298,16 @@ textarea {
 
 .accounting-table {
   min-width: 1120px;
+}
+
+.accounting-table tbody tr {
+  cursor: pointer;
+}
+
+.accounting-table tbody tr.active-row,
+.accounting-table tbody tr.active-row:hover {
+  background: #e9f7f1;
+  box-shadow: inset 4px 0 0 var(--green);
 }
 
 .admin-login-card {

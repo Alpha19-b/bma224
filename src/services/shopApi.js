@@ -1618,6 +1618,7 @@ function mapAccountingEntry(entry, deposit = null) {
     paymentMethod: collectionLabelByMethod[entry.collection_method] ?? "Autre",
     collectedBy: entry.collected_by_name ?? "-",
     note: entry.note ?? "",
+    source: entry.source ?? "manual",
     depositedBy: deposit?.deposited_by_name ?? "",
     orangeMoneyRef: deposit?.orange_money_reference ?? "",
     receiptName: deposit?.receipt_file_name ?? "",
@@ -1627,7 +1628,63 @@ function mapAccountingEntry(entry, deposit = null) {
     depositAmount: depositedAmount,
     remainingDepositAmount,
     depositCount: Number(deposit?.deposit_count ?? (hasDeposit ? 1 : 0)),
+    depositHistory: [],
   };
+}
+
+async function attachAccountingDepositHistory(entries) {
+  const entryIds = entries.map((entry) => entry.id).filter(Boolean);
+  if (!entryIds.length) return entries;
+
+  const { data, error } = await supabase
+    .from("orange_money_deposit_items")
+    .select(
+      `
+        accounting_entry_id,
+        amount,
+        orange_money_deposits (
+          orange_money_reference,
+          deposited_by_name,
+          receipt_url,
+          receipt_file_name,
+          deposited_at
+        )
+      `
+    )
+    .in("accounting_entry_id", entryIds);
+
+  if (error) return entries;
+
+  const grouped = {};
+
+  await Promise.all(
+    (data ?? []).map(async (item) => {
+      const deposit = item.orange_money_deposits ?? {};
+      const historyItem = {
+        amount: Number(item.amount || 0),
+        orangeMoneyRef: deposit.orange_money_reference ?? "",
+        depositedBy: deposit.deposited_by_name ?? "",
+        receiptName: deposit.receipt_file_name ?? "",
+        receiptPath: deposit.receipt_url ?? "",
+        receiptUrl: await createReceiptSignedUrl(deposit.receipt_url),
+        depositedAt: deposit.deposited_at?.slice(0, 10) ?? "",
+      };
+
+      grouped[item.accounting_entry_id] = grouped[item.accounting_entry_id] || [];
+      grouped[item.accounting_entry_id].push(historyItem);
+    })
+  );
+
+  Object.values(grouped).forEach((items) => {
+    items.sort((first, second) =>
+      String(second.depositedAt || "").localeCompare(String(first.depositedAt || ""))
+    );
+  });
+
+  return entries.map((entry) => ({
+    ...entry,
+    depositHistory: grouped[entry.id] ?? entry.depositHistory ?? [],
+  }));
 }
 
 async function mapAccountingEntryFromRpc(entry) {
@@ -1646,6 +1703,7 @@ async function mapAccountingEntryFromRpc(entry) {
       collected_by_name: entry.collected_by_name,
       collected_at: entry.collected_at,
       note: entry.note,
+      source: entry.source,
     },
     {
       orange_money_reference: entry.deposit_orange_money_reference,
@@ -1668,8 +1726,10 @@ export async function fetchAccountingEntries() {
   const rpcResult = await supabase.rpc("get_admin_accounting_entries");
 
   if (!rpcResult.error) {
+    const entries = await Promise.all((rpcResult.data ?? []).map(mapAccountingEntryFromRpc));
+
     return {
-      data: await Promise.all((rpcResult.data ?? []).map(mapAccountingEntryFromRpc)),
+      data: await attachAccountingDepositHistory(entries),
       error: null,
     };
   }
@@ -1694,14 +1754,15 @@ export async function fetchAccountingEntries() {
         collection_method,
         collected_by_name,
         collected_at,
-        note
+        note,
+        source
       `
     )
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);
 
-  if (error && /product_id|quantity/i.test(error.message || "")) {
+  if (error && /product_id|quantity|source/i.test(error.message || "")) {
     const fallback = await supabase
       .from("accounting_entries")
       .select(
@@ -1795,7 +1856,9 @@ export async function fetchAccountingEntries() {
   }
 
   return {
-    data: data.map((entry) => mapAccountingEntry(entry, depositsByEntryId[entry.id])),
+    data: await attachAccountingDepositHistory(
+      data.map((entry) => mapAccountingEntry(entry, depositsByEntryId[entry.id]))
+    ),
     error: null,
   };
 }
