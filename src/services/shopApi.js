@@ -1587,6 +1587,8 @@ export async function deleteOrderAsOwner(orderId) {
 
 function mapAccountingEntry(entry, deposit = null) {
   const saleAmount = Number(entry.sale_amount ?? 0);
+  const paymentMethod = collectionLabelByMethod[entry.collection_method] ?? "Autre";
+  const isDirectOrangeMoney = paymentMethod === "Orange Money";
   const hasDeposit = Boolean(deposit?.orange_money_reference || deposit?.deposited_amount);
   const depositedAmount = Math.min(
     saleAmount,
@@ -1595,11 +1597,13 @@ function mapAccountingEntry(entry, deposit = null) {
       Number(
         deposit?.deposited_amount ??
           deposit?.amount ??
-          (hasDeposit ? saleAmount : 0)
+          (hasDeposit || isDirectOrangeMoney ? saleAmount : 0)
       )
     )
   );
-  const remainingDepositAmount = Math.max(0, saleAmount - depositedAmount);
+  const remainingDepositAmount = isDirectOrangeMoney
+    ? 0
+    : Math.max(0, saleAmount - depositedAmount);
 
   return {
     id: entry.id,
@@ -1615,7 +1619,7 @@ function mapAccountingEntry(entry, deposit = null) {
       Number(entry.cost_amount ?? 0) - Number(entry.purchase_amount ?? 0)
     ),
     costAmount: Number(entry.cost_amount ?? 0),
-    paymentMethod: collectionLabelByMethod[entry.collection_method] ?? "Autre",
+    paymentMethod,
     collectedBy: entry.collected_by_name ?? "-",
     note: entry.note ?? "",
     source: entry.source ?? "manual",

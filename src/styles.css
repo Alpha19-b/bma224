@@ -4404,6 +4404,14 @@ textarea {
   text-decoration: none;
 }
 
+.receipt-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
 .receipt-link:hover {
   text-decoration: underline;
 }
