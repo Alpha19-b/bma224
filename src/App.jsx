@@ -3699,6 +3699,7 @@ function AdminPage() {
     note: "",
     paymentMethod: "Liquide",
   });
+  const [manualSaleItems, setManualSaleItems] = useState([]);
   const [depositForm, setDepositForm] = useState({
     recordId: "",
     amount: "",
@@ -4108,8 +4109,44 @@ function AdminPage() {
     ? getCostPrice(selectedSaleProduct) * saleQuantity
     : accountingCostPreview;
   const selectedExtraCostAmount = Math.max(0, selectedCostAmount - selectedPurchaseAmount);
-  const selectedSaleAmount = Math.max(0, selectedSaleBaseAmount + accountingAdjustmentPreview);
-  const selectedMarginAmount = selectedSaleAmount - selectedCostAmount;
+  const hasManualSaleItems = manualSaleItems.length > 0;
+  const manualSaleItemsQuantity = manualSaleItems.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+  const manualSaleItemsBaseAmount = manualSaleItems.reduce(
+    (sum, item) => sum + Number(item.saleAmount || 0),
+    0
+  );
+  const manualSaleItemsPurchaseAmount = manualSaleItems.reduce(
+    (sum, item) => sum + Number(item.purchaseAmount || 0),
+    0
+  );
+  const manualSaleItemsCostAmount = manualSaleItems.reduce(
+    (sum, item) => sum + Number(item.costAmount || 0),
+    0
+  );
+  const manualSaleItemsExtraCostAmount = Math.max(
+    0,
+    manualSaleItemsCostAmount - manualSaleItemsPurchaseAmount
+  );
+  const manualSaleBaseAmount = hasManualSaleItems
+    ? manualSaleItemsBaseAmount
+    : selectedSaleBaseAmount;
+  const manualSalePurchaseAmount = hasManualSaleItems
+    ? manualSaleItemsPurchaseAmount
+    : selectedPurchaseAmount;
+  const manualSaleCostAmount = hasManualSaleItems
+    ? manualSaleItemsCostAmount
+    : selectedCostAmount;
+  const manualSaleExtraCostAmount = hasManualSaleItems
+    ? manualSaleItemsExtraCostAmount
+    : selectedExtraCostAmount;
+  const manualSaleFinalAmount = Math.max(
+    0,
+    manualSaleBaseAmount + accountingAdjustmentPreview
+  );
+  const manualSaleMarginAmount = manualSaleFinalAmount - manualSaleCostAmount;
   const openOrders = adminOrders.filter(
     (order) => !["delivered", "cancelled"].includes(order.rawStatus)
   );
@@ -5345,6 +5382,167 @@ function AdminPage() {
     updateManualVariantLines(nextLines);
   }
 
+  function getReservedManualSaleQuantity(productId) {
+    return manualSaleItems
+      .filter((item) => item.productId === productId)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  }
+
+  function getReservedManualSaleColorQuantity(productId, color) {
+    const colorKey = normalizeVariantKey(color);
+    return manualSaleItems
+      .filter((item) => item.productId === productId)
+      .flatMap((item) => item.colorDeltas ?? [])
+      .filter((delta) => normalizeVariantKey(delta.color) === colorKey)
+      .reduce((sum, delta) => sum + Number(delta.quantity || 0), 0);
+  }
+
+  function getReservedManualSaleVariantQuantity(productId, color, size) {
+    const colorKey = normalizeVariantKey(color);
+    const sizeKey = normalizeVariantKey(size);
+    return manualSaleItems
+      .filter((item) => item.productId === productId)
+      .flatMap((item) => item.variantDeltas ?? [])
+      .filter(
+        (delta) =>
+          normalizeVariantKey(delta.color) === colorKey &&
+          normalizeVariantKey(delta.size) === sizeKey
+      )
+      .reduce((sum, delta) => sum + Number(delta.quantity || 0), 0);
+  }
+
+  function resetManualSaleDraft() {
+    setAccountingForm((current) => ({
+      ...current,
+      saleProductId: "",
+      saleQuantity: "1",
+      saleColor: "",
+      saleSize: "",
+      saleVariantLines: "",
+      saleVariantDraftColor: "",
+      saleVariantDraftSize: "",
+      saleVariantDraftQuantity: "1",
+      saleAmount: "",
+      purchaseAmount: "",
+      extraCost: "",
+    }));
+  }
+
+  function buildManualSaleDraftItem() {
+    if (!selectedSaleProduct) {
+      showToast("Choisis un article avant de l'ajouter à la vente.", "issue");
+      return null;
+    }
+
+    const quantity = Math.max(1, saleQuantity);
+    const alreadyReserved = getReservedManualSaleQuantity(selectedSaleProduct.id);
+    const availableStock = Math.max(0, Number(selectedSaleProduct.stock || 0) - alreadyReserved);
+
+    if (quantity > availableStock) {
+      showToast(
+        `Stock insuffisant : il reste ${availableStock} article(s) disponibles pour cette vente.`,
+        "issue"
+      );
+      return null;
+    }
+
+    const colorDeltas = getManualSaleColorDeltas(selectedSaleProduct, accountingForm, quantity);
+    const variantDeltas = getManualSaleVariantDeltas(selectedSaleProduct, accountingForm, quantity);
+
+    if (accountingForm.saleVariantLines.trim() && manualVariantQuantity !== quantity) {
+      showToast(
+        `Le détail couleurs/tailles indique ${manualVariantQuantity} article(s), mais la quantité est ${quantity}.`,
+        "issue"
+      );
+      return null;
+    }
+
+    for (const colorDelta of colorDeltas) {
+      const reservedColor = getReservedManualSaleColorQuantity(
+        selectedSaleProduct.id,
+        colorDelta.color
+      );
+      const colorStock = Math.max(
+        0,
+        getProductStockForColor(selectedSaleProduct, colorDelta.color) - reservedColor
+      );
+
+      if (colorDelta.quantity > colorStock) {
+        showToast(
+          `Stock insuffisant pour ${colorDelta.color} : il reste ${colorStock} article(s) disponibles dans cette vente.`,
+          "issue"
+        );
+        return null;
+      }
+    }
+
+    for (const variantDelta of variantDeltas) {
+      const reservedVariant = getReservedManualSaleVariantQuantity(
+        selectedSaleProduct.id,
+        variantDelta.color,
+        variantDelta.size
+      );
+      const variantStock = Math.max(
+        0,
+        getProductStockForSelection(selectedSaleProduct, variantDelta.color, variantDelta.size) -
+          reservedVariant
+      );
+
+      if (variantDelta.quantity > variantStock) {
+        showToast(
+          `Stock insuffisant pour ${variantDelta.color} / ${variantDelta.size} : il reste ${variantStock} article(s) disponibles dans cette vente.`,
+          "issue"
+        );
+        return null;
+      }
+    }
+
+    const optionParts = [
+      accountingForm.saleVariantLines.trim()
+        ? accountingForm.saleVariantLines.trim().replace(/\n/g, " ; ")
+        : "",
+      !accountingForm.saleVariantLines.trim() && accountingForm.saleColor
+        ? `Couleur ${accountingForm.saleColor}`
+        : "",
+      !accountingForm.saleVariantLines.trim() && accountingForm.saleSize
+        ? `Taille ${accountingForm.saleSize}`
+        : "",
+    ].filter(Boolean);
+
+    return {
+      id: `sale-item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      productId: selectedSaleProduct.id,
+      productName: selectedSaleProduct.name,
+      image: selectedSaleProduct.image,
+      quantity,
+      unitPrice: getProductPrice(selectedSaleProduct),
+      unitPurchasePrice: getPurchasePrice(selectedSaleProduct),
+      unitCostPrice: getCostPrice(selectedSaleProduct),
+      saleAmount: getProductPrice(selectedSaleProduct) * quantity,
+      purchaseAmount: getPurchasePrice(selectedSaleProduct) * quantity,
+      costAmount: getCostPrice(selectedSaleProduct) * quantity,
+      color: accountingForm.saleColor,
+      size: accountingForm.saleSize,
+      variantLines: accountingForm.saleVariantLines.trim(),
+      colorDeltas,
+      variantDeltas,
+      optionSummary: optionParts.join(" - "),
+      stockBefore: Number(selectedSaleProduct.stock || 0),
+    };
+  }
+
+  function addManualSaleItem() {
+    const item = buildManualSaleDraftItem();
+    if (!item) return;
+
+    setManualSaleItems((current) => [...current, item]);
+    resetManualSaleDraft();
+  }
+
+  function removeManualSaleItem(itemId) {
+    setManualSaleItems((current) => current.filter((item) => item.id !== itemId));
+  }
+
   function selectManualSaleProduct(productId) {
     setAccountingForm((current) => ({
       ...current,
@@ -5404,6 +5602,8 @@ function AdminPage() {
 
   function closeManualSalePanel() {
     setManualSaleOpen(false);
+    setManualSaleItems([]);
+    resetManualSaleDraft();
   }
 
   function openDepositPanel(recordId = "") {
@@ -5750,90 +5950,49 @@ function AdminPage() {
       return;
     }
 
-    if (!selectedSaleProduct && !accountingForm.saleAmount) {
+    const saleItems = hasManualSaleItems
+      ? manualSaleItems
+      : selectedSaleProduct
+        ? [buildManualSaleDraftItem()].filter(Boolean)
+        : [];
+    const hasCatalogSale = saleItems.length > 0;
+
+    if (!hasCatalogSale && !accountingForm.saleAmount) {
       showToast("Choisis un article ou saisis un montant manuel.", "issue");
       return;
     }
 
-    if (selectedSaleProduct && saleQuantity > Number(selectedSaleProduct.stock || 0)) {
-      showToast(
-        `Stock insuffisant : il reste ${selectedSaleProduct.stock} article(s).`,
-        "issue"
-      );
-      return;
-    }
+    if (selectedSaleProduct && !hasManualSaleItems && !hasCatalogSale) return;
 
-    const manualColorDeltas = selectedSaleProduct
-      ? getManualSaleColorDeltas(selectedSaleProduct, accountingForm, saleQuantity)
-      : [];
-    const manualVariantDeltas = selectedSaleProduct
-      ? getManualSaleVariantDeltas(selectedSaleProduct, accountingForm, saleQuantity)
-      : [];
+    const saleItemsQuantity = saleItems.reduce(
+      (sum, item) => sum + Number(item.quantity || 0),
+      0
+    );
+    const saleItemsBaseAmount = saleItems.reduce(
+      (sum, item) => sum + Number(item.saleAmount || 0),
+      0
+    );
+    const saleItemsPurchaseAmount = saleItems.reduce(
+      (sum, item) => sum + Number(item.purchaseAmount || 0),
+      0
+    );
+    const saleItemsCostAmount = saleItems.reduce(
+      (sum, item) => sum + Number(item.costAmount || 0),
+      0
+    );
+    const saleItemsExtraCostAmount = Math.max(0, saleItemsCostAmount - saleItemsPurchaseAmount);
 
-    if (
-      selectedSaleProduct &&
-      accountingForm.saleVariantLines.trim() &&
-      manualVariantQuantity !== saleQuantity
-    ) {
-      showToast(
-        `Le détail couleurs/tailles indique ${manualVariantQuantity} article(s), mais la quantité est ${saleQuantity}.`,
-        "issue"
-      );
-      return;
-    }
-
-    if (
-      selectedSaleProduct &&
-      accountingForm.saleColor &&
-      !manualColorDeltas.length &&
-      saleQuantity > selectedSaleColorStock
-    ) {
-      showToast(
-        `Stock insuffisant pour ${accountingForm.saleColor} : il reste ${selectedSaleColorStock} article(s).`,
-        "issue"
-      );
-      return;
-    }
-
-    for (const colorDelta of manualColorDeltas) {
-      const colorStock = getProductStockForColor(selectedSaleProduct, colorDelta.color);
-
-      if (colorDelta.quantity > colorStock) {
-        showToast(
-          `Stock insuffisant pour ${colorDelta.color} : il reste ${colorStock} article(s).`,
-          "issue"
-        );
-        return;
-      }
-    }
-
-    for (const variantDelta of manualVariantDeltas) {
-      const variantStock = getProductStockForSelection(
-        selectedSaleProduct,
-        variantDelta.color,
-        variantDelta.size
-      );
-
-      if (variantDelta.quantity > variantStock) {
-        showToast(
-          `Stock insuffisant pour ${variantDelta.color} / ${variantDelta.size} : il reste ${variantStock} article(s).`,
-          "issue"
-        );
-        return;
-      }
-    }
-
-    const saleAmountResult = selectedSaleProduct
-      ? { value: selectedSaleBaseAmount }
+    const saleAmountResult = hasCatalogSale
+      ? { value: saleItemsBaseAmount }
       : parseGnfInput(accountingForm.saleAmount, "Prix de vente", {
           required: true,
           allowZero: false,
         });
-    const purchaseAmountResult = selectedSaleProduct
-      ? { value: selectedPurchaseAmount }
+    const purchaseAmountResult = hasCatalogSale
+      ? { value: saleItemsPurchaseAmount }
       : parseGnfInput(accountingForm.purchaseAmount, "Prix d'achat", { fallback: 0 });
-    const extraCostResult = selectedSaleProduct
-      ? { value: selectedExtraCostAmount }
+    const extraCostResult = hasCatalogSale
+      ? { value: saleItemsExtraCostAmount }
       : parseGnfInput(accountingForm.extraCost, "Frais annexes", {
           fallback: 0,
         });
@@ -5866,18 +6025,27 @@ function AdminPage() {
     const costAmount = purchaseAmountResult.value + extraCostResult.value;
 
     const generatedSaleReference = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
-    const variantNotes = [
-      accountingForm.saleColor ? `Couleur : ${accountingForm.saleColor}` : "",
-      accountingForm.saleSize ? `Taille : ${accountingForm.saleSize}` : "",
-      accountingForm.saleVariantLines.trim()
-        ? `Détail couleurs/tailles :\n${accountingForm.saleVariantLines.trim()}`
-        : "",
-    ].filter(Boolean);
+    const saleItemNotes = saleItems.map((item) => {
+      const optionText = item.variantLines
+        ? ` (${item.variantLines.replace(/\n/g, " ; ")})`
+        : item.optionSummary
+          ? ` (${item.optionSummary})`
+          : "";
+
+      return `- ${item.productName} x${item.quantity}${optionText} = ${formatMoney(item.saleAmount)}`;
+    });
+    const singleItem = saleItems.length === 1 ? saleItems[0] : null;
     const saleNotes = [
       accountingForm.note?.trim(),
-      selectedSaleProduct ? `Article : ${selectedSaleProduct.name}` : "Vente libre",
-      `Quantité : ${saleQuantity}`,
-      ...variantNotes,
+      saleItems.length > 1
+        ? `Articles :\n${saleItemNotes.join("\n")}`
+        : singleItem
+          ? `Article : ${singleItem.productName}`
+          : "Vente libre",
+      saleItems.length > 1 ? `Quantité totale : ${saleItemsQuantity}` : `Quantité : ${saleItemsQuantity || saleQuantity}`,
+      singleItem?.color ? `Couleur : ${singleItem.color}` : "",
+      singleItem?.size ? `Taille : ${singleItem.size}` : "",
+      singleItem?.variantLines ? `Détail couleurs/tailles :\n${singleItem.variantLines}` : "",
       adjustmentAmountResult.value > 0
         ? `Surplus : ${formatMoney(adjustmentAmountResult.value)}`
         : "",
@@ -5888,12 +6056,12 @@ function AdminPage() {
 
     const record = {
       orderId: accountingForm.orderId || generatedSaleReference,
-      productId: selectedSaleProduct?.id || "",
-      quantity: saleQuantity,
+      productId: saleItems.length === 1 ? singleItem.productId : "",
+      quantity: saleItemsQuantity || saleQuantity,
       date: accountingForm.date,
       customer:
         accountingForm.customer ||
-        (selectedSaleProduct ? `Vente ${selectedSaleProduct.name}` : "Client"),
+        (singleItem ? `Vente ${singleItem.productName}` : saleItems.length > 1 ? "Vente groupée" : "Client"),
       saleAmount: finalSaleAmount,
       purchaseAmount: purchaseAmountResult.value,
       extraCost: extraCostResult.value,
@@ -5918,13 +6086,71 @@ function AdminPage() {
     }
 
     setAccountingRecords((current) => (data ? [data, ...current] : current));
+    const productDeltas = new Map();
+    const colorDeltasByProduct = new Map();
+    const variantDeltasByProduct = new Map();
+
+    saleItems.forEach((item) => {
+      const currentProductDelta = productDeltas.get(item.productId) || {
+        productId: item.productId,
+        productName: item.productName,
+        image: item.image,
+        quantity: 0,
+        stockBefore: item.stockBefore,
+      };
+      currentProductDelta.quantity += Number(item.quantity || 0);
+      productDeltas.set(item.productId, currentProductDelta);
+
+      item.colorDeltas.forEach((delta) => {
+        const grouped = colorDeltasByProduct.get(item.productId) || new Map();
+        const key = normalizeVariantKey(delta.color);
+        const currentDelta = grouped.get(key) || { color: delta.color, quantity: 0 };
+        currentDelta.quantity += Number(delta.quantity || 0);
+        grouped.set(key, currentDelta);
+        colorDeltasByProduct.set(item.productId, grouped);
+      });
+
+      item.variantDeltas.forEach((delta) => {
+        const grouped = variantDeltasByProduct.get(item.productId) || new Map();
+        const key = `${normalizeVariantKey(delta.color)}|${normalizeVariantKey(delta.size)}`;
+        const currentDelta = grouped.get(key) || {
+          color: delta.color,
+          size: delta.size,
+          quantity: 0,
+        };
+        currentDelta.quantity += Number(delta.quantity || 0);
+        grouped.set(key, currentDelta);
+        variantDeltasByProduct.set(item.productId, grouped);
+      });
+    });
+
+    let baseStockError = null;
     let colorStockError = null;
     let variantStockError = null;
 
-    if (selectedSaleProduct && !error && manualColorDeltas.length) {
-      for (const colorDelta of manualColorDeltas) {
+    if (saleItems.length > 1 && !error) {
+      for (const productDelta of productDeltas.values()) {
+        const stockResult = await adjustProductStock({
+          productId: productDelta.productId,
+          quantityDelta: -productDelta.quantity,
+          reason: "manual_sale",
+          referenceType: "accounting_entry",
+          referenceId: data?.id || record.orderId,
+          note: record.note,
+        });
+
+        if (stockResult.error) {
+          baseStockError = stockResult.error;
+          break;
+        }
+      }
+    }
+
+    if (saleItems.length && !error && !baseStockError) {
+      for (const [productId, groupedDeltas] of colorDeltasByProduct.entries()) {
+        for (const colorDelta of groupedDeltas.values()) {
         const colorResult = await adjustProductColorStock({
-          productId: selectedSaleProduct.id,
+          productId,
           color: colorDelta.color,
           quantityDelta: -colorDelta.quantity,
           reason: "manual_sale",
@@ -5938,12 +6164,13 @@ function AdminPage() {
           break;
         }
       }
+        if (colorStockError) break;
     }
 
-    if (selectedSaleProduct && !error && manualVariantDeltas.length) {
-      for (const variantDelta of manualVariantDeltas) {
+      for (const [productId, groupedDeltas] of variantDeltasByProduct.entries()) {
+        for (const variantDelta of groupedDeltas.values()) {
         const variantResult = await adjustProductVariantStock({
-          productId: selectedSaleProduct.id,
+          productId,
           color: variantDelta.color,
           size: variantDelta.size,
           quantityDelta: -variantDelta.quantity,
@@ -5954,22 +6181,25 @@ function AdminPage() {
           break;
         }
       }
+        if (variantStockError) break;
+    }
     }
 
-    if (selectedSaleProduct && !error) {
-      const nextStock = Math.max(0, Number(selectedSaleProduct.stock || 0) - saleQuantity);
+    if (saleItems.length && !error && !baseStockError) {
       setAdminProducts((current) =>
         current.map((product) => {
-          if (product.id !== selectedSaleProduct.id) return product;
+          const productDelta = productDeltas.get(product.id);
+          if (!productDelta) return product;
 
           const nextProduct = {
             ...product,
-            stock: Math.max(0, Number(product.stock || 0) - saleQuantity),
+            stock: Math.max(0, Number(product.stock || 0) - productDelta.quantity),
           };
 
-          if (!colorStockError && manualColorDeltas.length) {
+          const colorDeltas = [...(colorDeltasByProduct.get(product.id)?.values() ?? [])];
+          if (!colorStockError && colorDeltas.length) {
             nextProduct.stockByColor = { ...(product.stockByColor ?? {}) };
-            manualColorDeltas.forEach((colorDelta) => {
+            colorDeltas.forEach((colorDelta) => {
               const key = normalizeVariantKey(colorDelta.color);
               if (!(key in nextProduct.stockByColor)) return;
 
@@ -5980,9 +6210,10 @@ function AdminPage() {
             });
           }
 
-          if (!variantStockError && manualVariantDeltas.length) {
+          const variantDeltas = [...(variantDeltasByProduct.get(product.id)?.values() ?? [])];
+          if (!variantStockError && variantDeltas.length) {
             nextProduct.stockByVariant = { ...(product.stockByVariant ?? {}) };
-            manualVariantDeltas.forEach((variantDelta) => {
+            variantDeltas.forEach((variantDelta) => {
               const colorKey = normalizeVariantKey(variantDelta.color);
               const sizeKey = normalizeVariantKey(variantDelta.size);
               if (!(colorKey in nextProduct.stockByVariant)) return;
@@ -6002,22 +6233,20 @@ function AdminPage() {
           return nextProduct;
         })
       );
-      setStockMovements((current) => [
-        {
-          id: `local-${Date.now()}`,
-          productId: selectedSaleProduct.id,
-          productName: selectedSaleProduct.name,
-          image: selectedSaleProduct.image,
-          delta: -saleQuantity,
-          stockBefore: Number(selectedSaleProduct.stock || 0),
-          stockAfter: nextStock,
+      const nextMovements = [...productDeltas.values()].map((productDelta, index) => ({
+          id: `local-${Date.now()}-${index}`,
+          productId: productDelta.productId,
+          productName: productDelta.productName,
+          image: productDelta.image,
+          delta: -productDelta.quantity,
+          stockBefore: Number(productDelta.stockBefore || 0),
+          stockAfter: Math.max(0, Number(productDelta.stockBefore || 0) - productDelta.quantity),
           reason: "manual_sale",
           referenceId: data?.id || record.orderId,
           actor: adminDisplayName,
           createdDate: accountingForm.date,
-        },
-        ...current,
-      ]);
+        }));
+      setStockMovements((current) => [...nextMovements, ...current]);
     }
     setDepositForm((current) => ({ ...current, recordId: data?.id || current.recordId }));
     setAccountingForm({
@@ -6039,16 +6268,19 @@ function AdminPage() {
       note: "",
       paymentMethod: "Liquide",
     });
+    setManualSaleItems([]);
     setManualSaleOpen(false);
     showToast(
       error
         ? `Vente enregistrée, mais stock à vérifier : ${getFriendlyErrorMessage(error, "stock")}`
+        : baseStockError
+          ? `Vente enregistrée. Stock article à vérifier : ${getFriendlyErrorMessage(baseStockError, "stock")}`
         : variantStockError
           ? `Vente enregistrée. Stock détaillé à vérifier : ${getFriendlyErrorMessage(variantStockError, "stock")}`
         : colorStockError
           ? `Vente enregistrée. Stock couleur à vérifier : ${getFriendlyErrorMessage(colorStockError, "stock")}`
           : "Vente enregistrée et stock mis à jour.",
-      error || colorStockError || variantStockError ? "waiting" : "paid"
+      error || baseStockError || colorStockError || variantStockError ? "waiting" : "paid"
     );
   }
 
@@ -7659,14 +7891,57 @@ function AdminPage() {
                   ) : null}
                 </div>
               ) : null}
-              <Field
-                label="Quantité"
-                value={accountingForm.saleQuantity}
-                type="number"
-                min="1"
-                step="1"
-                onChange={updateManualSaleQuantity}
-              />
+              {selectedSaleProduct ? (
+                <button
+                  className="btn secondary full"
+                  type="button"
+                  onClick={addManualSaleItem}
+                >
+                  Ajouter cet article à la vente
+                </button>
+              ) : null}
+              {manualSaleItems.length ? (
+                <div className="manual-sale-items full">
+                  <div className="manual-variant-head">
+                    <strong>Articles dans cette vente</strong>
+                    <span>
+                      {manualSaleItemsQuantity} article(s) - {formatMoney(manualSaleItemsBaseAmount)}
+                    </span>
+                  </div>
+                  <div className="manual-sale-item-list">
+                    {manualSaleItems.map((item) => (
+                      <div className="manual-sale-item" key={item.id}>
+                        <img src={item.image} alt="" />
+                        <span>
+                          <strong>{item.productName}</strong>
+                          <small>
+                            x{item.quantity}
+                            {item.optionSummary ? ` - ${item.optionSummary}` : ""}
+                          </small>
+                        </span>
+                        <b>{formatMoney(item.saleAmount)}</b>
+                        <button
+                          type="button"
+                          aria-label={`Retirer ${item.productName}`}
+                          onClick={() => removeManualSaleItem(item.id)}
+                        >
+                          Retirer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {!hasManualSaleItems || selectedSaleProduct ? (
+                <Field
+                  label={selectedSaleProduct ? "Quantité de cette ligne" : "Quantité"}
+                  value={accountingForm.saleQuantity}
+                  type="number"
+                  min="1"
+                  step="1"
+                  onChange={updateManualSaleQuantity}
+                />
+              ) : null}
               <Field
                 label="Numéro du client"
                 value={accountingForm.orderId}
@@ -7684,32 +7959,48 @@ function AdminPage() {
                 onChange={(value) => updateAccountingForm("customer", value)}
               />
               <Field
-                label={selectedSaleProduct ? "Prix prévu total" : "Prix vente total avant ajustement"}
-                value={selectedSaleProduct ? selectedSaleBaseAmount : accountingForm.saleAmount}
+                label={
+                  hasManualSaleItems || selectedSaleProduct
+                    ? "Prix prévu total"
+                    : "Prix vente total avant ajustement"
+                }
+                value={
+                  hasManualSaleItems || selectedSaleProduct
+                    ? manualSaleBaseAmount
+                    : accountingForm.saleAmount
+                }
                 type="number"
                 min="1"
                 step="1"
-                disabled={Boolean(selectedSaleProduct)}
+                disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
                 onChange={(value) => updateAccountingForm("saleAmount", value)}
               />
               {canSeeAccountingFinancials ? (
                 <>
                   <Field
                     label="Prix achat total"
-                    value={selectedSaleProduct ? selectedPurchaseAmount : accountingForm.purchaseAmount}
+                    value={
+                      hasManualSaleItems || selectedSaleProduct
+                        ? manualSalePurchaseAmount
+                        : accountingForm.purchaseAmount
+                    }
                     type="number"
                     min="0"
                     step="1"
-                    disabled={Boolean(selectedSaleProduct)}
+                    disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
                     onChange={(value) => updateAccountingForm("purchaseAmount", value)}
                   />
                   <Field
                     label="Frais annexes total"
-                    value={selectedSaleProduct ? selectedExtraCostAmount : accountingForm.extraCost}
+                    value={
+                      hasManualSaleItems || selectedSaleProduct
+                        ? manualSaleExtraCostAmount
+                        : accountingForm.extraCost
+                    }
                     type="number"
                     min="0"
                     step="1"
-                    disabled={Boolean(selectedSaleProduct)}
+                    disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
                     onChange={(value) => updateAccountingForm("extraCost", value)}
                   />
                 </>
@@ -7745,18 +8036,18 @@ function AdminPage() {
               <div className="calc-preview full">
                 <div>
                   <span>Total encaissé</span>
-                  <strong>{formatMoney(selectedSaleAmount)}</strong>
+                  <strong>{formatMoney(manualSaleFinalAmount)}</strong>
                 </div>
                 {canSeeAccountingFinancials ? (
                   <>
                     <div>
                       <span>Revient calculé</span>
-                      <strong>{formatMoney(selectedCostAmount)}</strong>
+                      <strong>{formatMoney(manualSaleCostAmount)}</strong>
                     </div>
                     <div>
                       <span>Marge</span>
-                      <strong className={selectedMarginAmount < 0 ? "negative" : ""}>
-                        {formatMoney(selectedMarginAmount)}
+                      <strong className={manualSaleMarginAmount < 0 ? "negative" : ""}>
+                        {formatMoney(manualSaleMarginAmount)}
                       </strong>
                     </div>
                   </>
