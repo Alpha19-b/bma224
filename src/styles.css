@@ -3503,6 +3503,10 @@ textarea {
   color: var(--green-dark);
 }
 
+.audit-row.bank strong {
+  color: var(--blue);
+}
+
 .audit-row.warning strong {
   color: #9a5a00;
 }

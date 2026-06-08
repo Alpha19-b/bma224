@@ -3988,11 +3988,14 @@ function AdminPage() {
     stockDetailProductId,
   ]);
 
-  const totalRevenue = accountingRecords.reduce(
+  const cashFlowRevenueRecords = accountingRecords.filter((record) =>
+    ["Liquide", "Orange Money"].includes(record.paymentMethod)
+  );
+  const totalRevenue = cashFlowRevenueRecords.reduce(
     (sum, record) => sum + Number(record.saleAmount || 0),
     0
   );
-  const totalCost = accountingRecords.reduce(
+  const totalCost = cashFlowRevenueRecords.reduce(
     (sum, record) => sum + Number(record.costAmount || 0),
     0
   );
@@ -4296,7 +4299,8 @@ function AdminPage() {
     return () => window.clearTimeout(timeoutId);
   }, [adminToast]);
 
-  const marginAmount = totalRevenue - totalCost;
+  const grossProfitAmount = totalRevenue - totalCost;
+  const marginAmount = grossProfitAmount;
   const marginRate = getMarginRate(totalRevenue, totalCost);
   const financeHealth =
     marginAmount < 0 ? "À vérifier" : cashToDeposit > 0 ? "Dépôt à faire" : "Stable";
@@ -4315,7 +4319,7 @@ function AdminPage() {
     0
   );
   const depositedAccountTotal = depositedCash + orangeMoneyRevenue + djomiRevenue;
-  const theoreticalAccountBalance = totalRevenue - totalCost;
+  const netTreasuryAmount = totalRevenue - (totalCost + inventoryCostValue);
   const deliveredUnpaidOrders = adminOrders.filter(
     (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
   );
@@ -4685,9 +4689,10 @@ function AdminPage() {
       {
         name: "Audit",
         rows: [
-          { Indicateur: "CA total", Valeur: totalRevenue },
+          { Indicateur: "CA genere", Valeur: totalRevenue },
           { Indicateur: "Achats reels / revient des ventes", Valeur: totalCost },
-          { Indicateur: "Solde theorique flux", Valeur: theoreticalAccountBalance },
+          { Indicateur: "Benefice brut", Valeur: grossProfitAmount },
+          { Indicateur: "Tresorerie nette", Valeur: netTreasuryAmount },
           { Indicateur: "Liquide en caisse", Valeur: cashToDeposit },
           { Indicateur: "Deja sur comptes OM/Djomi", Valeur: depositedAccountTotal },
           { Indicateur: "Valeur stock restant au revient", Valeur: inventoryCostValue },
@@ -7307,9 +7312,9 @@ function AdminPage() {
         <div className="stats">
           <Stat label="CA généré" value={formatCompact(totalRevenue)} />
           <Stat label="Achats réels" value={formatCompact(totalCost)} />
-          <Stat label="Solde théorique" value={formatCompact(theoreticalAccountBalance)} />
+          <Stat label="Bénéfice brut" value={formatCompact(grossProfitAmount)} />
+          <Stat label="Trésorerie nette" value={formatCompact(netTreasuryAmount)} />
           <Stat label="Liquide en caisse" value={formatCompact(cashToDeposit)} />
-          <Stat label="Déjà sur comptes" value={formatCompact(depositedAccountTotal)} />
         </div>
 
         <AccountingCharts
@@ -8242,7 +8247,8 @@ function AdminPage() {
         <div className="stats audit-stats">
           <Stat label="CA généré" value={formatCompact(totalRevenue)} />
           <Stat label="Achats réels" value={formatCompact(totalCost)} />
-          <Stat label="Solde théorique" value={formatCompact(theoreticalAccountBalance)} />
+          <Stat label="Bénéfice brut" value={formatCompact(grossProfitAmount)} />
+          <Stat label="Trésorerie nette" value={formatCompact(netTreasuryAmount)} />
           <Stat label="Liquide en caisse" value={formatCompact(cashToDeposit)} />
         </div>
 
@@ -8352,10 +8358,16 @@ function AdminPage() {
               <AuditRow label="Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
               <AuditRow label="Déjà sur comptes" value={formatMoney(depositedAccountTotal)} tone="paid" />
               <AuditRow label="Achats réels" value={formatMoney(totalCost)} />
+              <AuditRow label="Stock immobilisé" value={formatMoney(inventoryCostValue)} />
               <AuditRow
-                label="Solde théorique"
-                value={formatMoney(theoreticalAccountBalance)}
-                tone={theoreticalAccountBalance < 0 ? "warning" : "paid"}
+                label="Bénéfice (Marge)"
+                value={formatMoney(grossProfitAmount)}
+                tone={grossProfitAmount < 0 ? "warning" : "paid"}
+              />
+              <AuditRow
+                label="Trésorerie nette"
+                value={formatMoney(netTreasuryAmount)}
+                tone={netTreasuryAmount < 0 ? "warning" : "bank"}
               />
             </div>
           </section>
@@ -9108,7 +9120,7 @@ function AccountingCharts({ records, totalRevenue, totalCost, totalCash, deposit
   const mainRows = [
     { label: "Chiffre d'affaires", value: totalRevenue, tone: "revenue" },
     { label: "Achats réels", value: totalCost, tone: "cost" },
-    { label: "Marge brute", value: margin, tone: margin < 0 ? "danger" : "profit" },
+    { label: "Bénéfice brut", value: margin, tone: margin < 0 ? "danger" : "profit" },
     { label: "Liquide non déposé", value: pendingCash, tone: "cash" },
   ];
 
@@ -9118,7 +9130,7 @@ function AccountingCharts({ records, totalRevenue, totalCost, totalCash, deposit
         <div className="section-head">
           <div>
             <h2>Vue comptable</h2>
-            <span>Ventes, achats réels, marge et liquide restant</span>
+            <span>Ventes, achats réels, bénéfice et liquide restant</span>
           </div>
         </div>
         <div className="bar-chart">
