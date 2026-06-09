@@ -3511,6 +3511,17 @@ textarea {
   color: #9a5a00;
 }
 
+.audit-note {
+  border: 1px solid #d8e5f7;
+  border-radius: 8px;
+  background: #f4f8ff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+  padding: 11px 12px;
+}
+
 .audit-issues {
   padding: 12px;
   display: grid;
@@ -3738,6 +3749,58 @@ textarea {
 .audit-product-row b.danger {
   background: #ffeceb;
   color: #b42318;
+}
+
+.treasury-movement-list {
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.treasury-movement-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+}
+
+.treasury-movement-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.treasury-movement-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.treasury-movement-row b {
+  white-space: nowrap;
+}
+
+.treasury-movement-row b.positive {
+  color: var(--green-dark);
+}
+
+.treasury-movement-row b.negative {
+  color: var(--red);
+}
+
+@media (max-width: 640px) {
+  .treasury-movement-row {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .treasury-movement-row b {
+    justify-self: start;
+  }
 }
 
 .stock-movement-list {

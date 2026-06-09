@@ -9,6 +9,7 @@ import {
   createOrangeMoneyDeposit,
   createProduct,
   createCheckoutOrder,
+  createTreasuryMovement,
   deleteAccountingEntryAsOwner,
   deleteOrderAsOwner,
   deleteProductAsOwner,
@@ -21,6 +22,7 @@ import {
   fetchRolePermissions,
   fetchStaffMembers,
   fetchStockMovements,
+  fetchTreasuryMovements,
   inviteStaffMember,
   removeStaffMember,
   replaceProductImages,
@@ -201,6 +203,16 @@ const emptyAdminAccountForm = {
   fullName: "",
   newPassword: "",
   passwordConfirm: "",
+};
+
+const emptyTreasuryForm = {
+  date: getTodayDateInput(),
+  account: "orange_money",
+  direction: "out",
+  category: "stock_purchase",
+  amount: "",
+  label: "",
+  note: "",
 };
 
 const commonColorSwatches = {
@@ -3663,6 +3675,8 @@ function AdminPage() {
   const [adminProducts, setAdminProducts] = useState([]);
   const [accountingRecords, setAccountingRecords] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
+  const [treasuryMovements, setTreasuryMovements] = useState([]);
+  const [treasurySetupMissing, setTreasurySetupMissing] = useState(false);
   const [rolePermissions, setRolePermissions] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -3694,6 +3708,8 @@ function AdminPage() {
   const [productEditorOpen, setProductEditorOpen] = useState(false);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
   const [depositPanelOpen, setDepositPanelOpen] = useState(false);
+  const [treasuryPanelOpen, setTreasuryPanelOpen] = useState(false);
+  const [isTreasurySubmitting, setIsTreasurySubmitting] = useState(false);
   const [productStockView, setProductStockView] = useState("available");
   const [productForm, setProductForm] = useState({
     name: "",
@@ -3739,6 +3755,7 @@ function AdminPage() {
     receiptName: "",
     receiptFile: null,
   });
+  const [treasuryForm, setTreasuryForm] = useState(emptyTreasuryForm);
 
   useEffect(() => {
     let mounted = true;
@@ -3772,6 +3789,8 @@ function AdminPage() {
         setAdminOrders([]);
         setAccountingRecords([]);
         setStockMovements([]);
+        setTreasuryMovements([]);
+        setTreasurySetupMissing(false);
         setRolePermissions([]);
         setStaffMembers([]);
         setSelectedOrder(null);
@@ -3796,6 +3815,8 @@ function AdminPage() {
         setAdminOrders([]);
         setAccountingRecords([]);
         setStockMovements([]);
+        setTreasuryMovements([]);
+        setTreasurySetupMissing(false);
         setRolePermissions([]);
         setStaffMembers([]);
         setSelectedOrder(null);
@@ -3832,6 +3853,9 @@ function AdminPage() {
       const stockMovementsResult = canReadManagementData
         ? await fetchStockMovements()
         : { data: [], error: null };
+      const treasuryMovementsResult = canReadManagementData
+        ? await fetchTreasuryMovements()
+        : { data: [], error: null, setupMissing: false };
       const permissionsResult = canReadManagementData
         ? await fetchRolePermissions()
         : { data: [], error: null };
@@ -3865,6 +3889,8 @@ function AdminPage() {
       }
 
       setStockMovements(stockMovementsResult.error ? [] : stockMovementsResult.data);
+      setTreasuryMovements(treasuryMovementsResult.error ? [] : treasuryMovementsResult.data);
+      setTreasurySetupMissing(Boolean(treasuryMovementsResult.setupMissing));
 
       if (permissionsResult.error) {
         setRolePermissions([]);
@@ -3985,6 +4011,7 @@ function AdminPage() {
       productEditorOpen ||
       manualSaleOpen ||
       depositPanelOpen ||
+      treasuryPanelOpen ||
       Boolean(selectedAccountingDetailId) ||
       Boolean(stockDetailProductId);
 
@@ -3999,6 +4026,7 @@ function AdminPage() {
       setProductEditorOpen(false);
       setManualSaleOpen(false);
       setDepositPanelOpen(false);
+      setTreasuryPanelOpen(false);
       setSelectedAccountingDetailId("");
       setStockDetailProductId("");
       setDepositMessage(null);
@@ -4016,12 +4044,13 @@ function AdminPage() {
     productEditorOpen,
     manualSaleOpen,
     depositPanelOpen,
+    treasuryPanelOpen,
     selectedAccountingDetailId,
     stockDetailProductId,
   ]);
 
   const cashFlowRevenueRecords = accountingRecords.filter((record) =>
-    ["Liquide", "Orange Money"].includes(record.paymentMethod)
+    ["Liquide", "Orange Money", "Djomi"].includes(record.paymentMethod)
   );
   const totalRevenue = cashFlowRevenueRecords.reduce(
     (sum, record) => sum + Number(record.saleAmount || 0),
@@ -4351,6 +4380,14 @@ function AdminPage() {
     0
   );
   const depositedAccountTotal = depositedCash + orangeMoneyRevenue + djomiRevenue;
+  const traceableAvailableCash = depositedAccountTotal + cashToDeposit;
+  const treasuryManualInflows = treasuryMovements
+    .filter((movement) => movement.direction !== "out")
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const treasuryOutflows = treasuryMovements
+    .filter((movement) => movement.direction === "out")
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const verifiedAvailableCash = traceableAvailableCash + treasuryManualInflows - treasuryOutflows;
   const netTreasuryAmount = totalRevenue - (totalCost + inventoryCostValue);
   const deliveredUnpaidOrders = adminOrders.filter(
     (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
@@ -4456,6 +4493,13 @@ function AdminPage() {
   const selectedAuditPerson =
     staffAuditRows.find((person) => person.key === selectedAuditPersonKey) ?? null;
   const auditIssues = [
+    treasurySetupMissing
+      ? {
+          tone: "warning",
+          title: "Suivi trésorerie à activer",
+          text: "Le SQL treasury_movements n'est pas encore appliqué. Les sorties d'achat/frais ne peuvent pas être déduites avec certitude.",
+        }
+      : null,
     cashToDeposit > 0
       ? {
           tone: "warning",
@@ -4597,11 +4641,20 @@ function AdminPage() {
 
   async function refreshAdminLists({ keepSelected = true } = {}) {
     const canRefreshManagementData = isSuperAdmin || isManager;
-    const [productsResult, ordersResult, accountingResult, stockMovementsResult] = await Promise.all([
+    const [
+      productsResult,
+      ordersResult,
+      accountingResult,
+      stockMovementsResult,
+      treasuryMovementsResult,
+    ] = await Promise.all([
       canRefreshManagementData ? fetchAdminProducts() : fetchProducts(),
       canRefreshManagementData ? fetchAdminOrders() : { data: [], error: null },
       canRefreshManagementData ? fetchAccountingEntries() : { data: [], error: null },
       canRefreshManagementData ? fetchStockMovements() : { data: [], error: null },
+      canRefreshManagementData
+        ? fetchTreasuryMovements()
+        : { data: [], error: null, setupMissing: false },
     ]);
 
     if (!productsResult.error) {
@@ -4636,6 +4689,11 @@ function AdminPage() {
 
     if (!stockMovementsResult.error) {
       setStockMovements(stockMovementsResult.data);
+    }
+
+    if (!treasuryMovementsResult.error) {
+      setTreasuryMovements(treasuryMovementsResult.data);
+      setTreasurySetupMissing(Boolean(treasuryMovementsResult.setupMissing));
     }
   }
 
@@ -4736,16 +4794,33 @@ function AdminPage() {
         name: "Audit",
         rows: [
           { Indicateur: "CA genere", Valeur: totalRevenue },
+          { Indicateur: "Disponible trace caisse + comptes", Valeur: traceableAvailableCash },
+          { Indicateur: "Entrees manuelles tresorerie", Valeur: treasuryManualInflows },
+          { Indicateur: "Sorties tresorerie saisies", Valeur: treasuryOutflows },
+          { Indicateur: "Disponible apres mouvements saisis", Valeur: verifiedAvailableCash },
+          { Indicateur: "Deja sur comptes OM/Djomi", Valeur: depositedAccountTotal },
+          { Indicateur: "Liquide a deposer", Valeur: cashToDeposit },
           { Indicateur: "Achats reels / revient des ventes", Valeur: totalCost },
           { Indicateur: "Benefice brut", Valeur: grossProfitAmount },
-          { Indicateur: "Tresorerie nette", Valeur: netTreasuryAmount },
-          { Indicateur: "Liquide en caisse", Valeur: cashToDeposit },
-          { Indicateur: "Deja sur comptes OM/Djomi", Valeur: depositedAccountTotal },
+          { Indicateur: "Solde prudent apres stock", Valeur: netTreasuryAmount },
           { Indicateur: "Valeur stock restant au revient", Valeur: inventoryCostValue },
           { Indicateur: "Valeur stock vente", Valeur: inventorySaleValue },
           { Indicateur: "Articles epuises", Valeur: outOfStockProducts.length },
           { Indicateur: "Stock faible", Valeur: lowStockProducts.length },
         ],
+      },
+      {
+        name: "Tresorerie",
+        rows: treasuryMovements.map((movement) => ({
+          Date: movement.date,
+          Compte: movement.accountLabel,
+          Sens: movement.directionLabel,
+          Categorie: movement.category,
+          Montant_GNF: movement.direction === "out" ? -movement.amount : movement.amount,
+          Libelle: movement.label,
+          Note: movement.note,
+          Saisi_par: movement.recordedBy,
+        })),
       },
       {
         name: "Par personne",
@@ -4865,6 +4940,19 @@ function AdminPage() {
           Stock_avant: movement.stockBefore,
           Stock_apres: movement.stockAfter,
           Raison: movement.reason,
+        })),
+      },
+      {
+        name: "Tresorerie",
+        rows: treasuryMovements.map((movement) => ({
+          Date: movement.date,
+          Compte: movement.accountLabel,
+          Sens: movement.directionLabel,
+          Categorie: movement.category,
+          Montant_GNF: movement.direction === "out" ? -movement.amount : movement.amount,
+          Libelle: movement.label,
+          Note: movement.note,
+          Saisi_par: movement.recordedBy,
         })),
       },
     ]);
@@ -5670,6 +5758,29 @@ function AdminPage() {
   function closeDepositPanel() {
     setDepositMessage(null);
     setDepositPanelOpen(false);
+  }
+
+  function openTreasuryPanel() {
+    setTreasuryForm({
+      ...emptyTreasuryForm,
+      date: getTodayDateInput(),
+    });
+    setTreasuryPanelOpen(true);
+  }
+
+  function closeTreasuryPanel() {
+    setTreasuryPanelOpen(false);
+    setTreasuryForm({
+      ...emptyTreasuryForm,
+      date: getTodayDateInput(),
+    });
+  }
+
+  function updateTreasuryForm(field, value) {
+    setTreasuryForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
   function startProductEdit(product) {
@@ -6515,6 +6626,47 @@ function AdminPage() {
     }
   }
 
+  async function saveTreasuryMovement(event) {
+    event.preventDefault();
+    if (isTreasurySubmitting) return;
+
+    const amountResult = parseGnfInput(treasuryForm.amount, "Montant", {
+      required: true,
+      allowZero: false,
+    });
+
+    if (amountResult.error) {
+      showToast(amountResult.error, "issue");
+      return;
+    }
+
+    if (!treasuryForm.label.trim()) {
+      showToast("Indique clairement pourquoi l'argent entre ou sort.", "issue");
+      return;
+    }
+
+    setIsTreasurySubmitting(true);
+    try {
+      const { data, error } = await createTreasuryMovement({
+        ...treasuryForm,
+        amount: amountResult.value,
+        recordedBy: adminDisplayName,
+      });
+
+      if (error) {
+        showToast(`Mouvement non enregistré : ${getFriendlyErrorMessage(error, "treasury")}`, "issue");
+        return;
+      }
+
+      setTreasuryMovements((current) => [data, ...current]);
+      setTreasurySetupMissing(false);
+      closeTreasuryPanel();
+      showToast("Mouvement de trésorerie enregistré.", "paid");
+    } finally {
+      setIsTreasurySubmitting(false);
+    }
+  }
+
   async function toggleRolePermission(permission) {
     if (!isSuperAdmin) {
       showToast("Seul le super admin peut modifier les permissions de l'équipe.", "issue");
@@ -6659,7 +6811,7 @@ function AdminPage() {
           <Stat label="Commandes ouvertes" value={openOrders.length} />
           <Stat label="Clients suivis" value={customerGroups.length} />
           <Stat label="Articles disponibles" value={availableAdminProducts.length} />
-          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
+          <Stat label="Disponible tracé" value={formatCompact(traceableAvailableCash)} />
         </div>
 
         <div className="admin-overview">
@@ -7371,10 +7523,10 @@ function AdminPage() {
           <>
         <div className="stats">
           <Stat label="CA généré" value={formatCompact(totalRevenue)} />
-          <Stat label="Achats réels" value={formatCompact(totalCost)} />
+          <Stat label="Disponible tracé" value={formatCompact(traceableAvailableCash)} />
           <Stat label="Bénéfice brut" value={formatCompact(grossProfitAmount)} />
-          <Stat label="Trésorerie nette" value={formatCompact(netTreasuryAmount)} />
-          <Stat label="Liquide en caisse" value={formatCompact(cashToDeposit)} />
+          <Stat label="Sur comptes" value={formatCompact(depositedAccountTotal)} />
+          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
         </div>
 
         <AccountingCharts
@@ -8322,13 +8474,19 @@ function AdminPage() {
             title="Exporter l'audit"
             onClick={exportAuditToExcel}
           />
+          <ActionButton
+            icon="wallet"
+            label="Mouvement"
+            title="Enregistrer une entrée ou sortie d'argent"
+            onClick={openTreasuryPanel}
+          />
         </div>
         <div className="stats audit-stats">
           <Stat label="CA généré" value={formatCompact(totalRevenue)} />
-          <Stat label="Achats réels" value={formatCompact(totalCost)} />
-          <Stat label="Bénéfice brut" value={formatCompact(grossProfitAmount)} />
-          <Stat label="Trésorerie nette" value={formatCompact(netTreasuryAmount)} />
-          <Stat label="Liquide en caisse" value={formatCompact(cashToDeposit)} />
+          <Stat label="Disponible vérifié" value={formatCompact(verifiedAvailableCash)} />
+          <Stat label="Sur comptes" value={formatCompact(depositedAccountTotal)} />
+          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
+          <Stat label="Solde prudent" value={formatCompact(netTreasuryAmount)} />
         </div>
 
         {staffAuditOpen ? (
@@ -8430,13 +8588,16 @@ function AdminPage() {
               </div>
             </div>
             <div className="audit-list">
-              <AuditRow label="Liquide encaissé" value={formatMoney(totalCash)} />
-              <AuditRow label="Déjà déposé OM" value={formatMoney(depositedCash)} tone="paid" />
-              <AuditRow label="Liquide en caisse" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
-              <AuditRow label="Djomi suivi" value={formatMoney(djomiRevenue)} />
-              <AuditRow label="Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
-              <AuditRow label="Déjà sur comptes" value={formatMoney(depositedAccountTotal)} tone="paid" />
-              <AuditRow label="Achats réels" value={formatMoney(totalCost)} />
+              <AuditRow label="Disponible vérifié" value={formatMoney(verifiedAvailableCash)} tone="bank" />
+              <AuditRow label="Disponible avant sorties saisies" value={formatMoney(traceableAvailableCash)} />
+              <AuditRow label="Sorties enregistrées" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
+              <AuditRow label="Entrées manuelles" value={formatMoney(treasuryManualInflows)} tone={treasuryManualInflows ? "paid" : ""} />
+              <AuditRow label="Sur comptes OM/Djomi" value={formatMoney(depositedAccountTotal)} tone="paid" />
+              <AuditRow label="Liquide à déposer" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
+              <AuditRow label="Détail Djomi" value={formatMoney(djomiRevenue)} />
+              <AuditRow label="Détail Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
+              <AuditRow label="Détail liquide encaissé" value={formatMoney(totalCash)} />
+              <AuditRow label="Coût des articles vendus" value={formatMoney(totalCost)} />
               <AuditRow label="Stock immobilisé" value={formatMoney(inventoryCostValue)} />
               <AuditRow
                 label="Bénéfice (Marge)"
@@ -8444,10 +8605,14 @@ function AdminPage() {
                 tone={grossProfitAmount < 0 ? "warning" : "paid"}
               />
               <AuditRow
-                label="Trésorerie nette"
+                label="Solde prudent après stock"
                 value={formatMoney(netTreasuryAmount)}
                 tone={netTreasuryAmount < 0 ? "warning" : "bank"}
               />
+              <div className="audit-note">
+                Le disponible vérifié devient fiable si chaque achat de stock, retrait, frais ou correction
+                est enregistré comme mouvement de trésorerie. Sinon, il reste à rapprocher avec les relevés OM/Djomi.
+              </div>
             </div>
           </section>
 
@@ -8488,6 +8653,44 @@ function AdminPage() {
             </div>
           </section>
         </div>
+
+        <section className="section">
+          <div className="section-head action-head">
+            <div>
+              <h2>Mouvements de trésorerie</h2>
+              <span>Achats de stock, frais, retraits et corrections qui changent le disponible</span>
+            </div>
+            <button className="btn secondary" type="button" onClick={openTreasuryPanel}>
+              Ajouter mouvement
+            </button>
+          </div>
+          {treasurySetupMissing ? (
+            <div className="empty-state compact">
+              Table trésorerie non configurée. Exécute le SQL BMA trésorerie dans Supabase pour suivre les sorties réelles.
+            </div>
+          ) : treasuryMovements.length ? (
+            <div className="treasury-movement-list">
+              {treasuryMovements.slice(0, 12).map((movement) => (
+                <div className="treasury-movement-row" key={movement.id}>
+                  <span>
+                    <strong>{movement.label}</strong>
+                    <small>
+                      {movement.date} · {movement.accountLabel} · {movement.category} · {movement.recordedBy}
+                    </small>
+                  </span>
+                  <b className={movement.direction === "out" ? "negative" : "positive"}>
+                    {movement.direction === "out" ? "-" : "+"}
+                    {formatMoney(movement.amount)}
+                  </b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state compact">
+              Aucune sortie ou correction enregistrée. Le disponible vérifié ne déduit donc pas encore les achats/frais hors ventes.
+            </div>
+          )}
+        </section>
 
         <section className="section">
           <div className="section-head action-head">
@@ -8561,6 +8764,114 @@ function AdminPage() {
             </div>
           )}
         </section>
+        {treasuryPanelOpen ? (
+          <div
+            className="admin-action-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeTreasuryPanel();
+            }}
+          >
+            <section className="section admin-action-panel">
+              <div className="section-head">
+                <div>
+                  <h2>Mouvement de trésorerie</h2>
+                  <span>Sortie, entrée ou correction à rapprocher des comptes BMA</span>
+                </div>
+                <button className="icon-btn" type="button" onClick={closeTreasuryPanel}>
+                  Fermer
+                </button>
+              </div>
+              <form className="admin-form" onSubmit={saveTreasuryMovement}>
+                <Field
+                  label="Date"
+                  value={treasuryForm.date}
+                  type="date"
+                  onChange={(value) => updateTreasuryForm("date", value)}
+                />
+                <div className="field">
+                  <label>Compte concerné</label>
+                  <select
+                    value={treasuryForm.account}
+                    onChange={(event) => updateTreasuryForm("account", event.target.value)}
+                  >
+                    <option value="orange_money">Orange Money</option>
+                    <option value="djomi">Djomi</option>
+                    <option value="cash">Caisse liquide</option>
+                    <option value="bank">Banque</option>
+                    <option value="other">Autre</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Sens</label>
+                  <select
+                    value={treasuryForm.direction}
+                    onChange={(event) => updateTreasuryForm("direction", event.target.value)}
+                  >
+                    <option value="out">Sortie d'argent</option>
+                    <option value="in">Entrée manuelle</option>
+                    <option value="adjustment">Correction positive</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Catégorie</label>
+                  <select
+                    value={treasuryForm.category}
+                    onChange={(event) => updateTreasuryForm("category", event.target.value)}
+                  >
+                    <option value="stock_purchase">Achat de stock</option>
+                    <option value="delivery">Transport / livraison</option>
+                    <option value="fee">Frais</option>
+                    <option value="withdrawal">Retrait</option>
+                    <option value="correction">Correction</option>
+                    <option value="other">Autre</option>
+                  </select>
+                </div>
+                <Field
+                  label="Montant GNF"
+                  value={treasuryForm.amount}
+                  type="number"
+                  min="1"
+                  step="1"
+                  onChange={(value) => updateTreasuryForm("amount", value)}
+                />
+                <Field
+                  label="Libellé"
+                  value={treasuryForm.label}
+                  placeholder="Ex : achat cagoules Chine, frais transport, retrait..."
+                  onChange={(value) => updateTreasuryForm("label", value)}
+                />
+                <div className="field full">
+                  <label>Note</label>
+                  <textarea
+                    value={treasuryForm.note}
+                    placeholder="Détails utiles pour l'audit."
+                    onChange={(event) => updateTreasuryForm("note", event.target.value)}
+                  />
+                </div>
+                <div className="calc-preview full">
+                  <div>
+                    <span>Impact sur disponible vérifié</span>
+                    <strong>
+                      {treasuryForm.direction === "out" ? "-" : "+"}
+                      {formatMoney(getDraftAmount(treasuryForm.amount))}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Saisi par</span>
+                    <strong>{adminDisplayName}</strong>
+                  </div>
+                </div>
+                <button
+                  className={`btn ${isTreasurySubmitting ? "loading" : ""}`}
+                  disabled={isTreasurySubmitting}
+                  type="submit"
+                >
+                  {isTreasurySubmitting ? "Enregistrement..." : "Enregistrer le mouvement"}
+                </button>
+              </form>
+            </section>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -9187,6 +9498,9 @@ function AdminHero({
 function AccountingCharts({ records, totalRevenue, totalCost, totalCash, depositedCash }) {
   const margin = totalRevenue - totalCost;
   const pendingCash = Math.max(0, totalCash - depositedCash);
+  const traceableCash = records
+    .filter((record) => ["Liquide", "Djomi", "Orange Money"].includes(record.paymentMethod))
+    .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
   const maxMainValue = Math.max(totalRevenue, totalCost, Math.abs(margin), 1);
   const methodRows = ["Liquide", "Djomi", "Orange Money"].map((method) => ({
     label: method,
@@ -9200,6 +9514,7 @@ function AccountingCharts({ records, totalRevenue, totalCost, totalCash, deposit
     { label: "Chiffre d'affaires", value: totalRevenue, tone: "revenue" },
     { label: "Achats réels", value: totalCost, tone: "cost" },
     { label: "Bénéfice brut", value: margin, tone: margin < 0 ? "danger" : "profit" },
+    { label: "Disponible tracé", value: traceableCash, tone: "method" },
     { label: "Liquide non déposé", value: pendingCash, tone: "cash" },
   ];
 

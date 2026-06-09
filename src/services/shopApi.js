@@ -21,6 +21,11 @@ function isMissingRpc(error) {
   return /PGRST202|42883|function .* does not exist|Could not find the function/i.test(message);
 }
 
+function isMissingTable(error) {
+  const message = `${error?.code ?? ""} ${error?.message ?? ""} ${error?.details ?? ""}`;
+  return /42P01|does not exist|Could not find the table|schema cache/i.test(message);
+}
+
 const orderStatusLabels = {
   pending_payment: "Commande reçue",
   confirmed: "Commande reçue",
@@ -1928,6 +1933,125 @@ export async function fetchStockMovements() {
     })),
     error: null,
   };
+}
+
+const treasuryAccountLabels = {
+  cash: "Caisse",
+  orange_money: "Orange Money",
+  djomi: "Djomi",
+  bank: "Banque",
+  other: "Autre",
+};
+
+const treasuryDirectionLabels = {
+  in: "Entrée",
+  out: "Sortie",
+  adjustment: "Correction",
+};
+
+function mapTreasuryMovement(row) {
+  const amount = Number(row.amount || 0);
+
+  return {
+    id: row.id,
+    date: row.movement_date,
+    account: row.account,
+    accountLabel: treasuryAccountLabels[row.account] ?? row.account ?? "Compte",
+    direction: row.direction,
+    directionLabel: treasuryDirectionLabels[row.direction] ?? row.direction ?? "Mouvement",
+    category: row.category ?? "Autre",
+    amount,
+    signedAmount: row.direction === "out" ? -amount : amount,
+    label: row.label ?? "",
+    note: row.note ?? "",
+    recordedBy: row.created_by_name ?? "-",
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchTreasuryMovements() {
+  if (!supabase) {
+    return { data: [], error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const { data, error } = await supabase
+    .from("treasury_movements")
+    .select(
+      `
+        id,
+        movement_date,
+        account,
+        direction,
+        category,
+        amount,
+        label,
+        note,
+        created_by_name,
+        created_at
+      `
+    )
+    .order("movement_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(120);
+
+  if (error) {
+    return {
+      data: [],
+      error: isMissingTable(error) ? null : error,
+      setupMissing: isMissingTable(error),
+    };
+  }
+
+  return { data: (data ?? []).map(mapTreasuryMovement), error: null, setupMissing: false };
+}
+
+export async function createTreasuryMovement(movement) {
+  if (!supabase) {
+    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const currentUserId = await getCurrentUserId();
+  const payload = {
+    movement_date: movement.date,
+    account: movement.account,
+    direction: movement.direction,
+    category: movement.category,
+    amount: Number(movement.amount || 0),
+    label: movement.label,
+    note: movement.note || null,
+    created_by: currentUserId,
+    created_by_name: movement.recordedBy,
+  };
+
+  const { data, error } = await supabase
+    .from("treasury_movements")
+    .insert(payload)
+    .select(
+      `
+        id,
+        movement_date,
+        account,
+        direction,
+        category,
+        amount,
+        label,
+        note,
+        created_by_name,
+        created_at
+      `
+    )
+    .single();
+
+  if (error) {
+    return {
+      data: null,
+      error: isMissingTable(error)
+        ? new Error("Table treasury_movements absente. Exécute le SQL de trésorerie dans Supabase.")
+        : error,
+    };
+  }
+
+  return { data: mapTreasuryMovement(data), error: null };
 }
 
 export async function createAccountingEntry(record) {
