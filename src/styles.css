@@ -4479,6 +4479,21 @@ textarea {
   padding: 0;
 }
 
+.receipt-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.receipt-add-button,
+.deposit-more-button {
+  color: var(--blue);
+}
+
+.deposit-more-button {
+  margin-top: 10px;
+}
+
 .receipt-link:hover {
   text-decoration: underline;
 }

@@ -877,6 +877,38 @@ function sortImageEntriesForCover(imageEntries = []) {
   });
 }
 
+function getAccountingReceiptEntries(record) {
+  const historyReceipts = (record?.depositHistory ?? [])
+    .filter((deposit) => deposit.receiptUrl || deposit.receiptName)
+    .map((deposit, index) => ({
+      key: `${deposit.orangeMoneyRef || deposit.receiptName || "receipt"}-${index}`,
+      label: deposit.orangeMoneyRef || `Recu ${index + 1}`,
+      receiptUrl: deposit.receiptUrl || "",
+      receiptName: deposit.receiptName || "",
+      amount: Number(deposit.amount || 0),
+      depositedAt: deposit.depositedAt || "",
+      depositedBy: deposit.depositedBy || "",
+    }));
+
+  if (historyReceipts.length) return historyReceipts;
+
+  if (record?.receiptUrl || record?.receiptName) {
+    return [
+      {
+        key: "main-receipt",
+        label: record.orangeMoneyRef || "Recu",
+        receiptUrl: record.receiptUrl || "",
+        receiptName: record.receiptName || "",
+        amount: Number(record.depositAmount || record.saleAmount || 0),
+        depositedAt: record.depositedAt || "",
+        depositedBy: record.depositedBy || "",
+      },
+    ];
+  }
+
+  return [];
+}
+
 function getSessionProfile(session, profile = null) {
   const metadata = session?.user?.user_metadata ?? {};
   const firstName = profile?.firstName ?? metadata.first_name ?? "";
@@ -4661,25 +4693,39 @@ function AdminPage() {
     downloadExcelWorkbook(`bma-comptabilite-${getTodayDateInput()}`, [
       {
         name: "Comptabilite",
-        rows: rowsToExport.map((record) => ({
-          Date: record.date,
-          Commande: record.orderId,
-          Client: record.customer,
-          Vente_GNF: record.saleAmount,
-          Achat_GNF: record.purchaseAmount,
-          Frais_GNF: record.extraCost,
-          Revient_GNF: record.costAmount,
-          Marge_GNF: record.saleAmount - record.costAmount,
-          Encaissement: record.paymentMethod,
-          Encaisse_par: record.collectedBy,
-          Depot_Orange_Money:
-            record.orangeMoneyRef ||
-            (record.paymentMethod === "Orange Money" ? "Orange Money direct - recu a joindre" : "A deposer"),
-          Montant_depose_GNF: record.depositAmount || 0,
-          Reste_a_deposer_GNF: record.remainingDepositAmount || 0,
-          Recu: record.receiptUrl || record.receiptName || "",
-          Note: record.note || "",
-        })),
+        rows: rowsToExport.map((record) => {
+          const receipts = getAccountingReceiptEntries(record);
+
+          return {
+            Date: record.date,
+            Commande: record.orderId,
+            Client: record.customer,
+            Vente_GNF: record.saleAmount,
+            Achat_GNF: record.purchaseAmount,
+            Frais_GNF: record.extraCost,
+            Revient_GNF: record.costAmount,
+            Marge_GNF: record.saleAmount - record.costAmount,
+            Encaissement: record.paymentMethod,
+            Encaisse_par: record.collectedBy,
+            Depot_Orange_Money:
+              record.orangeMoneyRef ||
+              (record.paymentMethod === "Orange Money" ? "Orange Money direct - recu a joindre" : "A deposer"),
+            Montant_depose_GNF: record.depositAmount || 0,
+            Reste_a_deposer_GNF: record.remainingDepositAmount || 0,
+            Recus: receipts
+              .map((receipt, index) =>
+                [
+                  `${index + 1}. ${receipt.label}`,
+                  receipt.amount ? formatMoney(receipt.amount) : "",
+                  receipt.receiptUrl || receipt.receiptName,
+                ]
+                  .filter(Boolean)
+                  .join(" - ")
+              )
+              .join("\n"),
+            Note: record.note || "",
+          };
+        }),
       },
     ]);
   }
@@ -5612,6 +5658,7 @@ function AdminPage() {
 
   function openDepositPanel(recordId = "") {
     setDepositMessage(null);
+    setSelectedAccountingDetailId("");
     setDepositForm((current) => ({
       ...current,
       recordId: recordId || current.recordId,
@@ -6404,6 +6451,18 @@ function AdminPage() {
                   0,
                   Number(record.saleAmount || 0) - nextDepositAmount
                 );
+                const nextDepositHistory = [
+                  ...(record.depositHistory ?? []),
+                  {
+                    amount: Number(data.depositAmount || 0),
+                    orangeMoneyRef: data.orangeMoneyRef,
+                    depositedBy: data.depositedBy,
+                    receiptName: data.receiptName,
+                    receiptPath: data.receiptPath,
+                    receiptUrl: data.receiptUrl,
+                    depositedAt: data.depositedAt,
+                  },
+                ];
 
                 return {
                   ...record,
@@ -6415,26 +6474,27 @@ function AdminPage() {
                   depositedAt: data.depositedAt,
                   depositAmount: nextDepositAmount,
                   remainingDepositAmount: nextRemainingAmount,
-                  depositCount: Number(record.depositCount || 0) + 1,
+                  depositHistory: nextDepositHistory,
+                  depositCount: nextDepositHistory.length,
                 };
               })()
             : record
         )
       );
-      setDepositForm({
-        recordId: "",
-        amount: "",
-        orangeMoneyRef: "",
-        receiptName: "",
-        receiptFile: null,
-      });
-
       const remainingAfterDeposit = Math.max(
         0,
         selectedDepositIsDirectOrangeMoney
           ? 0
           : selectedDepositRemainingAmount - depositAmountResult.value
       );
+      setDepositForm({
+        recordId: remainingAfterDeposit > 0 ? selectedDepositRecordId : "",
+        amount: "",
+        orangeMoneyRef: "",
+        receiptName: "",
+        receiptFile: null,
+      });
+
       const successMessage = receiptUploadFailed
         ? `${selectedDepositIsDirectOrangeMoney ? "Justificatif enregistré" : "Dépôt enregistré"}. ${getFriendlyErrorMessage(receiptUpload.error, "receipt_upload")}`
         : selectedDepositIsDirectOrangeMoney
@@ -7407,6 +7467,10 @@ function AdminPage() {
                     );
                     const isPartiallyDeposited = depositedAmount > 0 && remainingAmount > 0;
                     const isFullyDeposited = depositedAmount > 0 && remainingAmount <= 0;
+                    const receiptEntries = getAccountingReceiptEntries(record);
+                    const canAddReceipt =
+                      (record.paymentMethod === "Liquide" && remainingAmount > 0) ||
+                      (record.paymentMethod === "Orange Money" && !receiptEntries.length);
 
                     return (
                     <tr
@@ -7502,33 +7566,39 @@ function AdminPage() {
                           <span className="status waiting">À déposer</span>
                         )}
                       </td>
-                      <td data-label="Reçu">
-                        {record.receiptUrl ? (
-                          <a
-                            className="receipt-link"
-                            href={record.receiptUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            Voir le reçu
-                          </a>
-                        ) : record.receiptName ? (
-                          <span className="muted">{record.receiptName}</span>
-                        ) : record.paymentMethod === "Orange Money" ? (
-                          <button
-                            className="receipt-link receipt-button"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openDepositPanel(record.id);
-                            }}
-                          >
-                            Ajouter reçu
-                          </button>
-                        ) : (
-                          "-"
-                        )}
+                      <td data-label="Reçu" onClick={(event) => event.stopPropagation()}>
+                        <div className="receipt-actions">
+                          {receiptEntries.length > 1 ? (
+                            <button
+                              className="receipt-link receipt-button"
+                              type="button"
+                              onClick={() => setSelectedAccountingDetailId(record.id)}
+                            >
+                              {receiptEntries.length} reçus
+                            </button>
+                          ) : receiptEntries[0]?.receiptUrl ? (
+                            <a
+                              className="receipt-link"
+                              href={receiptEntries[0].receiptUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Voir le reçu
+                            </a>
+                          ) : receiptEntries[0]?.receiptName ? (
+                            <span className="muted">{receiptEntries[0].receiptName}</span>
+                          ) : null}
+                          {canAddReceipt ? (
+                            <button
+                              className="receipt-link receipt-button receipt-add-button"
+                              type="button"
+                              onClick={() => openDepositPanel(record.id)}
+                            >
+                              Ajouter reçu
+                            </button>
+                          ) : null}
+                          {!receiptEntries.length && !canAddReceipt ? "-" : null}
+                        </div>
                       </td>
                     </tr>
                     );
@@ -7654,6 +7724,15 @@ function AdminPage() {
                       <strong>{selectedAccountingDetail.depositCount || accountingDetailDeposits.length}</strong>
                     </span>
                   </div>
+                  {Number(selectedAccountingDetail.remainingDepositAmount || 0) > 0 ? (
+                    <button
+                      className="receipt-link receipt-button deposit-more-button"
+                      type="button"
+                      onClick={() => openDepositPanel(selectedAccountingDetail.id)}
+                    >
+                      Ajouter un paiement / reçu
+                    </button>
+                  ) : null}
                   {accountingDetailDeposits.length ? (
                     <div className="deposit-history-list">
                       {accountingDetailDeposits.map((deposit, index) => (
