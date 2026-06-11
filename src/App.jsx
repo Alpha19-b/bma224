@@ -4380,15 +4380,9 @@ function AdminPage() {
     0
   );
   const depositedAccountTotal = depositedCash + orangeMoneyRevenue + djomiRevenue;
-  const traceableAvailableCash = depositedAccountTotal + cashToDeposit;
-  const treasuryManualInflows = treasuryMovements
-    .filter((movement) => movement.direction !== "out")
-    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
-  const treasuryOutflows = treasuryMovements
-    .filter((movement) => movement.direction === "out")
-    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
-  const verifiedAvailableCash = traceableAvailableCash + treasuryManualInflows - treasuryOutflows;
-  const netTreasuryAmount = totalRevenue - (totalCost + inventoryCostValue);
+  const totalCashIn = totalCash + orangeMoneyRevenue;
+  const totalCashOut = totalCost + inventoryCostValue;
+  const availableAccountBalance = totalCashIn - totalCashOut;
   const deliveredUnpaidOrders = adminOrders.filter(
     (order) => order.rawStatus === "delivered" && order.payment !== "Payé"
   );
@@ -4793,34 +4787,16 @@ function AdminPage() {
       {
         name: "Audit",
         rows: [
-          { Indicateur: "CA genere", Valeur: totalRevenue },
-          { Indicateur: "Disponible trace caisse + comptes", Valeur: traceableAvailableCash },
-          { Indicateur: "Entrees manuelles tresorerie", Valeur: treasuryManualInflows },
-          { Indicateur: "Sorties tresorerie saisies", Valeur: treasuryOutflows },
-          { Indicateur: "Disponible apres mouvements saisis", Valeur: verifiedAvailableCash },
-          { Indicateur: "Deja sur comptes OM/Djomi", Valeur: depositedAccountTotal },
-          { Indicateur: "Liquide a deposer", Valeur: cashToDeposit },
-          { Indicateur: "Achats reels / revient des ventes", Valeur: totalCost },
-          { Indicateur: "Benefice brut", Valeur: grossProfitAmount },
-          { Indicateur: "Solde prudent apres stock", Valeur: netTreasuryAmount },
-          { Indicateur: "Valeur stock restant au revient", Valeur: inventoryCostValue },
-          { Indicateur: "Valeur stock vente", Valeur: inventorySaleValue },
+          { Indicateur: "Rentrees argent", Valeur: totalCashIn },
+          { Indicateur: "Sorties argent", Valeur: totalCashOut },
+          { Indicateur: "Disponible sur compte", Valeur: availableAccountBalance },
+          { Indicateur: "Liquide encaisse", Valeur: totalCash },
+          { Indicateur: "Orange Money direct", Valeur: orangeMoneyRevenue },
+          { Indicateur: "Cout articles vendus", Valeur: totalCost },
+          { Indicateur: "Cout stock restant", Valeur: inventoryCostValue },
           { Indicateur: "Articles epuises", Valeur: outOfStockProducts.length },
           { Indicateur: "Stock faible", Valeur: lowStockProducts.length },
         ],
-      },
-      {
-        name: "Tresorerie",
-        rows: treasuryMovements.map((movement) => ({
-          Date: movement.date,
-          Compte: movement.accountLabel,
-          Sens: movement.directionLabel,
-          Categorie: movement.category,
-          Montant_GNF: movement.direction === "out" ? -movement.amount : movement.amount,
-          Libelle: movement.label,
-          Note: movement.note,
-          Saisi_par: movement.recordedBy,
-        })),
       },
       {
         name: "Par personne",
@@ -6811,7 +6787,7 @@ function AdminPage() {
           <Stat label="Commandes ouvertes" value={openOrders.length} />
           <Stat label="Clients suivis" value={customerGroups.length} />
           <Stat label="Articles disponibles" value={availableAdminProducts.length} />
-          <Stat label="Disponible tracé" value={formatCompact(traceableAvailableCash)} />
+          <Stat label="Disponible compte" value={formatCompact(availableAccountBalance)} />
         </div>
 
         <div className="admin-overview">
@@ -7523,7 +7499,7 @@ function AdminPage() {
           <>
         <div className="stats">
           <Stat label="CA généré" value={formatCompact(totalRevenue)} />
-          <Stat label="Disponible tracé" value={formatCompact(traceableAvailableCash)} />
+          <Stat label="Disponible compte" value={formatCompact(availableAccountBalance)} />
           <Stat label="Bénéfice brut" value={formatCompact(grossProfitAmount)} />
           <Stat label="Sur comptes" value={formatCompact(depositedAccountTotal)} />
           <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
@@ -8469,12 +8445,6 @@ function AdminPage() {
             </div>
             <div className="accounting-actions">
               <ActionButton
-                icon="wallet"
-                label="Mouvement"
-                title="Enregistrer une entrée ou sortie d'argent"
-                onClick={openTreasuryPanel}
-              />
-              <ActionButton
                 icon="user"
                 label={staffAuditOpen ? "Masquer" : "Par personne"}
                 title={staffAuditOpen ? "Masquer l'audit par personne" : "Ouvrir l'audit par personne"}
@@ -8490,20 +8460,20 @@ function AdminPage() {
           </div>
           <div className="audit-money-summary">
             <div className="audit-money-main">
-              <span>Disponible vérifié</span>
-              <strong>{formatMoney(verifiedAvailableCash)}</strong>
+              <span>Disponible sur compte</span>
+              <strong>{formatMoney(availableAccountBalance)}</strong>
               <small>
-                Argent tracé moins les sorties enregistrées. À rapprocher avec les relevés OM/Djomi.
+                Rentrées d'argent moins sorties d'argent. C'est le solde cash à suivre.
               </small>
             </div>
             <div className="audit-money-breakdown">
-              <AuditRow label="Sur comptes OM/Djomi" value={formatMoney(depositedAccountTotal)} tone="paid" />
-              <AuditRow label="Liquide à déposer" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
-              <AuditRow label="Sorties saisies" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
+              <AuditRow label="Rentrées d'argent" value={formatMoney(totalCashIn)} tone="paid" />
+              <AuditRow label="Sorties d'argent" value={formatMoney(totalCashOut)} tone={totalCashOut ? "warning" : ""} />
+              <AuditRow label="Disponible sur compte" value={formatMoney(availableAccountBalance)} tone="bank" />
             </div>
           </div>
           <div className="audit-note">
-            Pour que ce montant soit fiable, chaque achat de stock, retrait, frais ou correction doit être ajouté avec le bouton Mouvement.
+            Lecture simple : tout ce qui est rentré moins tout ce qui a servi à acheter la marchandise vendue ou encore en stock.
           </div>
         </section>
 
@@ -8627,11 +8597,10 @@ function AdminPage() {
               </div>
             </div>
             <div className="audit-list">
-              <AuditRow label="Argent tracé avant sorties" value={formatMoney(traceableAvailableCash)} />
-              <AuditRow label="Entrées manuelles" value={formatMoney(treasuryManualInflows)} tone={treasuryManualInflows ? "paid" : ""} />
-              <AuditRow label="Sorties enregistrées" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
-              <AuditRow label="Bénéfice brut" value={formatMoney(grossProfitAmount)} tone={grossProfitAmount < 0 ? "warning" : "paid"} />
-              <AuditRow label="Solde prudent après stock" value={formatMoney(netTreasuryAmount)} tone={netTreasuryAmount < 0 ? "warning" : "bank"} />
+              <AuditRow label="Liquide encaissé" value={formatMoney(totalCash)} />
+              <AuditRow label="Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
+              <AuditRow label="Coût articles vendus" value={formatMoney(totalCost)} />
+              <AuditRow label="Coût stock restant" value={formatMoney(inventoryCostValue)} />
             </div>
           </section>
 
@@ -8646,48 +8615,9 @@ function AdminPage() {
               <AuditRow label="Articles disponibles" value={availableAdminProducts.length} tone="paid" />
               <AuditRow label="Épuisés / faibles" value={`${outOfStockProducts.length} / ${lowStockProducts.length}`} tone={outOfStockProducts.length || lowStockProducts.length ? "warning" : "paid"} />
               <AuditRow label="Stock au prix de revient" value={formatMoney(inventoryCostValue)} />
-              <AuditRow label="Potentiel de vente" value={formatMoney(inventorySaleValue)} />
             </div>
           </section>
         </div>
-
-        <section className="section">
-          <div className="section-head action-head">
-            <div>
-              <h2>Derniers mouvements</h2>
-              <span>Achats, frais, retraits et corrections qui changent le disponible.</span>
-            </div>
-            <button className="btn secondary" type="button" onClick={openTreasuryPanel}>
-              Ajouter mouvement
-            </button>
-          </div>
-          {treasurySetupMissing ? (
-            <div className="empty-state compact">
-              Table trésorerie non configurée. Exécute le SQL BMA trésorerie dans Supabase pour suivre les sorties réelles.
-            </div>
-          ) : treasuryMovements.length ? (
-            <div className="treasury-movement-list">
-              {treasuryMovements.slice(0, 6).map((movement) => (
-                <div className="treasury-movement-row" key={movement.id}>
-                  <span>
-                    <strong>{movement.label}</strong>
-                    <small>
-                      {movement.date} · {movement.accountLabel} · {movement.category} · {movement.recordedBy}
-                    </small>
-                  </span>
-                  <b className={movement.direction === "out" ? "negative" : "positive"}>
-                    {movement.direction === "out" ? "-" : "+"}
-                    {formatMoney(movement.amount)}
-                  </b>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state compact">
-              Aucune sortie ou correction enregistrée. Le disponible vérifié ne déduit donc pas encore les achats/frais hors ventes.
-            </div>
-          )}
-        </section>
 
         <section className="section">
           <div className="section-head action-head">
