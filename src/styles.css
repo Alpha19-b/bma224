@@ -3463,6 +3463,59 @@ textarea {
   background: #b42318;
 }
 
+.audit-command-center {
+  overflow: hidden;
+}
+
+.audit-money-summary {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.audit-money-main {
+  border: 1px solid #cfe6dc;
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  background: #f0fbf6;
+}
+
+.audit-money-main span {
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.audit-money-main strong {
+  color: var(--green-dark);
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1;
+}
+
+.audit-money-main small {
+  max-width: 620px;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.audit-money-breakdown {
+  display: grid;
+  gap: 8px;
+}
+
+.audit-simple-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .audit-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3560,6 +3613,48 @@ textarea {
 .audit-issue.info {
   border-color: #cbdcff;
   background: #f3f7ff;
+}
+
+.audit-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.audit-collapsible summary {
+  cursor: pointer;
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  list-style: none;
+}
+
+.audit-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.audit-collapsible summary span {
+  display: grid;
+  gap: 4px;
+}
+
+.audit-collapsible summary strong {
+  font-size: 18px;
+}
+
+.audit-collapsible summary small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.audit-collapsible summary b {
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #eef3f8;
+  color: var(--ink);
+  text-align: center;
 }
 
 .audit-products {
@@ -4565,6 +4660,7 @@ textarea {
   .shop-grid,
   .admin-columns,
   .chart-grid,
+  .audit-money-summary,
   .admin-overview {
     grid-template-columns: 1fr;
   }
@@ -6498,13 +6594,24 @@ textarea {
   .admin-columns,
   .admin-overview,
   .audit-grid,
+  .audit-simple-grid,
   .chart-grid {
     gap: 10px;
   }
 
   .audit-grid,
+  .audit-simple-grid,
   .audit-products {
     grid-template-columns: 1fr;
+  }
+
+  .audit-money-summary {
+    padding: 10px;
+    grid-template-columns: 1fr;
+  }
+
+  .audit-money-main {
+    padding: 14px;
   }
 
   .stock-tabs {

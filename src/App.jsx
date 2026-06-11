@@ -8461,33 +8461,51 @@ function AdminPage() {
 
     return (
       <div className="admin-stack">
-        <div className="section-tools">
-          <ActionButton
-            icon="user"
-            label={staffAuditOpen ? "Masquer" : "Par personne"}
-            title={staffAuditOpen ? "Masquer l'audit par personne" : "Ouvrir l'audit par personne"}
-            onClick={() => setStaffAuditOpen((open) => !open)}
-          />
-          <ActionButton
-            icon="download"
-            label="Excel"
-            title="Exporter l'audit"
-            onClick={exportAuditToExcel}
-          />
-          <ActionButton
-            icon="wallet"
-            label="Mouvement"
-            title="Enregistrer une entrée ou sortie d'argent"
-            onClick={openTreasuryPanel}
-          />
-        </div>
-        <div className="stats audit-stats">
-          <Stat label="CA généré" value={formatCompact(totalRevenue)} />
-          <Stat label="Disponible vérifié" value={formatCompact(verifiedAvailableCash)} />
-          <Stat label="Sur comptes" value={formatCompact(depositedAccountTotal)} />
-          <Stat label="Liquide à déposer" value={formatCompact(cashToDeposit)} />
-          <Stat label="Solde prudent" value={formatCompact(netTreasuryAmount)} />
-        </div>
+        <section className="section audit-command-center">
+          <div className="section-head action-head">
+            <div>
+              <h2>Argent disponible</h2>
+              <span>Le chiffre à suivre, puis les explications essentielles.</span>
+            </div>
+            <div className="accounting-actions">
+              <ActionButton
+                icon="wallet"
+                label="Mouvement"
+                title="Enregistrer une entrée ou sortie d'argent"
+                onClick={openTreasuryPanel}
+              />
+              <ActionButton
+                icon="user"
+                label={staffAuditOpen ? "Masquer" : "Par personne"}
+                title={staffAuditOpen ? "Masquer l'audit par personne" : "Ouvrir l'audit par personne"}
+                onClick={() => setStaffAuditOpen((open) => !open)}
+              />
+              <ActionButton
+                icon="download"
+                label="Excel"
+                title="Exporter l'audit"
+                onClick={exportAuditToExcel}
+              />
+            </div>
+          </div>
+          <div className="audit-money-summary">
+            <div className="audit-money-main">
+              <span>Disponible vérifié</span>
+              <strong>{formatMoney(verifiedAvailableCash)}</strong>
+              <small>
+                Argent tracé moins les sorties enregistrées. À rapprocher avec les relevés OM/Djomi.
+              </small>
+            </div>
+            <div className="audit-money-breakdown">
+              <AuditRow label="Sur comptes OM/Djomi" value={formatMoney(depositedAccountTotal)} tone="paid" />
+              <AuditRow label="Liquide à déposer" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
+              <AuditRow label="Sorties saisies" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
+            </div>
+          </div>
+          <div className="audit-note">
+            Pour que ce montant soit fiable, chaque achat de stock, retrait, frais ou correction doit être ajouté avec le bouton Mouvement.
+          </div>
+        </section>
 
         {staffAuditOpen ? (
         <section className="section staff-audit-section">
@@ -8579,77 +8597,56 @@ function AdminPage() {
         </section>
         ) : null}
 
-        <div className="audit-grid">
+        <section className="section audit-panel">
+          <div className="section-head">
+            <div>
+              <h2>À vérifier</h2>
+              <span>Uniquement les points qui demandent une action.</span>
+            </div>
+          </div>
+          <div className="audit-issues">
+            {auditIssues.length ? (
+              auditIssues.map((issue) => (
+                <div className={`audit-issue ${issue.tone}`} key={issue.title}>
+                  <strong>{issue.title}</strong>
+                  <span>{issue.text}</span>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state compact">Rien d'urgent à corriger.</div>
+            )}
+          </div>
+        </section>
+
+        <div className="audit-simple-grid">
           <section className="section audit-panel">
             <div className="section-head">
               <div>
-                <h2>Où est l'argent</h2>
-                <span>Encaissements, dépôts et argent à justifier</span>
+                <h2>Détails argent</h2>
+                <span>Résumé court pour comprendre le disponible.</span>
               </div>
             </div>
             <div className="audit-list">
-              <AuditRow label="Disponible vérifié" value={formatMoney(verifiedAvailableCash)} tone="bank" />
-              <AuditRow label="Disponible avant sorties saisies" value={formatMoney(traceableAvailableCash)} />
-              <AuditRow label="Sorties enregistrées" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
+              <AuditRow label="Argent tracé avant sorties" value={formatMoney(traceableAvailableCash)} />
               <AuditRow label="Entrées manuelles" value={formatMoney(treasuryManualInflows)} tone={treasuryManualInflows ? "paid" : ""} />
-              <AuditRow label="Sur comptes OM/Djomi" value={formatMoney(depositedAccountTotal)} tone="paid" />
-              <AuditRow label="Liquide à déposer" value={formatMoney(cashToDeposit)} tone={cashToDeposit ? "warning" : "paid"} />
-              <AuditRow label="Détail Djomi" value={formatMoney(djomiRevenue)} />
-              <AuditRow label="Détail Orange Money direct" value={formatMoney(orangeMoneyRevenue)} />
-              <AuditRow label="Détail liquide encaissé" value={formatMoney(totalCash)} />
-              <AuditRow label="Coût des articles vendus" value={formatMoney(totalCost)} />
-              <AuditRow label="Stock immobilisé" value={formatMoney(inventoryCostValue)} />
-              <AuditRow
-                label="Bénéfice (Marge)"
-                value={formatMoney(grossProfitAmount)}
-                tone={grossProfitAmount < 0 ? "warning" : "paid"}
-              />
-              <AuditRow
-                label="Solde prudent après stock"
-                value={formatMoney(netTreasuryAmount)}
-                tone={netTreasuryAmount < 0 ? "warning" : "bank"}
-              />
-              <div className="audit-note">
-                Le disponible vérifié devient fiable si chaque achat de stock, retrait, frais ou correction
-                est enregistré comme mouvement de trésorerie. Sinon, il reste à rapprocher avec les relevés OM/Djomi.
-              </div>
+              <AuditRow label="Sorties enregistrées" value={formatMoney(treasuryOutflows)} tone={treasuryOutflows ? "warning" : ""} />
+              <AuditRow label="Bénéfice brut" value={formatMoney(grossProfitAmount)} tone={grossProfitAmount < 0 ? "warning" : "paid"} />
+              <AuditRow label="Solde prudent après stock" value={formatMoney(netTreasuryAmount)} tone={netTreasuryAmount < 0 ? "warning" : "bank"} />
             </div>
           </section>
 
           <section className="section audit-panel">
             <div className="section-head">
               <div>
-                <h2>Où sont les produits</h2>
-                <span>Stock disponible, valeur d'achat et potentiel de vente</span>
+                <h2>Produits</h2>
+                <span>Stock et valeur immobilisée.</span>
               </div>
             </div>
             <div className="audit-list">
               <AuditRow label="Articles disponibles" value={availableAdminProducts.length} tone="paid" />
-              <AuditRow label="Articles épuisés" value={outOfStockProducts.length} tone={outOfStockProducts.length ? "warning" : "paid"} />
-              <AuditRow label="Stock faible" value={lowStockProducts.length} tone={lowStockProducts.length ? "warning" : "paid"} />
-              <AuditRow label="Valeur prix de revient" value={formatMoney(inventoryCostValue)} />
-              <AuditRow label="Potentiel vente" value={formatMoney(inventorySaleValue)} />
-            </div>
-          </section>
-
-          <section className="section audit-panel">
-            <div className="section-head">
-              <div>
-                <h2>Incohérences</h2>
-                <span>Ce qui mérite une vérification rapide</span>
-              </div>
-            </div>
-            <div className="audit-issues">
-              {auditIssues.length ? (
-                auditIssues.map((issue) => (
-                  <div className={`audit-issue ${issue.tone}`} key={issue.title}>
-                    <strong>{issue.title}</strong>
-                    <span>{issue.text}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="empty-state compact">Aucune incohérence évidente.</div>
-              )}
+              <AuditRow label="Épuisés / faibles" value={`${outOfStockProducts.length} / ${lowStockProducts.length}`} tone={outOfStockProducts.length || lowStockProducts.length ? "warning" : "paid"} />
+              <AuditRow label="Stock au prix de revient" value={formatMoney(inventoryCostValue)} />
+              <AuditRow label="Potentiel de vente" value={formatMoney(inventorySaleValue)} />
             </div>
           </section>
         </div>
@@ -8657,8 +8654,8 @@ function AdminPage() {
         <section className="section">
           <div className="section-head action-head">
             <div>
-              <h2>Mouvements de trésorerie</h2>
-              <span>Achats de stock, frais, retraits et corrections qui changent le disponible</span>
+              <h2>Derniers mouvements</h2>
+              <span>Achats, frais, retraits et corrections qui changent le disponible.</span>
             </div>
             <button className="btn secondary" type="button" onClick={openTreasuryPanel}>
               Ajouter mouvement
@@ -8670,7 +8667,7 @@ function AdminPage() {
             </div>
           ) : treasuryMovements.length ? (
             <div className="treasury-movement-list">
-              {treasuryMovements.slice(0, 12).map((movement) => (
+              {treasuryMovements.slice(0, 6).map((movement) => (
                 <div className="treasury-movement-row" key={movement.id}>
                   <span>
                     <strong>{movement.label}</strong>
@@ -8730,13 +8727,14 @@ function AdminPage() {
           )}
         </section>
 
-        <section className="section">
-          <div className="section-head">
-            <div>
-              <h2>Mouvements de stock</h2>
-              <span>Dernières sorties, entrées et corrections</span>
-            </div>
-          </div>
+        <details className="section audit-collapsible">
+          <summary>
+            <span>
+              <strong>Mouvements de stock</strong>
+              <small>Dernières sorties, entrées et corrections</small>
+            </span>
+            <b>{stockMovements.length}</b>
+          </summary>
           {stockMovements.length ? (
             <div className="stock-movement-list">
               {stockMovements.slice(0, 10).map((movement) => (
@@ -8763,7 +8761,7 @@ function AdminPage() {
               Aucun mouvement chargé. Exécute le patch SQL stock/audit pour activer l'historique.
             </div>
           )}
-        </section>
+        </details>
         {treasuryPanelOpen ? (
           <div
             className="admin-action-overlay"
