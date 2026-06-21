@@ -6088,6 +6088,14 @@ function AdminPage() {
       return;
     }
 
+    if (hasManualSaleItems && selectedSaleProduct) {
+      showToast(
+        "Ajoute l'article sélectionné à la vente avant de l'enregistrer.",
+        "issue"
+      );
+      return;
+    }
+
     const saleItems = hasManualSaleItems
       ? manualSaleItems
       : selectedSaleProduct
@@ -7906,373 +7914,411 @@ function AdminPage() {
               if (event.target === event.currentTarget) closeManualSalePanel();
             }}
           >
-          <section className="section admin-action-panel">
-            <div className="section-head">
-              <div>
-                <h2>Enregistrer une vente manuelle</h2>
-                <span>Le manager choisit un article existant ou saisit une vente libre</span>
-              </div>
-              <button className="icon-btn" type="button" onClick={closeManualSalePanel}>
-                Fermer
-              </button>
-            </div>
-            <form className="admin-form form-grid" onSubmit={addAccountingRecord}>
-              <div className="field full">
-                <label>Article vendu</label>
-                <select
-                  value={accountingForm.saleProductId}
-                  onChange={(event) => selectManualSaleProduct(event.target.value)}
-                >
-                  <option value="">Vente libre sans article</option>
-                  {availableAdminProducts.map((product) => (
-                    <option value={product.id} key={product.id}>
-                      {product.name} - {formatMoney(getProductPrice(product))} - stock {product.stock}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {selectedSaleProduct ? (
-                <div className="trace-box full">
-                  <span>Montants repris depuis la base BMA</span>
-                  <strong>
-                    {selectedSaleProduct.name} - {formatMoney(getProductPrice(selectedSaleProduct))} / article
-                  </strong>
-                  {manualVariantRows.length ? (
-                    <small>
-                      Vente détaillée : {manualVariantRows.length} ligne(s), {manualVariantQuantity} article(s)
-                    </small>
-                  ) : accountingForm.saleColor ? (
-                    <small>
-                      Stock {accountingForm.saleColor} : {selectedSaleColorStock} article(s)
-                    </small>
-                  ) : null}
+            <section className="section admin-action-panel manual-sale-panel">
+              <div className="section-head manual-sale-head">
+                <div>
+                  <h2>Nouvelle vente</h2>
+                  <span>Ajoute les articles, puis confirme l'encaissement.</span>
                 </div>
-              ) : null}
-              {showManualVariantFields ? (
-                <div className="manual-variant-box full">
-                  <div className="manual-variant-head">
-                    <strong>Options vendues</strong>
-                    <span>Choisis seulement si nécessaire.</span>
-                  </div>
-                  <div className="manual-variant-grid">
-                    {selectedSaleColorOptions.length ? (
-                      <div className="field">
-                        <label>Couleur</label>
-                        <select
-                          value={accountingForm.saleColor}
-                          onChange={(event) => {
-                            updateAccountingForm("saleColor", event.target.value);
-                            updateAccountingForm("saleSize", "");
-                          }}
-                        >
-                          <option value="">Non précisée</option>
-                          {selectedSaleColorOptions.map((color) => (
-                            <option value={color.value} key={color.value}>
-                              {color.value} - stock {getProductStockForColor(selectedSaleProduct, color.value)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                    {selectedSaleSizeOptions.length ? (
-                      <div className="field">
-                        <label>Taille / pointure</label>
-                        <select
-                          value={accountingForm.saleSize}
-                          onChange={(event) => updateAccountingForm("saleSize", event.target.value)}
-                        >
-                          <option value="">Non précisée</option>
-                          {selectedSaleSizeOptions.map((size) => (
-                            <option value={size} key={size}>
-                              {size}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="manual-variant-builder">
-                    <div className="manual-variant-head compact">
-                      <strong>Plusieurs couleurs en même temps</strong>
-                      <span>Ajoute une ligne par couleur, taille et quantité.</span>
+                <button
+                  className="icon-btn manual-sale-close"
+                  type="button"
+                  aria-label="Fermer"
+                  title="Fermer"
+                  onClick={closeManualSalePanel}
+                >
+                  <ActionIcon name="x" />
+                </button>
+              </div>
+
+              <form className="admin-form manual-sale-form" onSubmit={addAccountingRecord}>
+                <section className="manual-sale-step">
+                  <div className="manual-sale-step-head">
+                    <span>1</span>
+                    <div>
+                      <strong>Articles vendus</strong>
+                      <small>Les prix et le stock viennent automatiquement de BMA.</small>
                     </div>
-                    <div className="manual-variant-add-row">
-                      {selectedSaleColorOptions.length ? (
-                        <div className="field">
-                          <label>Couleur</label>
-                          <select
-                            value={accountingForm.saleVariantDraftColor}
-                            onChange={(event) => {
-                              updateAccountingForm("saleVariantDraftColor", event.target.value);
-                              updateAccountingForm("saleVariantDraftSize", "");
-                            }}
-                          >
-                            <option value="">Choisir</option>
-                            {selectedSaleColorOptions.map((color) => (
-                              <option value={color.value} key={color.value}>
-                                {color.value} - stock {getProductStockForColor(selectedSaleProduct, color.value)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                      {selectedSaleDraftSizeOptions.length ? (
-                        <div className="field">
-                          <label>Taille / pointure</label>
-                          <select
-                            value={accountingForm.saleVariantDraftSize}
-                            onChange={(event) =>
-                              updateAccountingForm("saleVariantDraftSize", event.target.value)
-                            }
-                          >
-                            <option value="">Non précisée</option>
-                            {selectedSaleDraftSizeOptions.map((size) => (
-                              <option value={size} key={size}>
-                                {size}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                      <div className="field">
-                        <label>Quantité</label>
-                        <input
+                  </div>
+
+                  <div className="field full">
+                    <label>Choisir un article</label>
+                    <select
+                      value={accountingForm.saleProductId}
+                      onChange={(event) => selectManualSaleProduct(event.target.value)}
+                    >
+                      <option value="">Sélectionner dans le stock</option>
+                      {availableAdminProducts.map((product) => (
+                        <option value={product.id} key={product.id}>
+                          {product.name} · {formatMoney(getProductPrice(product))} · stock {product.stock}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedSaleProduct ? (
+                    <div className="manual-sale-draft">
+                      <div className="manual-sale-product-summary">
+                        {selectedSaleProduct.image ? (
+                          <img src={selectedSaleProduct.image} alt="" />
+                        ) : (
+                          <div className="manual-sale-image-fallback">
+                            <ActionIcon name="package" />
+                          </div>
+                        )}
+                        <span>
+                          <strong>{selectedSaleProduct.name}</strong>
+                          <small>{Number(selectedSaleProduct.stock || 0)} en stock</small>
+                        </span>
+                        <b>{formatMoney(getProductPrice(selectedSaleProduct))}</b>
+                      </div>
+
+                      <div className="manual-sale-selection-grid">
+                        <Field
+                          label={manualVariantRows.length ? "Quantité totale" : "Quantité"}
+                          value={accountingForm.saleQuantity}
+                          type="number"
                           min="1"
                           step="1"
-                          type="number"
-                          value={accountingForm.saleVariantDraftQuantity}
-                          onChange={(event) =>
-                            updateAccountingForm("saleVariantDraftQuantity", event.target.value)
-                          }
+                          disabled={Boolean(manualVariantRows.length)}
+                          onChange={updateManualSaleQuantity}
                         />
+                        {!manualVariantRows.length && selectedSaleColorOptions.length ? (
+                          <div className="field">
+                            <label>Couleur</label>
+                            <select
+                              value={accountingForm.saleColor}
+                              onChange={(event) => {
+                                updateAccountingForm("saleColor", event.target.value);
+                                updateAccountingForm("saleSize", "");
+                              }}
+                            >
+                              <option value="">Non précisée</option>
+                              {selectedSaleColorOptions.map((color) => (
+                                <option value={color.value} key={color.value}>
+                                  {color.value} · stock {getProductStockForColor(selectedSaleProduct, color.value)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
+                        {!manualVariantRows.length && selectedSaleSizeOptions.length ? (
+                          <div className="field">
+                            <label>Taille / pointure</label>
+                            <select
+                              value={accountingForm.saleSize}
+                              onChange={(event) => updateAccountingForm("saleSize", event.target.value)}
+                            >
+                              <option value="">Non précisée</option>
+                              {selectedSaleSizeOptions.map((size) => (
+                                <option value={size} key={size}>{size}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
                       </div>
+
+                      {accountingForm.saleColor && !manualVariantRows.length ? (
+                        <small className="manual-sale-stock-note">
+                          {selectedSaleColorStock} article(s) disponible(s) dans cette couleur.
+                        </small>
+                      ) : null}
+
+                      {showManualVariantFields ? (
+                        <details className="manual-sale-options">
+                          <summary>
+                            <span>Vendre plusieurs couleurs ou tailles</span>
+                            <small>{manualVariantRows.length ? `${manualVariantQuantity} article(s) détaillé(s)` : "Facultatif"}</small>
+                          </summary>
+                          <div className="manual-variant-builder">
+                            <div className="manual-variant-add-row">
+                              {selectedSaleColorOptions.length ? (
+                                <div className="field">
+                                  <label>Couleur</label>
+                                  <select
+                                    value={accountingForm.saleVariantDraftColor}
+                                    onChange={(event) => {
+                                      updateAccountingForm("saleVariantDraftColor", event.target.value);
+                                      updateAccountingForm("saleVariantDraftSize", "");
+                                    }}
+                                  >
+                                    <option value="">Choisir</option>
+                                    {selectedSaleColorOptions.map((color) => (
+                                      <option value={color.value} key={color.value}>
+                                        {color.value} · stock {getProductStockForColor(selectedSaleProduct, color.value)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ) : null}
+                              {selectedSaleDraftSizeOptions.length ? (
+                                <div className="field">
+                                  <label>Taille / pointure</label>
+                                  <select
+                                    value={accountingForm.saleVariantDraftSize}
+                                    onChange={(event) =>
+                                      updateAccountingForm("saleVariantDraftSize", event.target.value)
+                                    }
+                                  >
+                                    <option value="">Non précisée</option>
+                                    {selectedSaleDraftSizeOptions.map((size) => (
+                                      <option value={size} key={size}>{size}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ) : null}
+                              <div className="field">
+                                <label>Quantité</label>
+                                <input
+                                  min="1"
+                                  step="1"
+                                  type="number"
+                                  value={accountingForm.saleVariantDraftQuantity}
+                                  onChange={(event) =>
+                                    updateAccountingForm("saleVariantDraftQuantity", event.target.value)
+                                  }
+                                />
+                              </div>
+                              <button
+                                className="icon-btn manual-variant-add"
+                                type="button"
+                                onClick={addManualVariantSelection}
+                              >
+                                <ActionIcon name="plus" />
+                                Ajouter
+                              </button>
+                            </div>
+                            {accountingForm.saleVariantDraftColor ? (
+                              <p className="manual-variant-note">
+                                Stock disponible : {selectedSaleDraftStock} article(s).
+                              </p>
+                            ) : null}
+                            {manualVariantRows.length ? (
+                              <div className="manual-variant-lines">
+                                {manualVariantRows.map((row, index) => (
+                                  <div className="manual-variant-line" key={`${row.line}-${index}`}>
+                                    <span>
+                                      <strong>{row.color || "Option"}</strong>
+                                      {row.size ? ` / ${row.size}` : ""}
+                                    </span>
+                                    <b>x{row.quantity}</b>
+                                    <button
+                                      type="button"
+                                      aria-label={`Retirer ${row.line}`}
+                                      title="Retirer"
+                                      onClick={() => removeManualVariantSelection(index)}
+                                    >
+                                      <ActionIcon name="trash" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </details>
+                      ) : null}
+
                       <button
-                        className="icon-btn manual-variant-add"
+                        className="btn secondary manual-sale-add-item"
                         type="button"
-                        onClick={addManualVariantSelection}
+                        onClick={addManualSaleItem}
                       >
-                        Ajouter
+                        <ActionIcon name="plus" />
+                        Ajouter à la vente
                       </button>
                     </div>
-                    {accountingForm.saleVariantDraftColor ? (
-                      <p className="manual-variant-note">
-                        Stock disponible : {selectedSaleDraftStock} article(s).
-                      </p>
-                    ) : null}
-                    {manualVariantRows.length ? (
-                      <div className="manual-variant-lines">
-                        {manualVariantRows.map((row, index) => (
-                          <div className="manual-variant-line" key={`${row.line}-${index}`}>
+                  ) : null}
+
+                  {manualSaleItems.length ? (
+                    <div className="manual-sale-items">
+                      <div className="manual-variant-head">
+                        <strong>Vente en cours</strong>
+                        <span>{manualSaleItemsQuantity} article(s) · {formatMoney(manualSaleItemsBaseAmount)}</span>
+                      </div>
+                      <div className="manual-sale-item-list">
+                        {manualSaleItems.map((item) => (
+                          <div className="manual-sale-item" key={item.id}>
+                            {item.image ? (
+                              <img src={item.image} alt="" />
+                            ) : (
+                              <div className="manual-sale-image-fallback">
+                                <ActionIcon name="package" />
+                              </div>
+                            )}
                             <span>
-                              <strong>{row.color || "Option"}</strong>
-                              {row.size ? ` / ${row.size}` : ""}
+                              <strong>{item.productName}</strong>
+                              <small>
+                                x{item.quantity}{item.optionSummary ? ` · ${item.optionSummary}` : ""}
+                              </small>
                             </span>
-                            <b>x{row.quantity}</b>
+                            <b>{formatMoney(item.saleAmount)}</b>
                             <button
                               type="button"
-                              aria-label={`Retirer ${row.line}`}
-                              onClick={() => removeManualVariantSelection(index)}
+                              aria-label={`Retirer ${item.productName}`}
+                              title="Retirer"
+                              onClick={() => removeManualSaleItem(item.id)}
                             >
-                              Retirer
+                              <ActionIcon name="trash" />
                             </button>
                           </div>
                         ))}
                       </div>
-                    ) : null}
-                  </div>
-                  <details className="manual-variant-raw">
-                    <summary>Saisie rapide</summary>
-                    <textarea
-                      value={accountingForm.saleVariantLines}
-                      placeholder={"Exemple :\nNoir / M x2\nBlanc / L x1"}
-                      onChange={(event) =>
-                        updateManualVariantLines(
-                          event.target.value
-                            .split(/\r?\n/)
-                            .map((line) => line.trim())
-                            .filter(Boolean)
-                        )
-                      }
-                    />
-                  </details>
-                  {manualVariantRows.length ? (
-                    <p className="manual-variant-note">
-                      Total détaillé : {manualVariantQuantity} article(s).
-                    </p>
+                    </div>
                   ) : null}
-                </div>
-              ) : null}
-              {selectedSaleProduct ? (
-                <button
-                  className="btn secondary full"
-                  type="button"
-                  onClick={addManualSaleItem}
-                >
-                  Ajouter cet article à la vente
-                </button>
-              ) : null}
-              {manualSaleItems.length ? (
-                <div className="manual-sale-items full">
-                  <div className="manual-variant-head">
-                    <strong>Articles dans cette vente</strong>
-                    <span>
-                      {manualSaleItemsQuantity} article(s) - {formatMoney(manualSaleItemsBaseAmount)}
-                    </span>
-                  </div>
-                  <div className="manual-sale-item-list">
-                    {manualSaleItems.map((item) => (
-                      <div className="manual-sale-item" key={item.id}>
-                        <img src={item.image} alt="" />
-                        <span>
-                          <strong>{item.productName}</strong>
-                          <small>
-                            x{item.quantity}
-                            {item.optionSummary ? ` - ${item.optionSummary}` : ""}
-                          </small>
-                        </span>
-                        <b>{formatMoney(item.saleAmount)}</b>
-                        <button
-                          type="button"
-                          aria-label={`Retirer ${item.productName}`}
-                          onClick={() => removeManualSaleItem(item.id)}
-                        >
-                          Retirer
-                        </button>
+
+                  {!selectedSaleProduct && !hasManualSaleItems && !isSeller ? (
+                    <details className="manual-sale-advanced manual-free-sale">
+                      <summary>Vente sans article du catalogue</summary>
+                      <div className="manual-sale-detail-grid">
+                        <Field
+                          label="Prix de vente total"
+                          value={accountingForm.saleAmount}
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Montant encaissé"
+                          onChange={(value) => updateAccountingForm("saleAmount", value)}
+                        />
+                        <Field
+                          label="Quantité"
+                          value={accountingForm.saleQuantity}
+                          type="number"
+                          min="1"
+                          step="1"
+                          onChange={updateManualSaleQuantity}
+                        />
+                        {canSeeAccountingFinancials ? (
+                          <>
+                            <Field
+                              label="Prix d'achat total"
+                              value={accountingForm.purchaseAmount}
+                              type="number"
+                              min="0"
+                              step="1"
+                              onChange={(value) => updateAccountingForm("purchaseAmount", value)}
+                            />
+                            <Field
+                              label="Frais annexes"
+                              value={accountingForm.extraCost}
+                              type="number"
+                              min="0"
+                              step="1"
+                              onChange={(value) => updateAccountingForm("extraCost", value)}
+                            />
+                          </>
+                        ) : null}
                       </div>
-                    ))}
+                    </details>
+                  ) : null}
+                </section>
+
+                <section className="manual-sale-step">
+                  <div className="manual-sale-step-head">
+                    <span>2</span>
+                    <div>
+                      <strong>Client et paiement</strong>
+                      <small>Seul le numéro est utile pour retrouver la vente.</small>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-              {!hasManualSaleItems || selectedSaleProduct ? (
-                <Field
-                  label={selectedSaleProduct ? "Quantité de cette ligne" : "Quantité"}
-                  value={accountingForm.saleQuantity}
-                  type="number"
-                  min="1"
-                  step="1"
-                  onChange={updateManualSaleQuantity}
-                />
-              ) : null}
-              <Field
-                label="Numéro du client"
-                value={accountingForm.orderId}
-                onChange={(value) => updateAccountingForm("orderId", value)}
-              />
-              <Field
-                label="Date"
-                value={accountingForm.date}
-                type="date"
-                onChange={(value) => updateAccountingForm("date", value)}
-              />
-              <Field
-                label="Client"
-                value={accountingForm.customer}
-                onChange={(value) => updateAccountingForm("customer", value)}
-              />
-              <Field
-                label={
-                  hasManualSaleItems || selectedSaleProduct
-                    ? "Prix prévu total"
-                    : "Prix vente total avant ajustement"
-                }
-                value={
-                  hasManualSaleItems || selectedSaleProduct
-                    ? manualSaleBaseAmount
-                    : accountingForm.saleAmount
-                }
-                type="number"
-                min="1"
-                step="1"
-                disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
-                onChange={(value) => updateAccountingForm("saleAmount", value)}
-              />
-              {canSeeAccountingFinancials ? (
-                <>
-                  <Field
-                    label="Prix achat total"
-                    value={
-                      hasManualSaleItems || selectedSaleProduct
-                        ? manualSalePurchaseAmount
-                        : accountingForm.purchaseAmount
-                    }
-                    type="number"
-                    min="0"
-                    step="1"
-                    disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
-                    onChange={(value) => updateAccountingForm("purchaseAmount", value)}
-                  />
-                  <Field
-                    label="Frais annexes total"
-                    value={
-                      hasManualSaleItems || selectedSaleProduct
-                        ? manualSaleExtraCostAmount
-                        : accountingForm.extraCost
-                    }
-                    type="number"
-                    min="0"
-                    step="1"
-                    disabled={Boolean(selectedSaleProduct || hasManualSaleItems)}
-                    onChange={(value) => updateAccountingForm("extraCost", value)}
-                  />
-                </>
-              ) : null}
-              <Field
-                label="Surplus / remise GNF"
-                value={accountingForm.discountAmount}
-                type="number"
-                step="1"
-                onChange={(value) => updateAccountingForm("discountAmount", value)}
-              />
-              <div className="field">
-                <label>Encaissement</label>
-                <select
-                  value={accountingForm.paymentMethod}
-                  onChange={(event) =>
-                    updateAccountingForm("paymentMethod", event.target.value)
-                  }
-                >
-                  <option>Liquide</option>
-                  <option>Djomi</option>
-                  <option>Orange Money</option>
-                </select>
-              </div>
-              <div className="field full">
-                <label>Note vente</label>
-                <textarea
-                  value={accountingForm.note}
-                  placeholder="Ex : 2 articles vendus, remise fidélité, paiement reçu par Alpha..."
-                  onChange={(event) => updateAccountingForm("note", event.target.value)}
-                />
-              </div>
-              <div className="calc-preview full">
-                <div>
-                  <span>Total encaissé</span>
-                  <strong>{formatMoney(manualSaleFinalAmount)}</strong>
-                </div>
-                {canSeeAccountingFinancials ? (
-                  <>
-                    <div>
-                      <span>Revient calculé</span>
-                      <strong>{formatMoney(manualSaleCostAmount)}</strong>
+
+                  <div className="manual-sale-customer-grid">
+                    <Field
+                      label="Numéro du client"
+                      value={accountingForm.orderId}
+                      type="tel"
+                      autoComplete="tel"
+                      placeholder="Ex. 622 00 00 00"
+                      onChange={(value) => updateAccountingForm("orderId", value)}
+                    />
+                    <Field
+                      label="Nom du client (facultatif)"
+                      value={accountingForm.customer}
+                      placeholder="Nom ou surnom"
+                      onChange={(value) => updateAccountingForm("customer", value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Encaissement</label>
+                    <div className="manual-payment-options" role="group" aria-label="Mode d'encaissement">
+                      {["Liquide", "Orange Money", "Djomi"].map((method) => (
+                        <button
+                          className={accountingForm.paymentMethod === method ? "active" : ""}
+                          type="button"
+                          key={method}
+                          onClick={() => updateAccountingForm("paymentMethod", method)}
+                        >
+                          {method}
+                        </button>
+                      ))}
                     </div>
-                    <div>
-                      <span>Marge</span>
-                      <strong className={manualSaleMarginAmount < 0 ? "negative" : ""}>
-                        {formatMoney(manualSaleMarginAmount)}
-                      </strong>
+                  </div>
+
+                  <Field
+                    label="Ajustement du total (+ surplus / - remise)"
+                    value={accountingForm.discountAmount}
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    onChange={(value) => updateAccountingForm("discountAmount", value)}
+                  />
+
+                  <details className="manual-sale-advanced">
+                    <summary>Date et note</summary>
+                    <div className="manual-sale-detail-grid">
+                      <Field
+                        label="Date"
+                        value={accountingForm.date}
+                        type="date"
+                        onChange={(value) => updateAccountingForm("date", value)}
+                      />
+                      <div className="field">
+                        <label>Note (facultatif)</label>
+                        <textarea
+                          value={accountingForm.note}
+                          placeholder="Précision utile sur la vente"
+                          onChange={(event) => updateAccountingForm("note", event.target.value)}
+                        />
+                      </div>
                     </div>
-                  </>
-                ) : null}
-                <div>
-                  <span>Encaissé par</span>
-                  <strong>{adminDisplayName}</strong>
+                  </details>
+
+                  {canSeeAccountingFinancials && (selectedSaleProduct || hasManualSaleItems) ? (
+                    <details className="manual-sale-advanced manual-sale-finance">
+                      <summary>Détails financiers internes</summary>
+                      <div className="manual-sale-finance-grid">
+                        <span>
+                          <small>Prix prévu</small>
+                          <strong>{formatMoney(manualSaleBaseAmount)}</strong>
+                        </span>
+                        <span>
+                          <small>Prix de revient</small>
+                          <strong>{formatMoney(manualSaleCostAmount)}</strong>
+                        </span>
+                        <span>
+                          <small>Marge estimée</small>
+                          <strong className={manualSaleMarginAmount < 0 ? "negative" : ""}>
+                            {formatMoney(manualSaleMarginAmount)}
+                          </strong>
+                        </span>
+                      </div>
+                    </details>
+                  ) : null}
+                </section>
+
+                <div className="manual-sale-footer">
+                  <span>
+                    <small>Total encaissé</small>
+                    <strong>{formatMoney(manualSaleFinalAmount)}</strong>
+                    <em>Par {adminDisplayName}</em>
+                  </span>
+                  <button className="btn" type="submit">
+                    <ActionIcon name="check" />
+                    Enregistrer la vente
+                  </button>
                 </div>
-              </div>
-              <button className="btn" type="submit">
-                Ajouter la ligne
-              </button>
-            </form>
-          </section>
+              </form>
+            </section>
           </div>
         ) : null}
 
@@ -9735,6 +9781,7 @@ function Field({
   min,
   step,
   autoComplete,
+  placeholder,
   disabled = false,
 }) {
   return (
@@ -9746,6 +9793,7 @@ function Field({
         step={step}
         type={type}
         value={value}
+        placeholder={placeholder}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
