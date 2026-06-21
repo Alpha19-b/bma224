@@ -2481,13 +2481,13 @@ function ClientPage() {
 
         <section className="fashion-hero">
           <div>
-            <span>BMA Family</span>
-            <h1>Bien Mieux À plusieurs.</h1>
-            <p>Une sélection mode et accessoires pour commander vite, payer simplement et suivre tes achats sans complication.</p>
+            <span>Nouveautés BMA</span>
+            <h1>Le bon look, sans chercher longtemps.</h1>
+            <p>Des vêtements et accessoires choisis pour leur style, présentés avec de vraies photos et disponibles immédiatement.</p>
             <div className="hero-stats">
-              <strong>Bons plans mode</strong>
+              <strong>Nouveautés régulières</strong>
               <strong>Photos réelles</strong>
-              <strong>Paiement Djomi</strong>
+              <strong>Paiement sécurisé</strong>
             </div>
           </div>
           <button
@@ -2495,14 +2495,14 @@ function ClientPage() {
             type="button"
             onClick={() => document.querySelector("#articles")?.scrollIntoView({ behavior: "smooth" })}
           >
-            Voir les articles
+            Découvrir la sélection
           </button>
         </section>
 
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h2>Articles disponibles</h2>
+              <h2>La sélection BMA</h2>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
@@ -2630,9 +2630,6 @@ function ProductCard({ product, onOpen }) {
         <div className="product-badges">
           {product.promoPrice ? <span className="product-badge deal">Promo</span> : null}
           {lowStock ? <span className="product-badge urgent">Stock limité</span> : null}
-          {!product.promoPrice && !lowStock && product.stock > 0 ? (
-            <span className="product-badge">Disponible</span>
-          ) : null}
         </div>
         <img
           className="product-main-image"
@@ -2661,9 +2658,6 @@ function ProductCard({ product, onOpen }) {
         <h3>{product.name}</h3>
         <div className="product-meta">
           <span>{product.category}</span>
-          {gallery.length > 1 ? (
-            <span>{gallery.length} photos</span>
-          ) : null}
         </div>
         <div className="product-price-row">
           <span className="price">{formatMoney(price)}</span>
@@ -2708,7 +2702,7 @@ function ProductCard({ product, onOpen }) {
                 onOpen();
               }}
             >
-              {hasOptions ? "Choisir" : "Voir le look"}
+              {hasOptions ? "Choisir les options" : "Voir l'article"}
             </button>
           </div>
         ) : (
@@ -5466,6 +5460,11 @@ function AdminPage() {
       return;
     }
 
+    if (selectedSaleDraftSizeOptions.length && !size) {
+      showToast("Choisis la taille ou la pointure à ajouter.", "issue");
+      return;
+    }
+
     if (manualVariantDraftQuantity > selectedSaleDraftStock) {
       showToast(
         `Stock insuffisant pour ${[color, size].filter(Boolean).join(" / ")} : il reste ${selectedSaleDraftStock} article(s).`,
@@ -5562,6 +5561,37 @@ function AdminPage() {
 
     const colorDeltas = getManualSaleColorDeltas(selectedSaleProduct, accountingForm, quantity);
     const variantDeltas = getManualSaleVariantDeltas(selectedSaleProduct, accountingForm, quantity);
+    const hasDetailedVariants = Boolean(accountingForm.saleVariantLines.trim());
+
+    if (hasDetailedVariants) {
+      const incompleteVariant = manualVariantRows.find((row) => {
+        if (selectedSaleColorOptions.length && !row.color) return true;
+        return getProductSizeOptions(selectedSaleProduct, row.color).length > 0 && !row.size;
+      });
+
+      if (incompleteVariant) {
+        showToast(
+          "Précise la couleur et la taille de chaque article avant de l'ajouter.",
+          "issue"
+        );
+        return null;
+      }
+    } else {
+      if (selectedSaleColorOptions.length && !accountingForm.saleColor) {
+        showToast("Choisis la couleur de l'article avant de l'ajouter.", "issue");
+        return null;
+      }
+
+      const requiredSizes = getProductSizeOptions(
+        selectedSaleProduct,
+        accountingForm.saleColor
+      );
+
+      if (requiredSizes.length && !accountingForm.saleSize) {
+        showToast("Choisis la taille ou la pointure avant d'ajouter l'article.", "issue");
+        return null;
+      }
+    }
 
     if (accountingForm.saleVariantLines.trim() && manualVariantQuantity !== quantity) {
       showToast(
@@ -6083,6 +6113,11 @@ function AdminPage() {
   async function addAccountingRecord(event) {
     event.preventDefault();
 
+    if (!accountingForm.customer.trim()) {
+      showToast("Le nom du client est obligatoire.", "issue");
+      return;
+    }
+
     if (!accountingForm.date) {
       showToast("La date est obligatoire.", "issue");
       return;
@@ -6206,8 +6241,7 @@ function AdminPage() {
       quantity: saleItemsQuantity || saleQuantity,
       date: accountingForm.date,
       customer:
-        accountingForm.customer ||
-        (singleItem ? `Vente ${singleItem.productName}` : saleItems.length > 1 ? "Vente groupée" : "Client"),
+        accountingForm.customer.trim(),
       saleAmount: finalSaleAmount,
       purchaseAmount: purchaseAmountResult.value,
       extraCost: extraCostResult.value,
@@ -7985,7 +8019,7 @@ function AdminPage() {
                         />
                         {!manualVariantRows.length && selectedSaleColorOptions.length ? (
                           <div className="field">
-                            <label>Couleur</label>
+                            <label>Couleur *</label>
                             <select
                               value={accountingForm.saleColor}
                               onChange={(event) => {
@@ -8004,7 +8038,7 @@ function AdminPage() {
                         ) : null}
                         {!manualVariantRows.length && selectedSaleSizeOptions.length ? (
                           <div className="field">
-                            <label>Taille / pointure</label>
+                            <label>Taille / pointure *</label>
                             <select
                               value={accountingForm.saleSize}
                               onChange={(event) => updateAccountingForm("saleSize", event.target.value)}
@@ -8034,7 +8068,7 @@ function AdminPage() {
                             <div className="manual-variant-add-row">
                               {selectedSaleColorOptions.length ? (
                                 <div className="field">
-                                  <label>Couleur</label>
+                                  <label>Couleur *</label>
                                   <select
                                     value={accountingForm.saleVariantDraftColor}
                                     onChange={(event) => {
@@ -8053,7 +8087,7 @@ function AdminPage() {
                               ) : null}
                               {selectedSaleDraftSizeOptions.length ? (
                                 <div className="field">
-                                  <label>Taille / pointure</label>
+                                  <label>Taille / pointure *</label>
                                   <select
                                     value={accountingForm.saleVariantDraftSize}
                                     onChange={(event) =>
@@ -8231,9 +8265,10 @@ function AdminPage() {
                       onChange={(value) => updateAccountingForm("orderId", value)}
                     />
                     <Field
-                      label="Nom du client (facultatif)"
+                      label="Nom du client"
                       value={accountingForm.customer}
-                      placeholder="Nom ou surnom"
+                      placeholder="Nom du client"
+                      required
                       onChange={(value) => updateAccountingForm("customer", value)}
                     />
                   </div>
@@ -9783,6 +9818,7 @@ function Field({
   autoComplete,
   placeholder,
   disabled = false,
+  required = false,
 }) {
   return (
     <div className="field">
@@ -9795,6 +9831,7 @@ function Field({
         value={value}
         placeholder={placeholder}
         disabled={disabled}
+        required={required}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
