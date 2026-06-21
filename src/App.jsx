@@ -1750,6 +1750,17 @@ function ClientPage() {
     });
   }, [availableCatalogProducts, query, styleFilter, sortMode]);
 
+  const featuredProduct = useMemo(
+    () =>
+      availableCatalogProducts.find((product) => Boolean(product.promoPrice)) ??
+      availableCatalogProducts[0] ??
+      null,
+    [availableCatalogProducts]
+  );
+  const featuredImage = featuredProduct
+    ? getProductGalleryForColor(featuredProduct, "")[0]
+    : "";
+
   const cartRows = useMemo(() => {
     return Object.values(cart).map((row) => ({
       ...row,
@@ -2375,13 +2386,18 @@ function ClientPage() {
               <button
                 className="btn secondary history-button"
                 type="button"
+                title="Mes achats"
+                aria-label="Mes achats"
                 onClick={() => {
                   setClientOrdersOpen(true);
                   loadClientOrders();
                 }}
               >
-                Mes achats
-                {clientOrders.length ? <span>{clientOrders.length}</span> : null}
+                <ActionIcon name="package" />
+                <span className="history-label">Mes achats</span>
+                {clientOrders.length ? (
+                  <span className="history-count">{clientOrders.length}</span>
+                ) : null}
               </button>
               <button
                 className="account-button"
@@ -2403,8 +2419,15 @@ function ClientPage() {
               </button>
             </>
           ) : (
-            <button className="btn secondary" onClick={() => setClientAuthOpen(true)}>
-              Se connecter
+            <button
+              className="btn secondary client-login-button"
+              type="button"
+              title="Se connecter"
+              aria-label="Se connecter"
+              onClick={() => setClientAuthOpen(true)}
+            >
+              <ActionIcon name="user" />
+              <span>Se connecter</span>
             </button>
           )}
           <button
@@ -2479,25 +2502,43 @@ function ClientPage() {
           </div>
         ) : null}
 
-        <section className="fashion-hero">
-          <div>
-            <span>Nouveautés BMA</span>
-            <h1>Le bon look, sans chercher longtemps.</h1>
-            <p>Des vêtements et accessoires choisis pour leur style, présentés avec de vraies photos et disponibles immédiatement.</p>
-            <div className="hero-stats">
-              <strong>Nouveautés régulières</strong>
-              <strong>Photos réelles</strong>
-              <strong>Paiement sécurisé</strong>
+        {!catalogLoading && featuredProduct ? (
+          <section className="fashion-hero">
+            {featuredImage ? (
+              <img
+                className="fashion-hero-visual"
+                src={featuredImage}
+                alt=""
+                aria-hidden="true"
+              />
+            ) : null}
+            <div className="fashion-hero-copy">
+              <span>{featuredProduct.category || "Nouveau drop"}</span>
+              <h1>{featuredProduct.name}</h1>
+              <p>
+                {featuredProduct.description ||
+                  "Une pièce sélectionnée par BMA, disponible maintenant."}
+              </p>
+              <div className="fashion-hero-price">
+                <strong>{formatMoney(getProductPrice(featuredProduct))}</strong>
+                {featuredProduct.promoPrice ? (
+                  <del>{formatMoney(featuredProduct.price)}</del>
+                ) : null}
+              </div>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setSelectedProduct(featuredProduct)}
+              >
+                Voir l’article
+              </button>
+              <div className="hero-stats">
+                <strong>Livraison en Guinée</strong>
+                <strong>Paiement sécurisé</strong>
+              </div>
             </div>
-          </div>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => document.querySelector("#articles")?.scrollIntoView({ behavior: "smooth" })}
-          >
-            Découvrir la sélection
-          </button>
-        </section>
+          </section>
+        ) : null}
 
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
@@ -2545,7 +2586,15 @@ function ClientPage() {
           </div>
 
           <div className="catalog">
-            {catalogLoading ? null : filteredProducts.length ? (
+            {catalogLoading ? (
+              Array.from({ length: 5 }, (_, index) => (
+                <div className="product-skeleton" key={`product-skeleton-${index}`} aria-hidden="true">
+                  <span />
+                  <i />
+                  <b />
+                </div>
+              ))
+            ) : filteredProducts.length ? (
               filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
