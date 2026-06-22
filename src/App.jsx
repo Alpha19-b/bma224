@@ -3942,6 +3942,7 @@ function AdminPage() {
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
   const [accountingSearch, setAccountingSearch] = useState("");
   const [accountingPaymentFilter, setAccountingPaymentFilter] = useState("all");
+  const [accountingSellerFilter, setAccountingSellerFilter] = useState("all");
   const [accountingSort, setAccountingSort] = useState("date_desc");
   const [selectedAccountingDetailId, setSelectedAccountingDetailId] = useState("");
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
@@ -4665,18 +4666,27 @@ function AdminPage() {
   const allDisplayedProductsSelected =
     displayedAdminProducts.length > 0 &&
     displayedAdminProducts.every((product) => selectedProductIds.includes(product.id));
+  const accountingSellerOptions = useMemo(
+    () =>
+      uniqueOptionValues(accountingRecords.map((record) => record.collectedBy)).sort((first, second) =>
+        first.localeCompare(second, "fr", { sensitivity: "base" })
+      ),
+    [accountingRecords]
+  );
   const visibleAccountingRecords = useMemo(() => {
     const search = normalizeSearchText(accountingSearch);
     const filtered = accountingRecords.filter((record) => {
       const matchesPayment =
         accountingPaymentFilter === "all" || record.paymentMethod === accountingPaymentFilter;
+      const matchesSeller =
+        accountingSellerFilter === "all" || record.collectedBy === accountingSellerFilter;
       const searchable = normalizeSearchText(
         [record.date, record.orderId, record.customer, record.paymentMethod, record.collectedBy, record.note]
           .filter(Boolean)
           .join(" ")
       );
 
-      return matchesPayment && (!search || searchable.includes(search));
+      return matchesPayment && matchesSeller && (!search || searchable.includes(search));
     });
 
     return filtered
@@ -4702,6 +4712,12 @@ function AdminPage() {
             "fr",
             { sensitivity: "base" }
           );
+        } else if (accountingSort === "seller_asc") {
+          comparison = String(firstRecord.collectedBy || "").localeCompare(
+            String(secondRecord.collectedBy || ""),
+            "fr",
+            { sensitivity: "base" }
+          );
         } else {
           comparison = String(secondRecord.date || "").localeCompare(String(firstRecord.date || ""));
         }
@@ -4709,7 +4725,13 @@ function AdminPage() {
         return comparison || first.index - second.index;
       })
       .map(({ record }) => record);
-  }, [accountingRecords, accountingSearch, accountingPaymentFilter, accountingSort]);
+  }, [
+    accountingRecords,
+    accountingSearch,
+    accountingPaymentFilter,
+    accountingSellerFilter,
+    accountingSort,
+  ]);
   const selectedAccountingRecords = visibleAccountingRecords.filter((record) =>
     selectedAccountingIds.includes(record.id)
   );
@@ -7985,6 +8007,21 @@ function AdminPage() {
               </select>
             </label>
             <label>
+              <span>Enregistrée par</span>
+              <select
+                value={accountingSellerFilter}
+                onChange={(event) => {
+                  setAccountingSellerFilter(event.target.value);
+                  setSelectedAccountingIds([]);
+                }}
+              >
+                <option value="all">Toute l'équipe</option>
+                {accountingSellerOptions.map((seller) => (
+                  <option value={seller} key={seller}>{seller}</option>
+                ))}
+              </select>
+            </label>
+            <label>
               <span>Trier par</span>
               <select value={accountingSort} onChange={(event) => setAccountingSort(event.target.value)}>
                 <option value="date_desc">Plus récentes</option>
@@ -7993,6 +8030,7 @@ function AdminPage() {
                 <option value="sale_asc">Vente la plus faible</option>
                 <option value="margin_desc">Marge la plus élevée</option>
                 <option value="customer_asc">Client A à Z</option>
+                <option value="seller_asc">Vendeur A à Z</option>
               </select>
             </label>
             <span className="accounting-filter-count">

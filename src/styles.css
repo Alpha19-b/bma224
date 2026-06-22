@@ -5026,7 +5026,12 @@ textarea {
   border-top: 1px solid var(--line);
   padding: 12px 18px;
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 0.7fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns:
+    minmax(210px, 1.35fr)
+    minmax(140px, 0.7fr)
+    minmax(150px, 0.75fr)
+    minmax(170px, 0.85fr)
+    auto;
   gap: 10px;
   align-items: end;
   background: #fbfcfd;
