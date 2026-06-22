@@ -8412,14 +8412,40 @@ textarea {
 
 .storefront-v2 .store-actions > button {
   min-height: 42px;
+  flex: 0 0 auto;
+}
+
+.storefront-v2 .store-actions > .btn.secondary {
+  width: auto;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.storefront-v2 .store-action-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  stroke-width: 1.8;
+}
+
+.storefront-v2 .history-button {
+  gap: 7px;
+  padding: 0 12px;
 }
 
 .storefront-v2 .store-actions .btn.secondary,
 .storefront-v2 .account-button,
 .storefront-v2 .store-logout {
   border-color: var(--store-line);
+  border-radius: 7px;
   background: #fff;
   color: var(--store-ink);
+}
+
+.storefront-v2 .account-button,
+.storefront-v2 .store-logout {
+  display: inline-grid;
+  place-items: center;
 }
 
 .storefront-v2 .store-actions .btn.secondary:hover,
@@ -8432,6 +8458,7 @@ textarea {
 .storefront-v2 .cart-button {
   min-height: 42px;
   border-color: var(--store-ink);
+  border-radius: 7px;
   background: var(--store-ink);
 }
 

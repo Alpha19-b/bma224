@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CircleUserRound,
+  LogOut,
+  Package,
+  ShoppingBag,
+  UserRound,
+} from "lucide-react";
+import {
   adjustProductColorStock,
   adjustProductStock,
   adjustProductVariantStock,
@@ -2418,7 +2425,7 @@ function ClientPage() {
                   loadClientOrders();
                 }}
               >
-                <ActionIcon name="package" />
+                  <Package className="store-action-icon" aria-hidden="true" />
                 <span className="history-label">Mes achats</span>
                 {clientOrders.length ? (
                   <span className="history-count">{clientOrders.length}</span>
@@ -2431,7 +2438,7 @@ function ClientPage() {
                 title="Paramètres du compte"
                 onClick={() => setClientSettingsOpen(true)}
               >
-                <span className="account-icon" aria-hidden="true" />
+                  <CircleUserRound className="store-action-icon" aria-hidden="true" />
               </button>
               <button
                 className="logout-icon-button store-logout"
@@ -2440,7 +2447,7 @@ function ClientPage() {
                 title="Déconnexion"
                 onClick={handleClientSignOut}
               >
-                <span aria-hidden="true" />
+                  <LogOut className="store-action-icon" aria-hidden="true" />
               </button>
             </>
           ) : (
@@ -2451,7 +2458,7 @@ function ClientPage() {
               aria-label="Se connecter"
               onClick={() => setClientAuthOpen(true)}
             >
-              <ActionIcon name="user" />
+                <UserRound className="store-action-icon" aria-hidden="true" />
               <span>Se connecter</span>
             </button>
           )}
@@ -2464,7 +2471,7 @@ function ClientPage() {
               setCheckoutStep("cart");
             }}
           >
-            <span className="cart-symbol" aria-hidden="true" />
+              <ShoppingBag className="store-action-icon" aria-hidden="true" />
             <span className="cart-label">Panier</span>
             <span className="cart-count">{itemCount}</span>
           </button>
