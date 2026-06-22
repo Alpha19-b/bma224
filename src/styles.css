@@ -5022,6 +5022,51 @@ textarea {
   min-width: 1120px;
 }
 
+.accounting-history-filters {
+  border-top: 1px solid var(--line);
+  padding: 12px 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 0.7fr) minmax(180px, 0.8fr) auto;
+  gap: 10px;
+  align-items: end;
+  background: #fbfcfd;
+}
+
+.accounting-history-filters label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.accounting-history-filters label > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.accounting-history-filters input,
+.accounting-history-filters select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 11px;
+  background: #fff;
+}
+
+.accounting-filter-count {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .accounting-table tbody tr {
   cursor: pointer;
 }
@@ -8294,4 +8339,32 @@ textarea {
   max-height: none !important;
   object-fit: contain !important;
   object-position: center !important;
+}
+
+@media (max-width: 760px) {
+  .accounting-history-filters {
+    padding: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .accounting-history-search {
+    grid-column: 1 / -1;
+  }
+
+  .accounting-filter-count {
+    grid-column: 1 / -1;
+    min-height: 34px;
+  }
+}
+
+@media (max-width: 380px) {
+  .accounting-history-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-history-search,
+  .accounting-filter-count {
+    grid-column: 1;
+  }
 }

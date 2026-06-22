@@ -440,6 +440,14 @@ function normalizeVariantKey(value) {
     .toLowerCase();
 }
 
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function uniqueOptionValues(values = []) {
   return [
     ...new Set(
@@ -3932,6 +3940,9 @@ function AdminPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [selectedAccountingIds, setSelectedAccountingIds] = useState([]);
+  const [accountingSearch, setAccountingSearch] = useState("");
+  const [accountingPaymentFilter, setAccountingPaymentFilter] = useState("all");
+  const [accountingSort, setAccountingSort] = useState("date_desc");
   const [selectedAccountingDetailId, setSelectedAccountingDetailId] = useState("");
   const [selectedCustomerKeys, setSelectedCustomerKeys] = useState([]);
   const [selectedCustomerKey, setSelectedCustomerKey] = useState("");
@@ -4654,7 +4665,52 @@ function AdminPage() {
   const allDisplayedProductsSelected =
     displayedAdminProducts.length > 0 &&
     displayedAdminProducts.every((product) => selectedProductIds.includes(product.id));
-  const selectedAccountingRecords = accountingRecords.filter((record) =>
+  const visibleAccountingRecords = useMemo(() => {
+    const search = normalizeSearchText(accountingSearch);
+    const filtered = accountingRecords.filter((record) => {
+      const matchesPayment =
+        accountingPaymentFilter === "all" || record.paymentMethod === accountingPaymentFilter;
+      const searchable = normalizeSearchText(
+        [record.date, record.orderId, record.customer, record.paymentMethod, record.collectedBy, record.note]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      return matchesPayment && (!search || searchable.includes(search));
+    });
+
+    return filtered
+      .map((record, index) => ({ record, index }))
+      .sort((first, second) => {
+        const firstRecord = first.record;
+        const secondRecord = second.record;
+        let comparison = 0;
+
+        if (accountingSort === "date_asc") {
+          comparison = String(firstRecord.date || "").localeCompare(String(secondRecord.date || ""));
+        } else if (accountingSort === "sale_desc") {
+          comparison = Number(secondRecord.saleAmount || 0) - Number(firstRecord.saleAmount || 0);
+        } else if (accountingSort === "sale_asc") {
+          comparison = Number(firstRecord.saleAmount || 0) - Number(secondRecord.saleAmount || 0);
+        } else if (accountingSort === "margin_desc") {
+          comparison =
+            Number(secondRecord.saleAmount || 0) - Number(secondRecord.costAmount || 0) -
+            (Number(firstRecord.saleAmount || 0) - Number(firstRecord.costAmount || 0));
+        } else if (accountingSort === "customer_asc") {
+          comparison = String(firstRecord.customer || "").localeCompare(
+            String(secondRecord.customer || ""),
+            "fr",
+            { sensitivity: "base" }
+          );
+        } else {
+          comparison = String(secondRecord.date || "").localeCompare(String(firstRecord.date || ""));
+        }
+
+        return comparison || first.index - second.index;
+      })
+      .map(({ record }) => record);
+  }, [accountingRecords, accountingSearch, accountingPaymentFilter, accountingSort]);
+  const selectedAccountingRecords = visibleAccountingRecords.filter((record) =>
     selectedAccountingIds.includes(record.id)
   );
   const selectedAccountingDetail =
@@ -4663,7 +4719,8 @@ function AdminPage() {
     ? adminProducts.find((product) => product.id === selectedAccountingDetail.productId)
     : null;
   const allAccountingSelected =
-    accountingRecords.length > 0 && selectedAccountingIds.length === accountingRecords.length;
+    visibleAccountingRecords.length > 0 &&
+    visibleAccountingRecords.every((record) => selectedAccountingIds.includes(record.id));
   const selectedCustomers = customerGroups.filter((customer) =>
     selectedCustomerKeys.includes(customer.key)
   );
@@ -4990,7 +5047,9 @@ function AdminPage() {
   }
 
   function exportAccountingToExcel() {
-    const rowsToExport = selectedAccountingRecords.length ? selectedAccountingRecords : accountingRecords;
+    const rowsToExport = selectedAccountingRecords.length
+      ? selectedAccountingRecords
+      : visibleAccountingRecords;
 
     downloadExcelWorkbook(`bma-comptabilite-${getTodayDateInput()}`, [
       {
@@ -5445,8 +5504,11 @@ function AdminPage() {
   }
 
   function toggleAllAccountingSelection() {
-    setSelectedAccountingIds(
-      allAccountingSelected ? [] : accountingRecords.map((record) => record.id)
+    const visibleIds = new Set(visibleAccountingRecords.map((record) => record.id));
+    setSelectedAccountingIds((current) =>
+      allAccountingSelected
+        ? current.filter((id) => !visibleIds.has(id))
+        : [...new Set([...current, ...visibleIds])]
     );
   }
 
@@ -7851,7 +7913,7 @@ function AdminPage() {
                 icon="select"
                 label={allAccountingSelected ? "Décocher" : "Tout"}
                 title={allAccountingSelected ? "Tout décocher" : "Tout cocher"}
-                disabled={!accountingRecords.length}
+                disabled={!visibleAccountingRecords.length}
                 onClick={toggleAllAccountingSelection}
               />
               {canViewDeleteControls ? (
@@ -7894,6 +7956,49 @@ function AdminPage() {
               </button>
             </div>
           </div>
+          <div className="accounting-history-filters">
+            <label className="accounting-history-search">
+              <span>Rechercher</span>
+              <input
+                type="search"
+                placeholder="Client, commande, vendeur..."
+                value={accountingSearch}
+                onChange={(event) => {
+                  setAccountingSearch(event.target.value);
+                  setSelectedAccountingIds([]);
+                }}
+              />
+            </label>
+            <label>
+              <span>Encaissement</span>
+              <select
+                value={accountingPaymentFilter}
+                onChange={(event) => {
+                  setAccountingPaymentFilter(event.target.value);
+                  setSelectedAccountingIds([]);
+                }}
+              >
+                <option value="all">Tous</option>
+                <option value="Liquide">Liquide</option>
+                <option value="Orange Money">Orange Money</option>
+                <option value="Djomi">Djomi</option>
+              </select>
+            </label>
+            <label>
+              <span>Trier par</span>
+              <select value={accountingSort} onChange={(event) => setAccountingSort(event.target.value)}>
+                <option value="date_desc">Plus récentes</option>
+                <option value="date_asc">Plus anciennes</option>
+                <option value="sale_desc">Vente la plus élevée</option>
+                <option value="sale_asc">Vente la plus faible</option>
+                <option value="margin_desc">Marge la plus élevée</option>
+                <option value="customer_asc">Client A à Z</option>
+              </select>
+            </label>
+            <span className="accounting-filter-count">
+              {visibleAccountingRecords.length} ligne{visibleAccountingRecords.length > 1 ? "s" : ""}
+            </span>
+          </div>
           <div className="table-wrap">
             <table className="table accounting-table">
               <thead>
@@ -7913,8 +8018,8 @@ function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {accountingRecords.length ? (
-                  accountingRecords.map((record) => {
+                {visibleAccountingRecords.length ? (
+                  visibleAccountingRecords.map((record) => {
                     const isChecked = selectedAccountingIds.includes(record.id);
                     const depositedAmount = Number(record.depositAmount || 0);
                     const remainingAmount = Number(
@@ -8061,7 +8166,11 @@ function AdminPage() {
                 ) : (
                   <tr>
                     <td colSpan={canViewDeleteControls ? 12 : 11}>
-                      <div className="empty-state compact">Aucune ligne comptable enregistrée.</div>
+                      <div className="empty-state compact">
+                        {accountingRecords.length
+                          ? "Aucune ligne ne correspond aux filtres."
+                          : "Aucune ligne comptable enregistrée."}
+                      </div>
                     </td>
                   </tr>
                 )}
