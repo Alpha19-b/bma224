@@ -8384,7 +8384,7 @@ textarea {
   --store-accent-dark: #354d40;
   min-height: 100dvh;
   overflow-x: clip;
-  background: #f6f7f4;
+  background: #fbfbf9;
   color: var(--store-ink);
 }
 
@@ -8470,10 +8470,27 @@ textarea {
   color: var(--store-ink);
 }
 
+@media (min-width: 761px) {
+  .storefront-v2 .store-header {
+    justify-content: center;
+  }
+
+  .storefront-v2 .store-logo {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .storefront-v2 .store-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+}
+
 .storefront-v2 .store-main {
   width: 100%;
-  max-width: 1480px;
-  padding: 44px 32px 96px;
+  max-width: 1600px;
+  padding: 34px 28px 96px;
 }
 
 .storefront-v2 .fashion-hero {
@@ -8564,8 +8581,8 @@ textarea {
 }
 
 .storefront-v2 .catalog-toolbar {
-  margin-bottom: 26px;
-  padding: 0 0 22px;
+  margin-bottom: 18px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--store-line);
   align-items: end;
 }
@@ -8578,9 +8595,9 @@ textarea {
 .storefront-v2 .catalog-toolbar h2 {
   margin: 0;
   color: var(--store-ink);
-  font-size: clamp(27px, 3vw, 38px);
-  font-weight: 700;
-  line-height: 1.12;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .storefront-v2 .catalog-toolbar span {
@@ -8604,7 +8621,7 @@ textarea {
 }
 
 .storefront-v2 .catalog-search-wrap {
-  width: min(310px, 28vw);
+  width: min(280px, 28vw);
 }
 
 .storefront-v2 .catalog-search {
@@ -8629,13 +8646,14 @@ textarea {
 }
 
 .storefront-v2 .style-filters button {
-  min-height: 40px;
+  min-height: 38px;
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 0 13px;
   background: transparent;
   color: var(--store-muted);
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -8645,8 +8663,8 @@ textarea {
 }
 
 .storefront-v2 .style-filters button.active {
-  border-color: var(--store-accent-dark);
-  background: var(--store-accent-dark);
+  border-color: var(--store-ink);
+  background: var(--store-ink);
   color: #fff;
 }
 
@@ -8662,7 +8680,29 @@ textarea {
 
 .storefront-v2 .store-catalog .catalog {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 38px 18px;
+  gap: 42px 12px;
+}
+
+.storefront-v2 .store-catalog .catalog-count-1,
+.storefront-v2 .store-catalog .catalog-count-2,
+.storefront-v2 .store-catalog .catalog-count-3 {
+  width: 100%;
+  margin-inline: auto;
+}
+
+.storefront-v2 .store-catalog .catalog-count-1 {
+  max-width: 460px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.storefront-v2 .store-catalog .catalog-count-2 {
+  max-width: 940px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.storefront-v2 .store-catalog .catalog-count-3 {
+  max-width: 1180px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .storefront-v2 .product {
@@ -8675,26 +8715,44 @@ textarea {
 }
 
 .storefront-v2 .product-media {
-  aspect-ratio: 4 / 5;
-  border: 1px solid #e1e4df;
-  border-radius: 4px;
-  padding: 10px;
-  background: #eff1ed;
+  aspect-ratio: 3 / 4;
+  border: 0;
+  border-radius: 2px;
+  padding: 0;
+  background: #f0f0ed;
 }
 
 .storefront-v2 .product-main-image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
   object-position: center;
   object-fit: contain !important;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.28s ease;
 }
 
-.storefront-v2 .product:hover .product-main-image {
-  transform: none;
-  opacity: 0.96;
+.storefront-v2 .product-alt-image {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0;
+  background: #f0f0ed;
+  transition: opacity 0.28s ease;
+}
+
+@media (hover: hover) {
+  .storefront-v2 .product:hover .product-main-image {
+    opacity: 0;
+  }
+
+  .storefront-v2 .product:hover .product-alt-image {
+    opacity: 1;
+  }
 }
 
 .storefront-v2 .product-badges {
@@ -8765,7 +8823,7 @@ textarea {
 }
 
 .storefront-v2 .product-body {
-  padding: 12px 2px 0;
+  padding: 11px 1px 0;
   gap: 0;
 }
 
@@ -8776,16 +8834,17 @@ textarea {
 
 .storefront-v2 .product-meta span {
   color: var(--store-muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
 .storefront-v2 .product-body h3 {
   margin: 0;
   color: var(--store-ink);
-  font-size: 17px;
-  line-height: 1.25;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .storefront-v2 .product-price-row {
@@ -8793,9 +8852,9 @@ textarea {
 }
 
 .storefront-v2 .product-price-row .price {
-  color: var(--store-accent-dark);
-  font-size: 16px;
-  font-weight: 900;
+  color: var(--store-ink);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .storefront-v2 .product-price-row .old-price {
@@ -9187,7 +9246,7 @@ textarea {
 
   .storefront-v2 .catalog-toolbar h1,
   .storefront-v2 .catalog-toolbar h2 {
-    font-size: 27px;
+    font-size: 24px;
   }
 
   .storefront-v2 .catalog-controls {
@@ -9229,13 +9288,16 @@ textarea {
   }
 
   .storefront-v2 .store-catalog .catalog {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 26px 10px;
   }
 
   .storefront-v2 .product-media {
-    padding: 7px;
-    border-radius: 5px;
+    padding: 0;
+    border-radius: 2px;
   }
 
   .storefront-v2 .product-badges {

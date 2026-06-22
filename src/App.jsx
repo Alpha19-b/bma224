@@ -2527,8 +2527,7 @@ function ClientPage() {
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <span className="catalog-eyebrow">BMA · Sélection actuelle</span>
-              <h1>Les pièces du moment</h1>
+              <h1>Nouveautés</h1>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
@@ -2570,7 +2569,9 @@ function ClientPage() {
             </div>
           </div>
 
-          <div className="catalog">
+          <div
+            className={`catalog catalog-count-${Math.min(filteredProducts.length, 4)}`}
+          >
             {catalogLoading ? (
               Array.from({ length: 5 }, (_, index) => (
                 <div className="product-skeleton" key={`product-skeleton-${index}`} aria-hidden="true">
@@ -2651,13 +2652,23 @@ function ClientPage() {
 function ProductCard({ product, onOpen }) {
   const price = getProductPrice(product);
   const gallery = getProductGalleryForColor(product, "");
-  const [activeImage, setActiveImage] = useState(gallery[0]);
   const colorOptions = getProductColorOptions(product);
   const visibleColors = colorOptions.slice(0, 4);
   const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
 
   return (
-    <article className="product" onClick={onOpen}>
+    <article
+      className="product"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div className="product-media">
         <div className="product-badges">
           {product.promoPrice ? <span className="product-badge deal">Promo</span> : null}
@@ -2665,39 +2676,18 @@ function ProductCard({ product, onOpen }) {
         </div>
         <img
           className="product-main-image"
-          src={activeImage}
+          src={gallery[0]}
           alt={product.name}
         />
-        {gallery.length > 1 ? (
-          <div className="product-thumbs">
-            {gallery.slice(0, 5).map((imageUrl, index) => (
-              <button
-                className={activeImage === imageUrl ? "active" : ""}
-                key={imageUrl}
-                type="button"
-                aria-label={`Voir photo ${index + 1}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setActiveImage(imageUrl);
-                }}
-              />
-            ))}
-          </div>
+        {gallery[1] ? (
+          <img
+            className="product-alt-image"
+            src={gallery[1]}
+            alt=""
+            aria-hidden="true"
+          />
         ) : null}
         {product.stock <= 0 ? <span className="stock-badge">Rupture</span> : null}
-        {product.stock > 0 ? (
-          <button
-            className="product-quick-open"
-            type="button"
-            aria-label={`Voir ${product.name}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen();
-            }}
-          >
-            <ActionIcon name="arrow-right" />
-          </button>
-        ) : null}
       </div>
       <div className="product-body">
         <div className="product-meta">
