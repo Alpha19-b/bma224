@@ -714,13 +714,14 @@ function getProductStockDetailRows(product) {
       .map((size) => ({
         size,
         quantity: stockForColor[normalizeVariantKey(size)],
-      }))
-      .filter((row) => row.quantity !== undefined && row.quantity !== null);
-    const colorTotal =
-      product.stockByColor?.[colorKey] ??
-      (sizeRows.length
-        ? sizeRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
-        : null);
+      }));
+    const trackedSizeRows = sizeRows.filter(
+      (row) => row.quantity !== undefined && row.quantity !== null
+    );
+    const hasExactSizeStock = trackedSizeRows.length > 0;
+    const colorTotal = hasExactSizeStock
+      ? trackedSizeRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+      : product.stockByColor?.[colorKey] ?? null;
 
     if (colorTotal !== null || sizeRows.length) {
       rows.push({
@@ -728,6 +729,7 @@ function getProductStockDetailRows(product) {
         hex: color.hex,
         total: Math.max(0, Number(colorTotal || 0)),
         sizes: sizeRows,
+        hasExactSizeStock,
       });
     }
 
@@ -741,6 +743,7 @@ function getProductStockDetailRows(product) {
       hex: getKnownColorHex(colorKey),
       total: Math.max(0, Number(quantity || 0)),
       sizes: [],
+      hasExactSizeStock: false,
     });
     usedKeys.add(colorKey);
   });
@@ -758,6 +761,7 @@ function getProductStockDetailRows(product) {
       hex: getKnownColorHex(colorKey),
       total: sizes.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
       sizes,
+      hasExactSizeStock: true,
     });
   });
 
@@ -2993,10 +2997,11 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   );
 }
 
-function ProductStockDetailPanel({ product, onClose }) {
+function ProductStockDetailPanel({ product, onClose, onEdit }) {
   const rows = getProductStockDetailRows(product);
   const lowRows = rows.filter((row) => row.total > 0 && row.total <= 3);
   const outRows = rows.filter((row) => row.total <= 0);
+  const detailedRows = rows.filter((row) => row.hasExactSizeStock);
 
   return (
     <section className="section admin-action-panel stock-detail-panel" role="dialog" aria-modal="true">
@@ -3016,8 +3021,8 @@ function ProductStockDetailPanel({ product, onClose }) {
             <strong>{product.stock}</strong>
           </div>
           <div>
-            <span>Couleurs suivies</span>
-            <strong>{rows.length}</strong>
+            <span>Détail par taille</span>
+            <strong>{detailedRows.length}/{rows.length}</strong>
           </div>
           <div>
             <span>À surveiller</span>
@@ -3033,23 +3038,45 @@ function ProductStockDetailPanel({ product, onClose }) {
                   <span className="color-dot" style={getColorSwatchStyle({ value: row.color, hex: row.hex })} />
                   <strong>{row.color}</strong>
                   <b className={row.total <= 0 ? "out" : row.total <= 3 ? "low" : ""}>
-                    {row.total}
+                    Reste : {row.total}
                   </b>
                 </div>
-                {row.sizes.length ? (
+                {row.hasExactSizeStock ? (
+                  <div className="stock-size-breakdown-label">Reste par taille</div>
+                ) : null}
+                {row.hasExactSizeStock ? (
                   <div className="stock-size-grid">
-                    {row.sizes.map((sizeRow) => (
+                    {row.sizes
+                      .filter(
+                        (sizeRow) =>
+                          sizeRow.quantity !== undefined && sizeRow.quantity !== null
+                      )
+                      .map((sizeRow) => (
                       <span
                         className={Number(sizeRow.quantity || 0) <= 0 ? "out" : Number(sizeRow.quantity || 0) <= 1 ? "low" : ""}
                         key={`${row.color}-${sizeRow.size}`}
                       >
-                        {sizeRow.size}
                         <b>{sizeRow.quantity}</b>
+                        {sizeRow.size}
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <p>Stock suivi uniquement par couleur.</p>
+                  <div className="stock-size-missing">
+                    <div>
+                      <strong>Répartition par taille à renseigner</strong>
+                      {row.sizes.length ? (
+                        <span>Tailles connues : {row.sizes.map((sizeRow) => sizeRow.size).join(", ")}</span>
+                      ) : (
+                        <span>Ce stock est suivi uniquement par couleur.</span>
+                      )}
+                    </div>
+                    {onEdit ? (
+                      <button className="btn ghost compact" type="button" onClick={() => onEdit(product)}>
+                        Compléter
+                      </button>
+                    ) : null}
+                  </div>
                 )}
               </article>
             ))}
@@ -7333,6 +7360,10 @@ function AdminPage() {
             <ProductStockDetailPanel
               product={stockDetailProduct}
               onClose={closeProductStockDetails}
+              onEdit={(product) => {
+                closeProductStockDetails();
+                startProductEdit(product);
+              }}
             />
           </div>
         ) : null}
