@@ -1783,17 +1783,6 @@ function ClientPage() {
     });
   }, [availableCatalogProducts, query, styleFilter, sortMode]);
 
-  const featuredProduct = useMemo(
-    () =>
-      availableCatalogProducts.find((product) => Boolean(product.promoPrice)) ??
-      availableCatalogProducts[0] ??
-      null,
-    [availableCatalogProducts]
-  );
-  const featuredImage = featuredProduct
-    ? getProductGalleryForColor(featuredProduct, "")[0]
-    : "";
-
   const cartRows = useMemo(() => {
     return Object.values(cart).map((row) => ({
       ...row,
@@ -2535,49 +2524,11 @@ function ClientPage() {
           </div>
         ) : null}
 
-        {!catalogLoading && featuredProduct ? (
-          <section className="fashion-hero">
-            {featuredImage ? (
-              <img
-                className="fashion-hero-visual"
-                src={featuredImage}
-                alt=""
-                aria-hidden="true"
-              />
-            ) : null}
-            <div className="fashion-hero-copy">
-              <span>Nouveau drop · {featuredProduct.category || "BMA"}</span>
-              <h1>{featuredProduct.name}</h1>
-              <p>
-                {featuredProduct.description ||
-                  "Une pièce choisie pour ton style, disponible maintenant."}
-              </p>
-              <div className="fashion-hero-price">
-                <strong>{formatMoney(getProductPrice(featuredProduct))}</strong>
-                {featuredProduct.promoPrice ? (
-                  <del>{formatMoney(featuredProduct.price)}</del>
-                ) : null}
-              </div>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => setSelectedProduct(featuredProduct)}
-              >
-                Découvrir
-                <ActionIcon name="arrow-right" />
-              </button>
-              <div className="hero-stats">
-                <strong>Livraison en Guinée</strong>
-                <strong>Paiement sécurisé</strong>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h2>Les pièces du moment</h2>
+              <span className="catalog-eyebrow">BMA · Sélection actuelle</span>
+              <h1>Les pièces du moment</h1>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}

@@ -8376,24 +8376,24 @@ textarea {
 
 /* Boutique BMA 2026: sobre, mobile-first et centree sur les produits. */
 .storefront-v2 {
-  --store-ink: #111716;
-  --store-muted: #68716e;
-  --store-line: #dfe4e1;
-  --store-soft: #f2f4f2;
-  --store-accent: #087a55;
-  --store-accent-dark: #056243;
+  --store-ink: #1c211f;
+  --store-muted: #6d746f;
+  --store-line: #dde1dc;
+  --store-soft: #eef0ec;
+  --store-accent: #486556;
+  --store-accent-dark: #354d40;
   min-height: 100dvh;
   overflow-x: clip;
-  background: #f8f9f7;
+  background: #f6f7f4;
   color: var(--store-ink);
 }
 
 .storefront-v2 .store-header {
   min-height: 68px;
   padding: 10px max(24px, calc((100vw - 1420px) / 2));
-  border-bottom-color: rgba(17, 23, 22, 0.1);
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8px 28px rgba(17, 23, 22, 0.04);
+  border-bottom-color: var(--store-line);
+  background: rgba(250, 251, 248, 0.97);
+  box-shadow: none;
 }
 
 .storefront-v2 .store-logo-mark {
@@ -8404,6 +8404,9 @@ textarea {
 
 .storefront-v2 .store-logo > .logo-frame.store-logo-mark {
   display: inline-flex !important;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .storefront-v2 .store-actions {
@@ -8470,7 +8473,7 @@ textarea {
 .storefront-v2 .store-main {
   width: 100%;
   max-width: 1480px;
-  padding: 22px 32px 96px;
+  padding: 44px 32px 96px;
 }
 
 .storefront-v2 .fashion-hero {
@@ -8561,8 +8564,9 @@ textarea {
 }
 
 .storefront-v2 .catalog-toolbar {
-  margin-bottom: 22px;
-  padding: 0;
+  margin-bottom: 26px;
+  padding: 0 0 22px;
+  border-bottom: 1px solid var(--store-line);
   align-items: end;
 }
 
@@ -8570,14 +8574,25 @@ textarea {
   flex: 0 0 auto;
 }
 
+.storefront-v2 .catalog-toolbar h1,
 .storefront-v2 .catalog-toolbar h2 {
+  margin: 0;
   color: var(--store-ink);
-  font-size: clamp(25px, 3vw, 36px);
-  line-height: 1.08;
+  font-size: clamp(27px, 3vw, 38px);
+  font-weight: 700;
+  line-height: 1.12;
 }
 
 .storefront-v2 .catalog-toolbar span {
   color: var(--store-muted);
+}
+
+.storefront-v2 .catalog-toolbar .catalog-eyebrow {
+  margin: 0 0 7px;
+  color: var(--store-accent-dark);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .storefront-v2 .catalog-controls {
@@ -8596,7 +8611,7 @@ textarea {
   width: 100%;
   min-height: 44px;
   border-color: var(--store-line);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0 14px;
   color: var(--store-ink);
 }
@@ -8630,15 +8645,15 @@ textarea {
 }
 
 .storefront-v2 .style-filters button.active {
-  border-color: var(--store-ink);
-  background: var(--store-ink);
+  border-color: var(--store-accent-dark);
+  background: var(--store-accent-dark);
   color: #fff;
 }
 
 .storefront-v2 .catalog-sort {
   min-height: 44px;
   border: 1px solid var(--store-line);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0 36px 0 12px;
   background-color: #fff;
   color: var(--store-ink);
@@ -8647,7 +8662,7 @@ textarea {
 
 .storefront-v2 .store-catalog .catalog {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 34px 16px;
+  gap: 38px 18px;
 }
 
 .storefront-v2 .product {
@@ -8661,9 +8676,10 @@ textarea {
 
 .storefront-v2 .product-media {
   aspect-ratio: 4 / 5;
-  border-radius: 6px;
-  padding: 12px;
-  background: #eef1ef;
+  border: 1px solid #e1e4df;
+  border-radius: 4px;
+  padding: 10px;
+  background: #eff1ed;
 }
 
 .storefront-v2 .product-main-image {
@@ -8672,11 +8688,13 @@ textarea {
   height: 100%;
   object-fit: contain;
   object-position: center;
-  transition: transform 0.24s ease;
+  object-fit: contain !important;
+  transition: opacity 0.18s ease;
 }
 
 .storefront-v2 .product:hover .product-main-image {
-  transform: scale(1.018);
+  transform: none;
+  opacity: 0.96;
 }
 
 .storefront-v2 .product-badges {
@@ -8695,7 +8713,7 @@ textarea {
 }
 
 .storefront-v2 .product-badge.deal {
-  background: var(--store-accent);
+  background: var(--store-accent-dark);
   color: #fff;
 }
 
@@ -8735,12 +8753,13 @@ textarea {
   place-items: center;
   background: rgba(255, 255, 255, 0.95);
   color: var(--store-ink);
-  box-shadow: 0 7px 20px rgba(17, 23, 22, 0.16);
+  border: 1px solid rgba(28, 33, 31, 0.12);
+  box-shadow: none;
   transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
 .storefront-v2 .product-quick-open:hover {
-  background: var(--store-ink);
+  background: var(--store-accent-dark);
   color: #fff;
   transform: translateX(2px);
 }
@@ -8774,7 +8793,7 @@ textarea {
 }
 
 .storefront-v2 .product-price-row .price {
-  color: var(--store-ink);
+  color: var(--store-accent-dark);
   font-size: 16px;
   font-weight: 900;
 }
@@ -8821,8 +8840,8 @@ textarea {
 .storefront-v2 .product-detail-overlay {
   z-index: 100;
   padding: 24px;
-  background: rgba(8, 12, 11, 0.68);
-  backdrop-filter: blur(6px);
+  background: rgba(28, 33, 31, 0.52);
+  backdrop-filter: blur(4px);
 }
 
 .storefront-v2 .product-detail {
@@ -8856,7 +8875,7 @@ textarea {
   position: relative;
   padding: 18px;
   gap: 10px;
-  background: #eef1ef;
+  background: #eff1ed;
 }
 
 .storefront-v2 .detail-main-image {
@@ -8869,7 +8888,7 @@ textarea {
   overflow: hidden !important;
   border: 0;
   border-radius: 5px;
-  background: #f7f8f7;
+  background: #f7f8f5;
 }
 
 .storefront-v2 .detail-main-image > img {
@@ -8877,6 +8896,7 @@ textarea {
   height: 100% !important;
   max-height: 100% !important;
   object-fit: contain !important;
+  object-position: center !important;
 }
 
 .storefront-v2 .detail-gallery-controls {
@@ -9165,6 +9185,7 @@ textarea {
     gap: 14px;
   }
 
+  .storefront-v2 .catalog-toolbar h1,
   .storefront-v2 .catalog-toolbar h2 {
     font-size: 27px;
   }
