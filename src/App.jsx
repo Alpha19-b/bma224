@@ -364,6 +364,20 @@ function ActionIcon({ name }) {
           <path d="M6 6l12 12" />
         </svg>
       );
+    case "arrow-left":
+      return (
+        <svg {...commonProps}>
+          <path d="M19 12H5" />
+          <path d="M11 18l-6-6 6-6" />
+        </svg>
+      );
+    case "arrow-right":
+      return (
+        <svg {...commonProps}>
+          <path d="M5 12h14" />
+          <path d="M13 6l6 6-6 6" />
+        </svg>
+      );
     case "wallet":
       return (
         <svg {...commonProps}>
@@ -2380,16 +2394,15 @@ function ClientPage() {
   }
 
   return (
-    <div className="storefront">
+    <div className="storefront storefront-v2">
       <header className="store-header">
         <button
           className="store-logo"
           type="button"
-          aria-label="BMA Family"
+          aria-label="Accueil BMA"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
           <LogoMark className="store-logo-mark" />
-          <span>Family</span>
         </button>
 
         <div className="store-actions">
@@ -2445,6 +2458,7 @@ function ClientPage() {
           <button
             className="cart-button"
             type="button"
+            aria-label={`Panier, ${itemCount} article${itemCount > 1 ? "s" : ""}`}
             onClick={() => {
               setCartOpen(true);
               setCheckoutStep("cart");
@@ -2525,11 +2539,11 @@ function ClientPage() {
               />
             ) : null}
             <div className="fashion-hero-copy">
-              <span>{featuredProduct.category || "Nouveau drop"}</span>
+              <span>Nouveau drop · {featuredProduct.category || "BMA"}</span>
               <h1>{featuredProduct.name}</h1>
               <p>
                 {featuredProduct.description ||
-                  "Une pièce sélectionnée par BMA, disponible maintenant."}
+                  "Une pièce choisie pour ton style, disponible maintenant."}
               </p>
               <div className="fashion-hero-price">
                 <strong>{formatMoney(getProductPrice(featuredProduct))}</strong>
@@ -2542,7 +2556,8 @@ function ClientPage() {
                 type="button"
                 onClick={() => setSelectedProduct(featuredProduct)}
               >
-                Voir l’article
+                Découvrir
+                <ActionIcon name="arrow-right" />
               </button>
               <div className="hero-stats">
                 <strong>Livraison en Guinée</strong>
@@ -2555,7 +2570,7 @@ function ClientPage() {
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h2>La sélection BMA</h2>
+              <h2>Les pièces du moment</h2>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
@@ -2679,11 +2694,9 @@ function ProductCard({ product, onOpen }) {
   const price = getProductPrice(product);
   const gallery = getProductGalleryForColor(product, "");
   const [activeImage, setActiveImage] = useState(gallery[0]);
-  const hasOptions = Boolean(product.sizes?.length || product.colors?.length);
   const colorOptions = getProductColorOptions(product);
   const visibleColors = colorOptions.slice(0, 4);
   const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
-  const sizeCount = uniqueOptionValues(product.sizes ?? []).length;
 
   return (
     <article className="product" onClick={onOpen}>
@@ -2714,29 +2727,28 @@ function ProductCard({ product, onOpen }) {
           </div>
         ) : null}
         {product.stock <= 0 ? <span className="stock-badge">Rupture</span> : null}
+        {product.stock > 0 ? (
+          <button
+            className="product-quick-open"
+            type="button"
+            aria-label={`Voir ${product.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen();
+            }}
+          >
+            <ActionIcon name="arrow-right" />
+          </button>
+        ) : null}
       </div>
       <div className="product-body">
-        <h3>{product.name}</h3>
         <div className="product-meta">
           <span>{product.category}</span>
         </div>
+        <h3>{product.name}</h3>
         <div className="product-price-row">
           <span className="price">{formatMoney(price)}</span>
           {product.promoPrice ? <span className="old-price">{formatMoney(product.price)}</span> : null}
-        </div>
-        <div className="product-mini-facts">
-          {hasOptions ? (
-            <>
-              {colorOptions.length ? (
-                <span>{colorOptions.length} couleur{colorOptions.length > 1 ? "s" : ""}</span>
-              ) : null}
-              {sizeCount ? (
-                <span>{sizeCount} taille{sizeCount > 1 ? "s" : ""}</span>
-              ) : null}
-            </>
-          ) : (
-            <span>Voir les détails</span>
-          )}
         </div>
         {visibleColors.length ? (
           <div className="product-color-row" aria-label="Couleurs disponibles">
@@ -2753,24 +2765,7 @@ function ProductCard({ product, onOpen }) {
             ) : null}
           </div>
         ) : null}
-        {product.stock > 0 ? (
-          <div className="product-buy-row">
-            <button
-              className="btn product-cta"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpen();
-              }}
-            >
-              {hasOptions ? "Choisir les options" : "Voir l'article"}
-            </button>
-          </div>
-        ) : (
-          <button className="btn product-cta" disabled>
-            Indisponible
-          </button>
-        )}
+        {product.stock <= 0 ? <span className="product-unavailable">Indisponible</span> : null}
       </div>
     </article>
   );
@@ -2869,8 +2864,8 @@ function ProductDetailModal({ product, onAdd, onClose }) {
       }}
     >
       <section className="product-detail" role="dialog" aria-modal="true" aria-label={product.name}>
-        <button className="detail-close" type="button" onClick={onClose}>
-          Fermer
+        <button className="detail-close" type="button" aria-label="Fermer" onClick={onClose}>
+          <ActionIcon name="x" />
         </button>
 
         <div className="detail-gallery">
@@ -2880,6 +2875,17 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             onTouchEnd={handleGalleryTouchEnd}
           >
             <img src={activeImage} alt={product.name} />
+            {gallery.length > 1 ? (
+              <div className="detail-gallery-controls">
+                <button type="button" aria-label="Photo précédente" onClick={() => moveGallery(-1)}>
+                  <ActionIcon name="arrow-left" />
+                </button>
+                <span>{Math.max(1, gallery.indexOf(activeImage) + 1)} / {gallery.length}</span>
+                <button type="button" aria-label="Photo suivante" onClick={() => moveGallery(1)}>
+                  <ActionIcon name="arrow-right" />
+                </button>
+              </div>
+            ) : null}
           </div>
           {gallery.length > 1 ? (
             <div className="detail-thumbs">
