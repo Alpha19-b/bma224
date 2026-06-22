@@ -2997,11 +2997,86 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   );
 }
 
-function ProductStockDetailPanel({ product, onClose, onEdit }) {
+function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
   const rows = getProductStockDetailRows(product);
-  const lowRows = rows.filter((row) => row.total > 0 && row.total <= 3);
-  const outRows = rows.filter((row) => row.total <= 0);
   const detailedRows = rows.filter((row) => row.hasExactSizeStock);
+  const displayedColorTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const productTotal = Math.max(0, Number(product.stock || 0));
+  const stockIsInconsistent = Boolean(rows.length && displayedColorTotal !== productTotal);
+  const reliableRows = stockIsInconsistent
+    ? rows.filter((row) => row.hasExactSizeStock)
+    : rows;
+  const lowRows = reliableRows.filter((row) => row.total > 0 && row.total <= 3);
+  const outRows = reliableRows.filter((row) => row.total <= 0);
+  const stockNeedsDistribution = detailedRows.length !== rows.length || stockIsInconsistent;
+  const [isDistributing, setIsDistributing] = useState(false);
+  const [distributionDraft, setDistributionDraft] = useState(() => {
+    const draft = {};
+
+    rows.forEach((row) => {
+      const colorKey = normalizeVariantKey(row.color);
+
+      if (row.sizes.length) {
+        row.sizes.forEach((sizeRow) => {
+          const key = `${colorKey}::${normalizeVariantKey(sizeRow.size)}`;
+          draft[key] = row.hasExactSizeStock ? String(sizeRow.quantity ?? 0) : "";
+        });
+      } else {
+        draft[`${colorKey}::__color`] = row.hasExactSizeStock ? String(row.total) : "";
+      }
+    });
+
+    return draft;
+  });
+  const [isSavingDistribution, setIsSavingDistribution] = useState(false);
+
+  const distributedTotal = Object.values(distributionDraft).reduce(
+    (sum, value) => sum + Math.max(0, Number(value) || 0),
+    0
+  );
+
+  function updateDistributionValue(key, value) {
+    const cleanValue = String(value ?? "").replace(/[^\d]/g, "");
+    setDistributionDraft((current) => ({ ...current, [key]: cleanValue }));
+  }
+
+  async function saveDistribution() {
+    if (distributedTotal !== productTotal || !onSaveDistribution) return;
+
+    const stockByColor = {};
+    const stockByVariant = {};
+
+    rows.forEach((row) => {
+      const colorKey = normalizeVariantKey(row.color);
+
+      if (row.sizes.length) {
+        stockByVariant[colorKey] = {};
+        row.sizes.forEach((sizeRow) => {
+          const sizeKey = normalizeVariantKey(sizeRow.size);
+          const quantity = Math.max(
+            0,
+            Number(distributionDraft[`${colorKey}::${sizeKey}`]) || 0
+          );
+          stockByVariant[colorKey][sizeKey] = quantity;
+        });
+        stockByColor[colorKey] = Object.values(stockByVariant[colorKey]).reduce(
+          (sum, quantity) => sum + quantity,
+          0
+        );
+      } else {
+        stockByColor[colorKey] = Math.max(
+          0,
+          Number(distributionDraft[`${colorKey}::__color`]) || 0
+        );
+      }
+    });
+
+    setIsSavingDistribution(true);
+    const saved = await onSaveDistribution(product, { stockByColor, stockByVariant });
+    setIsSavingDistribution(false);
+
+    if (saved) setIsDistributing(false);
+  }
 
   return (
     <section className="section admin-action-panel stock-detail-panel" role="dialog" aria-modal="true">
@@ -3030,15 +3105,125 @@ function ProductStockDetailPanel({ product, onClose, onEdit }) {
           </div>
         </div>
 
-        {rows.length ? (
+        {stockNeedsDistribution && !isDistributing ? (
+          <div className="stock-consistency-alert">
+            <div>
+              <strong>Répartition à corriger</strong>
+              <span>
+                Le stock réel est de {productTotal}. Répartis-le une fois entre les couleurs et tailles.
+              </span>
+            </div>
+            <button className="btn" type="button" onClick={() => setIsDistributing(true)}>
+              Répartir le stock
+            </button>
+          </div>
+        ) : null}
+
+        {isDistributing ? (
+          <div className="stock-distribution-editor">
+            <div className="stock-distribution-head">
+              <div>
+                <strong>Stock restant par variante</strong>
+                <span>Indique où se trouvent les {productTotal} pièces restantes.</span>
+              </div>
+              <b className={distributedTotal === productTotal ? "complete" : ""}>
+                {distributedTotal} / {productTotal}
+              </b>
+            </div>
+
+            <div className="stock-distribution-colors">
+              {rows.map((row) => {
+                const colorKey = normalizeVariantKey(row.color);
+                return (
+                  <div className="stock-distribution-color" key={`distribution-${row.color}`}>
+                    <div className="stock-distribution-color-name">
+                      <span className="color-dot" style={getColorSwatchStyle({ value: row.color, hex: row.hex })} />
+                      <strong>{row.color}</strong>
+                    </div>
+                    <div className="stock-distribution-inputs">
+                      {row.sizes.length ? (
+                        row.sizes.map((sizeRow) => {
+                          const key = `${colorKey}::${normalizeVariantKey(sizeRow.size)}`;
+                          return (
+                            <label key={key}>
+                              <span>{sizeRow.size}</span>
+                              <input
+                                inputMode="numeric"
+                                min="0"
+                                type="number"
+                                value={distributionDraft[key] ?? ""}
+                                onChange={(event) => updateDistributionValue(key, event.target.value)}
+                              />
+                            </label>
+                          );
+                        })
+                      ) : (
+                        <label>
+                          <span>Quantité</span>
+                          <input
+                            inputMode="numeric"
+                            min="0"
+                            type="number"
+                            value={distributionDraft[`${colorKey}::__color`] ?? ""}
+                            onChange={(event) =>
+                              updateDistributionValue(`${colorKey}::__color`, event.target.value)
+                            }
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {distributedTotal !== productTotal ? (
+              <p className="stock-distribution-help">
+                {distributedTotal < productTotal
+                  ? `Il reste ${productTotal - distributedTotal} pièce(s) à répartir.`
+                  : `Retire ${distributedTotal - productTotal} pièce(s) pour retrouver le total réel.`}
+              </p>
+            ) : (
+              <p className="stock-distribution-help complete">La répartition correspond au stock réel.</p>
+            )}
+
+            <div className="stock-distribution-actions">
+              <button className="btn ghost" type="button" onClick={() => setIsDistributing(false)}>
+                Annuler
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={distributedTotal !== productTotal || isSavingDistribution}
+                onClick={saveDistribution}
+              >
+                {isSavingDistribution ? "Enregistrement..." : "Enregistrer la répartition"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {rows.length && !isDistributing ? (
           <div className="stock-detail-list">
             {rows.map((row) => (
               <article className="stock-detail-card" key={row.color}>
                 <div className="stock-detail-card-head">
                   <span className="color-dot" style={getColorSwatchStyle({ value: row.color, hex: row.hex })} />
                   <strong>{row.color}</strong>
-                  <b className={row.total <= 0 ? "out" : row.total <= 3 ? "low" : ""}>
-                    Reste : {row.total}
+                  <b
+                    className={
+                      stockIsInconsistent && !row.hasExactSizeStock
+                        ? "pending"
+                        : row.total <= 0
+                          ? "out"
+                          : row.total <= 3
+                            ? "low"
+                            : ""
+                    }
+                  >
+                    {stockIsInconsistent && !row.hasExactSizeStock
+                      ? "À répartir"
+                      : `Reste : ${row.total}`}
                   </b>
                 </div>
                 {row.hasExactSizeStock ? (
@@ -3064,28 +3249,23 @@ function ProductStockDetailPanel({ product, onClose, onEdit }) {
                 ) : (
                   <div className="stock-size-missing">
                     <div>
-                      <strong>Répartition par taille à renseigner</strong>
+                      <strong>Détail par taille non renseigné</strong>
                       {row.sizes.length ? (
                         <span>Tailles connues : {row.sizes.map((sizeRow) => sizeRow.size).join(", ")}</span>
                       ) : (
                         <span>Ce stock est suivi uniquement par couleur.</span>
                       )}
                     </div>
-                    {onEdit ? (
-                      <button className="btn ghost compact" type="button" onClick={() => onEdit(product)}>
-                        Compléter
-                      </button>
-                    ) : null}
                   </div>
                 )}
               </article>
             ))}
           </div>
-        ) : (
+        ) : !isDistributing ? (
           <div className="empty-state compact">
             Aucun détail couleur/taille enregistré pour cet article.
           </div>
-        )}
+        ) : null}
       </div>
     </section>
   );
@@ -6140,6 +6320,34 @@ function AdminPage() {
     showToast("Stock enregistré.");
   }
 
+  async function saveProductStockDistribution(product, { stockByColor, stockByVariant }) {
+    const optionsResult = await replaceProductOptions(product.id, {
+      sizes: product.globalSizes ?? [],
+      colors: product.colors ?? [],
+      sizesByColor: product.sizesByColor ?? {},
+      stockByColor,
+      stockByVariant,
+    });
+
+    if (optionsResult.error) {
+      showToast(
+        `Répartition non enregistrée : ${getFriendlyErrorMessage(optionsResult.error, "stock")}`,
+        "issue"
+      );
+      return false;
+    }
+
+    setAdminProducts((current) =>
+      current.map((currentProduct) =>
+        currentProduct.id === product.id
+          ? { ...currentProduct, stockByColor, stockByVariant }
+          : currentProduct
+      )
+    );
+    showToast("Répartition du stock enregistrée.");
+    return true;
+  }
+
   async function updateOrderStatus(orderOrId, nextStatus) {
     const targetOrder =
       typeof orderOrId === "string"
@@ -7360,10 +7568,7 @@ function AdminPage() {
             <ProductStockDetailPanel
               product={stockDetailProduct}
               onClose={closeProductStockDetails}
-              onEdit={(product) => {
-                closeProductStockDetails();
-                startProductEdit(product);
-              }}
+              onSaveDistribution={saveProductStockDistribution}
             />
           </div>
         ) : null}
