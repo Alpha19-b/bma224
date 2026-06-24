@@ -2628,6 +2628,73 @@ function ClientPage() {
           onRemove={removeFromCart}
           onCheckout={createTestOrder}
         />
+        <footer className="store-footer">
+          <div className="store-footer-brand">
+            <LogoMark className="store-footer-logo" />
+            <div>
+              <strong>BMA Family</strong>
+              <span>Bien Mieux A plusieurs.</span>
+            </div>
+          </div>
+
+          <div className="store-footer-grid">
+            <section>
+              <h2>Commander</h2>
+              <button
+                type="button"
+                onClick={() =>
+                  document.getElementById("articles")?.scrollIntoView({ behavior: "smooth" })
+                }
+              >
+                Voir les articles
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCartOpen(true);
+                  setCheckoutStep("cart");
+                }}
+              >
+                Ouvrir le panier
+              </button>
+            </section>
+
+            <section>
+              <h2>Compte</h2>
+              {customerSession ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClientOrdersOpen(true);
+                      loadClientOrders();
+                    }}
+                  >
+                    Mes achats
+                  </button>
+                  <button type="button" onClick={() => setClientSettingsOpen(true)}>
+                    Mes informations
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setClientAuthOpen(true)}>
+                  Se connecter
+                </button>
+              )}
+            </section>
+
+            <section>
+              <h2>Service</h2>
+              <p>Livraison en Guinee avec position GPS ou repere clair.</p>
+              <p>Paiement Djomi, Orange Money ou suivi de commande.</p>
+            </section>
+          </div>
+
+          <div className="store-footer-bottom">
+            <span>BMA 224</span>
+            <span>Mode, accessoires et bons plans selectionnes.</span>
+          </div>
+        </footer>
         {itemCount > 0 ? (
           <button
             className="mobile-cart-bar"
