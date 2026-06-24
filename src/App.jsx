@@ -2527,7 +2527,7 @@ function ClientPage() {
         <section className="store-catalog" id="articles">
           <div className="catalog-toolbar">
             <div>
-              <h1>Nouveautés</h1>
+              <h1>Drop BMA</h1>
               {!catalogLoading && filteredProducts.length ? (
                 <span>
                   {filteredProducts.length} article{filteredProducts.length > 1 ? "s" : ""} disponible{filteredProducts.length > 1 ? "s" : ""}
