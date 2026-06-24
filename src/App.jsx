@@ -3,6 +3,7 @@ import {
   CircleUserRound,
   LogOut,
   Package,
+  Search,
   ShoppingBag,
   UserRound,
 } from "lucide-react";
@@ -1453,6 +1454,7 @@ function App() {
 
 function ClientPage() {
   const [query, setQuery] = useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [styleFilter, setStyleFilter] = useState("all");
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -1485,6 +1487,7 @@ function ClientPage() {
   const [isCheckoutSubmitting, setIsCheckoutSubmitting] = useState(false);
   const [checkout, setCheckout] = useState(emptyCheckout);
   const [paymentReturnStatus, setPaymentReturnStatus] = useState(null);
+  const catalogSearchRef = useRef(null);
   const paymentReturnHandledRef = useRef(false);
 
   useEffect(() => {
@@ -2534,12 +2537,37 @@ function ClientPage() {
                 </span>
               ) : null}
             </div>
-            <div className="catalog-controls">
-              <div className="catalog-search-wrap">
+            <div className={`catalog-controls ${mobileSearchOpen || query ? "search-open" : ""}`}>
+              <div className={`catalog-search-wrap ${mobileSearchOpen || query ? "is-open" : ""}`}>
+                <button
+                  className="catalog-search-toggle"
+                  type="button"
+                  aria-label="Rechercher"
+                  onClick={() => {
+                    if (!mobileSearchOpen) {
+                      setMobileSearchOpen(true);
+                      window.setTimeout(() => catalogSearchRef.current?.focus(), 0);
+                    } else if (!query) {
+                      setMobileSearchOpen(false);
+                    } else {
+                      catalogSearchRef.current?.focus();
+                    }
+                  }}
+                >
+                  <Search className="store-action-icon" aria-hidden="true" />
+                </button>
                 <input
+                  ref={catalogSearchRef}
                   className="search catalog-search"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setMobileSearchOpen(true);
+                  }}
+                  onFocus={() => setMobileSearchOpen(true)}
+                  onBlur={() => {
+                    if (!query) setMobileSearchOpen(false);
+                  }}
                   placeholder="Rechercher un article"
                 />
               </div>
