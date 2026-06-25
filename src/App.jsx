@@ -569,14 +569,31 @@ function getProductStockForColor(product, colorValue = "") {
   return Math.max(0, Number(product.stock || 0));
 }
 
+function getVariantStockMap(product, colorValue = "") {
+  const colorKey = normalizeVariantKey(colorValue);
+  const stockByVariant = product.stockByVariant ?? {};
+  const stockMap = stockByVariant[colorKey] ?? stockByVariant[colorValue] ?? {};
+
+  return stockMap && typeof stockMap === "object" ? stockMap : {};
+}
+
+function hasTrackedVariantStock(product, colorValue = "") {
+  return Object.keys(getVariantStockMap(product, colorValue)).length > 0;
+}
+
 function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const sizeKey = normalizeVariantKey(sizeValue);
-  const stockByVariant = product.stockByVariant ?? {};
-  const exactStock = colorKey && sizeKey ? stockByVariant[colorKey]?.[sizeKey] : undefined;
+  const stockForColor = getVariantStockMap(product, colorValue);
+  const exactStock =
+    colorKey && sizeKey ? stockForColor[sizeKey] ?? stockForColor[sizeValue] : undefined;
 
   if (exactStock !== undefined && exactStock !== null) {
     return Math.max(0, Number(exactStock) || 0);
+  }
+
+  if (colorKey && sizeKey && hasTrackedVariantStock(product, colorValue)) {
+    return 0;
   }
 
   return getProductStockForColor(product, colorValue);
@@ -585,11 +602,14 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
 function hasExactVariantStock(product, colorValue = "", sizeValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const sizeKey = normalizeVariantKey(sizeValue);
+  const stockForColor = getVariantStockMap(product, colorValue);
+  const exactStock = stockForColor[sizeKey] ?? stockForColor[sizeValue];
+
   return Boolean(
     colorKey &&
       sizeKey &&
-      product.stockByVariant?.[colorKey]?.[sizeKey] !== undefined &&
-      product.stockByVariant?.[colorKey]?.[sizeKey] !== null
+      exactStock !== undefined &&
+      exactStock !== null
   );
 }
 
@@ -701,11 +721,11 @@ function getProductStockBreakdown(product, limit = 3) {
 
   colors.forEach((color) => {
     const colorKey = normalizeVariantKey(color.value);
-    const stockForColor = product.stockByVariant?.[colorKey] ?? {};
+    const stockForColor = getVariantStockMap(product, color.value);
     const sizes = getProductSizeOptions(product, color.value);
     const sizeParts = sizes
       .map((size) => {
-        const quantity = stockForColor[normalizeVariantKey(size)];
+        const quantity = stockForColor[normalizeVariantKey(size)] ?? stockForColor[size];
         return quantity === undefined || quantity === null ? "" : `${size} ${quantity}`;
       })
       .filter(Boolean);
@@ -739,11 +759,11 @@ function getProductStockDetailRows(product) {
 
   colors.forEach((color) => {
     const colorKey = normalizeVariantKey(color.value);
-    const stockForColor = product.stockByVariant?.[colorKey] ?? {};
+    const stockForColor = getVariantStockMap(product, color.value);
     const sizeRows = getProductSizeOptions(product, color.value)
       .map((size) => ({
         size,
-        quantity: stockForColor[normalizeVariantKey(size)],
+        quantity: stockForColor[normalizeVariantKey(size)] ?? stockForColor[size],
       }));
     const trackedSizeRows = sizeRows.filter(
       (row) => row.quantity !== undefined && row.quantity !== null
@@ -796,6 +816,24 @@ function getProductStockDetailRows(product) {
   });
 
   return rows;
+}
+
+function getProductEffectiveStock(product) {
+  const baseStock = Math.max(0, Number(product.stock || 0));
+  const hasDetailedColorStock = Object.keys(product.stockByColor ?? {}).length > 0;
+  const hasDetailedVariantStock = Object.values(product.stockByVariant ?? {}).some(
+    (stockForColor) =>
+      stockForColor && typeof stockForColor === "object" && Object.keys(stockForColor).length > 0
+  );
+
+  if (!hasDetailedColorStock && !hasDetailedVariantStock) {
+    return baseStock;
+  }
+
+  return getProductStockDetailRows(product).reduce(
+    (sum, row) => sum + Math.max(0, Number(row.total || 0)),
+    0
+  );
 }
 
 function parseManualVariantRows(rawText, product) {
@@ -1738,7 +1776,7 @@ function ClientPage() {
   }, [customerSession]);
 
   const availableCatalogProducts = useMemo(
-    () => catalogProducts.filter((product) => Number(product.stock || 0) > 0),
+    () => catalogProducts.filter((product) => getProductEffectiveStock(product) > 0),
     [catalogProducts]
   );
 
@@ -1806,8 +1844,14 @@ function ClientPage() {
   function addToCart(product, options = {}) {
     const selectedSize = options.size || getProductSizeOptions(product)[0] || "";
     const selectedColor = options.color || "";
+    const productNeedsColor = getProductColorOptions(product).length > 0;
     const stockLimit = getProductStockForSelection(product, selectedColor, selectedSize);
     const requestedQuantity = clampQuantity(options.quantity ?? 1, stockLimit);
+
+    if ((productNeedsColor && !selectedColor) || stockLimit <= 0 || requestedQuantity <= 0) {
+      return;
+    }
+
     const cartKey = `${product.id}|${selectedSize || "no-size"}|${selectedColor || "no-color"}`;
 
     setCart((current) => {
@@ -2749,7 +2793,8 @@ function ProductCard({ product, onOpen }) {
   const gallery = getProductGalleryForColor(product, "");
   const colorOptions = getProductColorOptions(product);
   const visibleColors = colorOptions.slice(0, 4);
-  const lowStock = Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3;
+  const effectiveStock = getProductEffectiveStock(product);
+  const lowStock = effectiveStock > 0 && effectiveStock <= 3;
 
   return (
     <article
@@ -2782,7 +2827,7 @@ function ProductCard({ product, onOpen }) {
             aria-hidden="true"
           />
         ) : null}
-        {product.stock <= 0 ? <span className="stock-badge">Rupture</span> : null}
+        {effectiveStock <= 0 ? <span className="stock-badge">Rupture</span> : null}
       </div>
       <div className="product-body">
         <div className="product-meta">
@@ -2808,7 +2853,7 @@ function ProductCard({ product, onOpen }) {
             ) : null}
           </div>
         ) : null}
-        {product.stock <= 0 ? <span className="product-unavailable">Indisponible</span> : null}
+        {effectiveStock <= 0 ? <span className="product-unavailable">Indisponible</span> : null}
       </div>
     </article>
   );
@@ -2816,6 +2861,7 @@ function ProductCard({ product, onOpen }) {
 
 function ProductDetailModal({ product, onAdd, onClose }) {
   const colorOptions = getProductColorOptions(product);
+  const effectiveStock = getProductEffectiveStock(product);
   const [selectedColor, setSelectedColor] = useState("");
   const gallery = getProductGalleryForColor(product, selectedColor);
   const sizeOptions = getProductSizeOptions(product, selectedColor);
@@ -2825,6 +2871,14 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const [quantity, setQuantity] = useState(1);
   const swipeStartRef = useRef(null);
   const price = getProductPrice(product);
+
+  function getPreferredAvailableSize(sizes, colorValue) {
+    return (
+      sizes.find((size) => getProductStockForSelection(product, colorValue, size) > 0) ||
+      sizes[0] ||
+      ""
+    );
+  }
 
   function moveGallery(direction) {
     if (gallery.length <= 1) return;
@@ -2861,26 +2915,32 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   useEffect(() => {
     const nextGallery = getProductGalleryForColor(product, "");
     const nextSizeOptions = getProductSizeOptions(product, "");
+    const preferredSize = getPreferredAvailableSize(nextSizeOptions, "");
     setSelectedColor("");
     setActiveImage(nextGallery[0]);
-    setSelectedSize(nextSizeOptions[0] || "");
+    setSelectedSize(preferredSize);
     setQuantity(1);
   }, [product.id]);
 
   useEffect(() => {
     const nextGallery = getProductGalleryForColor(product, selectedColor);
     const nextSizeOptions = getProductSizeOptions(product, selectedColor);
+    const preferredSize = getPreferredAvailableSize(nextSizeOptions, selectedColor);
 
     setActiveImage((current) =>
       nextGallery.includes(current) ? current : nextGallery[0]
     );
-    setSelectedSize((current) =>
-      nextSizeOptions.includes(current) ? current : nextSizeOptions[0] || ""
-    );
+    setSelectedSize((current) => {
+      const currentIsAvailable =
+        nextSizeOptions.includes(current) &&
+        getProductStockForSelection(product, selectedColor, current) > 0;
+
+      return currentIsAvailable ? current : preferredSize;
+    });
     setQuantity((current) =>
       clampQuantity(
         current,
-        getProductStockForSelection(product, selectedColor, nextSizeOptions[0] || "")
+        getProductStockForSelection(product, selectedColor, preferredSize)
       )
     );
   }, [product.id, selectedColor]);
@@ -2954,7 +3014,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             {product.promoPrice ? <span>{formatMoney(product.price)}</span> : null}
           </div>
           {product.description ? <p>{product.description}</p> : null}
-          {product.stock > 0 ? (
+          {effectiveStock > 0 ? (
             <div className="detail-stock-note">
               <strong>{lowStockLabel(selectedStock)}</strong>
               <span>Taille, couleur et quantité enregistrées dans la commande.</span>
@@ -2990,31 +3050,28 @@ function ProductDetailModal({ product, onAdd, onClose }) {
                 <span>{selectedSize}</span>
               </div>
               <div className="option-list">
-                {sizeOptions.map((size) => (
-                  <button
-                    className={[
-                      selectedSize === size ? "active" : "",
-                      hasExactVariantStock(product, selectedColor, size) &&
-                      getProductStockForSelection(product, selectedColor, size) <= 0
-                        ? "is-out"
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    disabled={
-                      hasExactVariantStock(product, selectedColor, size) &&
-                      getProductStockForSelection(product, selectedColor, size) <= 0
-                    }
-                    key={size}
-                    type="button"
-                    onClick={() => setSelectedSize(size)}
-                  >
-                    <span>{size}</span>
-                    {hasExactVariantStock(product, selectedColor, size) ? (
-                      <small>{getProductStockForSelection(product, selectedColor, size)}</small>
-                    ) : null}
-                  </button>
-                ))}
+                {sizeOptions.map((size) => {
+                  const sizeStock = getProductStockForSelection(product, selectedColor, size);
+                  const sizeHasTrackedStock =
+                    hasExactVariantStock(product, selectedColor, size) ||
+                    (selectedColor && hasTrackedVariantStock(product, selectedColor));
+                  const sizeIsOut = sizeHasTrackedStock && sizeStock <= 0;
+
+                  return (
+                    <button
+                      className={[selectedSize === size ? "active" : "", sizeIsOut ? "is-out" : ""]
+                        .filter(Boolean)
+                        .join(" ")}
+                      disabled={sizeIsOut}
+                      key={size}
+                      type="button"
+                      onClick={() => setSelectedSize(size)}
+                    >
+                      <span>{size}</span>
+                      {sizeHasTrackedStock ? <small>{sizeStock}</small> : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -3036,7 +3093,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             <button
               className="btn"
               type="button"
-              disabled={product.stock <= 0 || (colorOptions.length > 0 && !selectedColor) || selectedStock <= 0}
+              disabled={effectiveStock <= 0 || (colorOptions.length > 0 && !selectedColor) || selectedStock <= 0}
               onClick={() =>
                 onAdd(product, {
                   quantity,
@@ -4432,8 +4489,8 @@ function AdminPage() {
     (product) => product.id === accountingForm.saleProductId
   );
   const stockDetailProduct = adminProducts.find((product) => product.id === stockDetailProductId);
-  const availableAdminProducts = adminProducts.filter((product) => Number(product.stock || 0) > 0);
-  const outOfStockProducts = adminProducts.filter((product) => Number(product.stock || 0) <= 0);
+  const availableAdminProducts = adminProducts.filter((product) => getProductEffectiveStock(product) > 0);
+  const outOfStockProducts = adminProducts.filter((product) => getProductEffectiveStock(product) <= 0);
   const displayedAdminProducts =
     productStockView === "out_of_stock" ? outOfStockProducts : availableAdminProducts;
   const saleQuantity = Math.max(1, getDraftAmount(accountingForm.saleQuantity, 1));
@@ -4527,7 +4584,7 @@ function AdminPage() {
   );
   const unpaidOrders = adminOrders.filter((order) => order.payment !== "Payé");
   const lowStockProducts = adminProducts.filter((product) => {
-    const stock = Number(product.stock || 0);
+    const stock = getProductEffectiveStock(product);
     return stock > 0 && stock <= 3;
   });
   const customerGroups = useMemo(() => {
@@ -4683,11 +4740,11 @@ function AdminPage() {
     .filter((record) => record.paymentMethod === "Orange Money")
     .reduce((sum, record) => sum + Number(record.saleAmount || 0), 0);
   const inventoryCostValue = adminProducts.reduce(
-    (sum, product) => sum + Number(product.stock || 0) * getCostPrice(product),
+    (sum, product) => sum + getProductEffectiveStock(product) * getCostPrice(product),
     0
   );
   const inventorySaleValue = adminProducts.reduce(
-    (sum, product) => sum + Number(product.stock || 0) * getProductPrice(product),
+    (sum, product) => sum + getProductEffectiveStock(product) * getProductPrice(product),
     0
   );
   const depositedAccountTotal = depositedCash + orangeMoneyRevenue + djomiRevenue;
@@ -7290,21 +7347,25 @@ function AdminPage() {
             </div>
             {lowStockProducts.length ? (
               <div className="watch-list">
-                {lowStockProducts.slice(0, 5).map((product) => (
-                  <button
-                    className="watch-row"
-                    key={product.id}
-                    type="button"
-                    onClick={() => navigateAdmin("products")}
-                  >
-                    <img src={product.image} alt="" />
-                    <span>
-                      <strong>{product.name}</strong>
-                      <small>{product.category}</small>
-                    </span>
-                    <b>{product.stock}</b>
-                  </button>
-                ))}
+                {lowStockProducts.slice(0, 5).map((product) => {
+                  const effectiveStock = getProductEffectiveStock(product);
+
+                  return (
+                    <button
+                      className="watch-row"
+                      key={product.id}
+                      type="button"
+                      onClick={() => navigateAdmin("products")}
+                    >
+                      <img src={product.image} alt="" />
+                      <span>
+                        <strong>{product.name}</strong>
+                        <small>{product.category}</small>
+                      </span>
+                      <b>{effectiveStock}</b>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="empty-state compact">Aucun stock critique.</div>
@@ -7395,6 +7456,7 @@ function AdminPage() {
                 {displayedAdminProducts.length ? (
                   displayedAdminProducts.map((product) => {
                     const isChecked = selectedProductIds.includes(product.id);
+                    const effectiveStock = getProductEffectiveStock(product);
 
                     return (
                     <tr className={isChecked ? "bulk-selected-row" : ""} key={product.id}>
@@ -7429,12 +7491,12 @@ function AdminPage() {
                       <td data-label="Revient">{formatMoney(getCostPrice(product))}</td>
                       <td data-label="Stock">
                         <button
-                          className={`stock-pill stock-pill-button ${product.stock <= 0 ? "out" : product.stock <= 3 ? "low" : ""}`}
+                          className={`stock-pill stock-pill-button ${effectiveStock <= 0 ? "out" : effectiveStock <= 3 ? "low" : ""}`}
                           type="button"
                           title={`Voir le détail du stock de ${product.name}`}
                           onClick={() => openProductStockDetails(product)}
                         >
-                          {product.stock}
+                          {effectiveStock}
                         </button>
                         {getProductStockBreakdown(product, 2) ? (
                           <button
@@ -8465,7 +8527,7 @@ function AdminPage() {
                       <option value="">Sélectionner dans le stock</option>
                       {availableAdminProducts.map((product) => (
                         <option value={product.id} key={product.id}>
-                          {product.name} · {formatMoney(getProductPrice(product))} · stock {product.stock}
+                          {product.name} · {formatMoney(getProductPrice(product))} · stock {getProductEffectiveStock(product)}
                         </option>
                       ))}
                     </select>
@@ -9199,7 +9261,7 @@ function AdminPage() {
                   key={product.id}
                   type="button"
                   onClick={() => {
-                    setProductStockView(Number(product.stock || 0) <= 0 ? "out_of_stock" : "available");
+                    setProductStockView(getProductEffectiveStock(product) <= 0 ? "out_of_stock" : "available");
                     navigateAdmin("products");
                   }}
                 >
@@ -9208,8 +9270,8 @@ function AdminPage() {
                     <strong>{product.name}</strong>
                     <small>{product.category}</small>
                   </span>
-                  <b className={Number(product.stock || 0) <= 0 ? "danger" : ""}>
-                    {product.stock}
+                  <b className={getProductEffectiveStock(product) <= 0 ? "danger" : ""}>
+                    {getProductEffectiveStock(product)}
                   </b>
                 </button>
               ))}

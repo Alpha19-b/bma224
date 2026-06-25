@@ -8374,6 +8374,323 @@ textarea {
   }
 }
 
+/* Admin BMA: mode sombre sobre, lisible et centre operation. */
+.admin-shell,
+.admin-login-screen {
+  --ink: #edf5f1;
+  --muted: #98a8a2;
+  --line: rgba(237, 245, 241, 0.12);
+  --surface: #101715;
+  --soft: #0b100f;
+  --green: #159a68;
+  --green-dark: #62d9a6;
+  --red: #f2746b;
+  --amber: #e4ae56;
+  --blue: #7aa7ff;
+}
+
+.admin-shell {
+  background:
+    radial-gradient(circle at top right, rgba(21, 154, 104, 0.1), transparent 28rem),
+    linear-gradient(180deg, #070a09 0%, #0a0f0e 48%, #070908 100%);
+  color: var(--ink);
+}
+
+.admin-login-screen {
+  background:
+    radial-gradient(circle at top right, rgba(21, 154, 104, 0.12), transparent 30rem),
+    linear-gradient(180deg, #070a09 0%, #0b100f 100%);
+  color: var(--ink);
+}
+
+.admin-shell .sidebar {
+  border-right-color: rgba(237, 245, 241, 0.1);
+  background: #08100f;
+  box-shadow: 18px 0 60px rgba(0, 0, 0, 0.22);
+}
+
+.admin-shell .nav button {
+  border-color: rgba(237, 245, 241, 0.12);
+  background: rgba(237, 245, 241, 0.045);
+  color: #d9e5df;
+}
+
+.admin-shell .nav button:hover {
+  border-color: rgba(98, 217, 166, 0.45);
+  background: rgba(98, 217, 166, 0.08);
+}
+
+.admin-shell .nav button.active {
+  border-color: rgba(98, 217, 166, 0.5);
+  background: #edf5f1;
+  color: #07100d;
+}
+
+.admin-shell .nav button small,
+.admin-shell .brand span,
+.admin-shell .sidebar-note {
+  color: #91a39c;
+}
+
+.admin-shell .nav button.active small {
+  color: #56635f;
+}
+
+.admin-shell .admin-main {
+  color: var(--muted);
+}
+
+.admin-shell .admin-topbar {
+  border-bottom-color: var(--line);
+  background: rgba(7, 10, 9, 0.82);
+  color: var(--ink);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.18);
+}
+
+.admin-shell .section,
+.admin-shell .stat,
+.admin-shell .detail-panel,
+.admin-shell .auth-panel,
+.admin-shell .admin-section-header,
+.admin-shell .priority-card,
+.admin-shell .customer-card,
+.admin-shell .customer-order-row,
+.admin-shell .admin-flow button,
+.admin-shell .manual-sale-step,
+.admin-shell .manual-sale-product-summary,
+.admin-shell .manual-sale-item,
+.admin-shell .manual-sale-draft,
+.admin-shell .manual-sale-items,
+.admin-shell .manual-sale-finance-grid,
+.admin-shell .order-detail-summary,
+.admin-shell .location-box,
+.admin-shell .client-order-card,
+.admin-login-screen .section,
+.admin-login-screen .auth-panel {
+  border-color: var(--line);
+  background: rgba(16, 23, 21, 0.94);
+  color: var(--ink);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.2);
+}
+
+.admin-shell .section-head,
+.admin-shell .admin-action-panel .section-head,
+.admin-shell .drawer-head {
+  border-bottom-color: var(--line);
+}
+
+.admin-shell .section-head h2,
+.admin-shell .admin-section-header h2,
+.admin-shell .topbar h1,
+.admin-shell .stat strong,
+.admin-shell .priority-card strong,
+.admin-shell .customer-card strong,
+.admin-shell .manual-sale-item strong,
+.admin-login-screen h1,
+.admin-login-screen h2 {
+  color: var(--ink);
+}
+
+.admin-shell .section-head span,
+.admin-shell .admin-section-header p,
+.admin-shell .topbar p,
+.admin-shell .stat span,
+.admin-shell .customer-card small,
+.admin-shell .customer-order-row small,
+.admin-shell .manual-sale-product-summary small,
+.admin-shell .manual-sale-item small,
+.admin-shell label,
+.admin-shell .field span,
+.admin-shell .muted,
+.admin-login-screen label,
+.admin-login-screen p {
+  color: var(--muted);
+}
+
+.admin-shell input,
+.admin-shell select,
+.admin-shell textarea,
+.admin-shell .search,
+.admin-login-screen input,
+.admin-login-screen select,
+.admin-login-screen textarea {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #090e0d;
+  color: var(--ink);
+}
+
+.admin-shell input::placeholder,
+.admin-shell textarea::placeholder,
+.admin-login-screen input::placeholder,
+.admin-login-screen textarea::placeholder {
+  color: rgba(237, 245, 241, 0.42);
+}
+
+.admin-shell input:focus,
+.admin-shell select:focus,
+.admin-shell textarea:focus,
+.admin-login-screen input:focus,
+.admin-login-screen select:focus,
+.admin-login-screen textarea:focus {
+  border-color: rgba(98, 217, 166, 0.68);
+  outline: 2px solid rgba(98, 217, 166, 0.16);
+}
+
+.admin-shell .table-wrap,
+.admin-shell .orders-table-wrap {
+  border-color: var(--line);
+  background: rgba(16, 23, 21, 0.94);
+}
+
+.admin-shell .table {
+  color: var(--ink);
+}
+
+.admin-shell .table th {
+  border-bottom-color: var(--line);
+  background: #0a0f0e;
+  color: #9cadad;
+}
+
+.admin-shell .table td {
+  border-bottom-color: var(--line);
+  color: var(--ink);
+}
+
+.admin-shell .table tbody tr,
+.admin-shell .orders-table tbody tr,
+.admin-shell .products-table tbody tr,
+.admin-shell .accounting-table tbody tr {
+  background: transparent;
+}
+
+.admin-shell .table tbody tr:hover,
+.admin-shell .customer-order-row:hover,
+.admin-shell .customer-card:hover {
+  border-color: rgba(98, 217, 166, 0.45);
+  background: rgba(98, 217, 166, 0.07);
+}
+
+.admin-shell .orders-table tbody tr.selected-row,
+.admin-shell .orders-table tbody tr.selected-row:hover,
+.admin-shell .products-table tbody tr.bulk-selected-row,
+.admin-shell .accounting-table tbody tr.bulk-selected-row,
+.admin-shell .customer-card.bulk-selected-row {
+  background: rgba(21, 154, 104, 0.16);
+  box-shadow: inset 4px 0 0 var(--green);
+}
+
+.admin-shell .btn.secondary,
+.admin-shell .btn.ghost,
+.admin-shell .account-button,
+.admin-shell .logout-icon-button,
+.admin-shell .action-icon-button,
+.admin-shell .stock-tabs button,
+.admin-login-screen .btn.secondary {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: rgba(237, 245, 241, 0.045);
+  color: var(--ink);
+}
+
+.admin-shell .btn.secondary:hover,
+.admin-shell .btn.ghost:hover,
+.admin-shell .account-button:hover,
+.admin-shell .logout-icon-button:hover,
+.admin-shell .action-icon-button:hover,
+.admin-shell .stock-tabs button:hover {
+  border-color: rgba(98, 217, 166, 0.5);
+  background: rgba(98, 217, 166, 0.09);
+  color: #dffbef;
+}
+
+.admin-shell .stock-tabs button.active,
+.admin-shell .admin-flow strong,
+.admin-shell .action-count,
+.admin-shell .stock-pill {
+  background: rgba(98, 217, 166, 0.16);
+  color: #8ff0c4;
+}
+
+.admin-shell .status {
+  border-color: rgba(237, 245, 241, 0.1);
+}
+
+.admin-shell .status.paid,
+.admin-shell .status.active {
+  background: rgba(21, 154, 104, 0.17);
+  color: #9af2c7;
+}
+
+.admin-shell .status.waiting {
+  background: rgba(228, 174, 86, 0.16);
+  color: #f3c977;
+}
+
+.admin-shell .status.issue {
+  background: rgba(242, 116, 107, 0.14);
+  color: #ff9a93;
+}
+
+.admin-shell .empty-state,
+.admin-shell .variant-note,
+.admin-shell .manual-variant-note,
+.admin-shell .stock-size-missing,
+.admin-shell .manual-sale-stock-note {
+  border-color: var(--line);
+  background: rgba(237, 245, 241, 0.04);
+  color: var(--muted);
+}
+
+.admin-shell .admin-action-overlay,
+.admin-shell .admin-modal-overlay,
+.admin-shell .admin-error-overlay {
+  background: rgba(2, 4, 4, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+.admin-shell .admin-action-panel,
+.admin-shell .admin-confirm-card,
+.admin-shell .admin-error-popup {
+  border-color: var(--line);
+  background: #101715;
+  color: var(--ink);
+}
+
+.admin-shell .product-media,
+.admin-shell .product-cell img,
+.admin-shell .manual-sale-product-summary img,
+.admin-shell .manual-sale-item img {
+  background: #0b100f;
+  border-color: var(--line);
+}
+
+.admin-shell .connection-banner,
+.admin-shell .checkout-status {
+  border-color: var(--line);
+  background: rgba(237, 245, 241, 0.05);
+  color: var(--muted);
+}
+
+.admin-shell .checkout-status.paid,
+.admin-shell .connection-banner.connected {
+  border-color: rgba(98, 217, 166, 0.35);
+  background: rgba(21, 154, 104, 0.16);
+  color: #9af2c7;
+}
+
+.admin-shell .checkout-status.waiting,
+.admin-shell .connection-banner.demo {
+  border-color: rgba(228, 174, 86, 0.35);
+  background: rgba(228, 174, 86, 0.13);
+  color: #f3c977;
+}
+
+.admin-shell .checkout-status.issue {
+  border-color: rgba(242, 116, 107, 0.38);
+  background: rgba(242, 116, 107, 0.13);
+  color: #ff9a93;
+}
+
 /* Boutique BMA 2026: sobre, mobile-first et centree sur les produits. */
 .storefront-v2 {
   --store-ink: #f6f1e8;
