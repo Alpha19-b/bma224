@@ -8721,6 +8721,84 @@ textarea {
   color: #f7fffb;
 }
 
+.admin-shell .accounting-history-filters {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #101715;
+}
+
+.admin-shell .accounting-history-filters label > span {
+  color: #b9c8c2;
+}
+
+.admin-shell .accounting-filter-count {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16211d;
+  color: #e4f1ec;
+}
+
+.admin-shell .audit-products,
+.admin-shell .stock-movement-list,
+.admin-shell .treasury-movement-list {
+  background: #0f1614;
+}
+
+.admin-shell .audit-product-row,
+.admin-shell .stock-movement-row,
+.admin-shell .treasury-movement-row {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: #edf7f2;
+}
+
+.admin-shell .audit-product-row:hover,
+.admin-shell .stock-movement-row:hover,
+.admin-shell .treasury-movement-row:hover {
+  border-color: rgba(98, 217, 166, 0.38);
+  background: #1a2a24;
+}
+
+.admin-shell .audit-product-row img,
+.admin-shell .stock-movement-row img {
+  border-color: rgba(237, 245, 241, 0.16);
+  background: #0b100f;
+}
+
+.admin-shell .audit-product-row strong,
+.admin-shell .stock-movement-row strong,
+.admin-shell .treasury-movement-row strong {
+  color: #f7fffb;
+}
+
+.admin-shell .audit-product-row small,
+.admin-shell .stock-movement-row small,
+.admin-shell .stock-movement-row em,
+.admin-shell .treasury-movement-row small {
+  color: #aec0b9;
+}
+
+.admin-shell .audit-product-row b {
+  background: rgba(228, 174, 86, 0.18);
+  color: #f2c477;
+}
+
+.admin-shell .audit-product-row b.danger,
+.admin-shell .stock-movement-row b.negative,
+.admin-shell .treasury-movement-row b.negative {
+  background: rgba(242, 116, 107, 0.14);
+  color: #ff9a93;
+}
+
+.admin-shell .stock-movement-row b.positive,
+.admin-shell .treasury-movement-row b.positive {
+  background: rgba(98, 217, 166, 0.16);
+  color: #8ff0c4;
+}
+
+.admin-shell .audit-collapsible summary b {
+  background: #edf7f2;
+  color: #07100d;
+}
+
 .admin-shell .btn.danger,
 .admin-shell .action-icon-button.danger,
 .admin-shell .inline-actions .btn.danger {
