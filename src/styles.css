@@ -8617,6 +8617,110 @@ textarea {
   color: var(--ink);
 }
 
+.admin-shell .order-filter-tabs button,
+.admin-shell .orders-bulk-bar,
+.admin-shell .audit-row,
+.admin-shell .audit-note,
+.admin-shell .audit-issue,
+.admin-shell .audit-money-main {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #101715;
+  color: #edf7f2;
+}
+
+.admin-shell .order-filter-tabs button {
+  box-shadow: none;
+}
+
+.admin-shell .order-filter-tabs button:not(.active) {
+  color: #d7e5df;
+}
+
+.admin-shell .order-filter-tabs button.active {
+  border-color: rgba(98, 217, 166, 0.55);
+  background: #edf7f2;
+  color: #07100d;
+}
+
+.admin-shell .order-filter-tabs strong {
+  background: rgba(237, 245, 241, 0.11);
+  color: #f4fbf8;
+}
+
+.admin-shell .order-filter-tabs button.active strong {
+  background: #10221b;
+  color: #8ff0c4;
+}
+
+.admin-shell .orders-bulk-bar strong,
+.admin-shell .audit-row span,
+.admin-shell .audit-note,
+.admin-shell .audit-issue span,
+.admin-shell .audit-money-main small,
+.admin-shell .audit-money-main span {
+  color: #b9c8c2;
+}
+
+.admin-shell .orders-bulk-bar .action-icon-button:disabled,
+.admin-shell .orders-bulk-bar .btn:disabled {
+  border-color: rgba(237, 245, 241, 0.1);
+  background: rgba(237, 245, 241, 0.035);
+  color: #81908a;
+  opacity: 1;
+}
+
+.admin-shell .audit-money-main {
+  background: linear-gradient(135deg, rgba(98, 217, 166, 0.13), rgba(237, 245, 241, 0.045));
+}
+
+.admin-shell .audit-money-main strong {
+  color: #6ee7ad;
+}
+
+.admin-shell .audit-money-breakdown .audit-row {
+  background: #edf7f2;
+  color: #0a1411;
+}
+
+.admin-shell .audit-money-breakdown .audit-row span {
+  color: #53635d;
+}
+
+.admin-shell .audit-money-breakdown .audit-row strong {
+  color: #0a1411;
+}
+
+.admin-shell .audit-money-breakdown .audit-row.paid strong {
+  color: #0f8a5f;
+}
+
+.admin-shell .audit-money-breakdown .audit-row.bank strong {
+  color: #396ef2;
+}
+
+.admin-shell .audit-money-breakdown .audit-row.warning strong {
+  color: #9a5a00;
+}
+
+.admin-shell .audit-issue.warning {
+  border-color: rgba(228, 174, 86, 0.4);
+  background: rgba(228, 174, 86, 0.14);
+}
+
+.admin-shell .audit-issue.danger {
+  border-color: rgba(242, 116, 107, 0.38);
+  background: rgba(242, 116, 107, 0.13);
+}
+
+.admin-shell .audit-issue.info {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.11);
+}
+
+.admin-shell .audit-issue strong {
+  color: #f7fffb;
+}
+
 .admin-shell .btn.danger,
 .admin-shell .action-icon-button.danger,
 .admin-shell .inline-actions .btn.danger {
