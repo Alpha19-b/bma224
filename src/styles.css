@@ -8544,31 +8544,50 @@ textarea {
 
 .admin-shell .table {
   color: var(--ink);
+  background: #0e1513;
 }
 
+.admin-shell .table thead,
 .admin-shell .table th {
   border-bottom-color: var(--line);
-  background: #0a0f0e;
-  color: #9cadad;
+  background: #07100d;
+  color: #c8d8d1;
 }
 
 .admin-shell .table td {
   border-bottom-color: var(--line);
-  color: var(--ink);
+  background: transparent;
+  color: #e9f4ef;
 }
 
 .admin-shell .table tbody tr,
 .admin-shell .orders-table tbody tr,
 .admin-shell .products-table tbody tr,
 .admin-shell .accounting-table tbody tr {
-  background: transparent;
+  background: #101715;
 }
 
 .admin-shell .table tbody tr:hover,
 .admin-shell .customer-order-row:hover,
 .admin-shell .customer-card:hover {
   border-color: rgba(98, 217, 166, 0.45);
-  background: rgba(98, 217, 166, 0.07);
+  background: #14221d;
+}
+
+.admin-shell .table tbody tr:hover td {
+  background: transparent;
+}
+
+.admin-shell .products-table .product-cell strong,
+.admin-shell .accounting-table strong,
+.admin-shell .orders-table strong {
+  color: #f7fffb;
+}
+
+.admin-shell .product-cell small,
+.admin-shell .stock-detail-text,
+.admin-shell .table small {
+  color: #9cafaa;
 }
 
 .admin-shell .orders-table tbody tr.selected-row,
@@ -8576,8 +8595,14 @@ textarea {
 .admin-shell .products-table tbody tr.bulk-selected-row,
 .admin-shell .accounting-table tbody tr.bulk-selected-row,
 .admin-shell .customer-card.bulk-selected-row {
-  background: rgba(21, 154, 104, 0.16);
+  background: rgba(21, 154, 104, 0.2);
   box-shadow: inset 4px 0 0 var(--green);
+}
+
+.admin-shell .products-table tbody tr.bulk-selected-row td,
+.admin-shell .accounting-table tbody tr.bulk-selected-row td,
+.admin-shell .orders-table tbody tr.selected-row td {
+  background: transparent;
 }
 
 .admin-shell .btn.secondary,
@@ -8590,6 +8615,20 @@ textarea {
   border-color: rgba(237, 245, 241, 0.14);
   background: rgba(237, 245, 241, 0.045);
   color: var(--ink);
+}
+
+.admin-shell .btn.danger,
+.admin-shell .action-icon-button.danger,
+.admin-shell .inline-actions .btn.danger {
+  border-color: rgba(242, 116, 107, 0.36);
+  background: rgba(242, 116, 107, 0.12);
+  color: #ffaaa4;
+}
+
+.admin-shell .btn:disabled,
+.admin-shell .action-icon-button:disabled {
+  opacity: 0.5;
+  color: #9aa8a3;
 }
 
 .admin-shell .btn.secondary:hover,
@@ -8609,6 +8648,16 @@ textarea {
 .admin-shell .stock-pill {
   background: rgba(98, 217, 166, 0.16);
   color: #8ff0c4;
+}
+
+.admin-shell .stock-pill.low {
+  background: rgba(228, 174, 86, 0.17);
+  color: #f2c477;
+}
+
+.admin-shell .stock-pill.out {
+  background: rgba(242, 116, 107, 0.15);
+  color: #ff9a93;
 }
 
 .admin-shell .status {
