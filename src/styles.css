@@ -8886,7 +8886,7 @@ textarea {
 .admin-shell .admin-modal-overlay,
 .admin-shell .admin-error-overlay {
   background: rgba(2, 4, 4, 0.76);
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
 }
 
 .admin-shell .admin-action-panel,
@@ -8895,6 +8895,77 @@ textarea {
   border-color: var(--line);
   background: #101715;
   color: var(--ink);
+}
+
+/* Les fiches detail venaient du theme clair : fond blanc + texte clair = illisible. */
+.admin-shell .product-editor-panel .section-head,
+.admin-shell .admin-action-panel .section-head,
+.admin-shell .order-detail-shell .section-head {
+  background: #101715;
+  color: var(--ink);
+}
+
+.admin-shell .admin-action-panel .section-head h2,
+.admin-shell .admin-action-panel .section-head .icon-btn,
+.admin-shell .product-editor-panel .section-head h2,
+.admin-shell .product-editor-panel .section-head .icon-btn,
+.admin-shell .order-detail-shell .section-head h2,
+.admin-shell .order-detail-shell .section-head .icon-btn {
+  color: var(--ink);
+}
+
+.admin-shell .admin-action-panel .section-head .icon-btn,
+.admin-shell .product-editor-panel .section-head .icon-btn,
+.admin-shell .order-detail-shell .section-head .icon-btn {
+  border-color: rgba(237, 245, 241, 0.16);
+  background: #16201d;
+}
+
+.admin-shell .admin-action-panel .section-head span,
+.admin-shell .product-editor-panel .section-head span,
+.admin-shell .order-detail-shell .section-head span {
+  color: var(--muted);
+}
+
+.admin-shell .accounting-note-row,
+.admin-shell .deposit-history-row,
+.admin-shell .deposit-summary span,
+.admin-shell .manual-sale-draft,
+.admin-shell .manual-sale-items,
+.admin-shell .manual-variant-line {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: var(--ink);
+}
+
+.admin-shell .manual-sale-item,
+.admin-shell .manual-free-sale,
+.admin-shell .manual-sale-finance-grid > span,
+.admin-shell .manual-payment-options button {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: var(--ink);
+}
+
+.admin-shell .accounting-note-row span,
+.admin-shell .deposit-history-row small,
+.admin-shell .deposit-history-row em,
+.admin-shell .deposit-summary span,
+.admin-shell .manual-sale-draft small,
+.admin-shell .manual-sale-items small,
+.admin-shell .manual-variant-line small {
+  color: #b7c8c0;
+}
+
+.admin-shell .accounting-note-row strong,
+.admin-shell .deposit-history-row strong,
+.admin-shell .deposit-summary strong,
+.admin-shell .accounting-detail-hero h3,
+.admin-shell .accounting-detail-section h3,
+.admin-shell .manual-sale-draft strong,
+.admin-shell .manual-sale-items strong,
+.admin-shell .manual-variant-line strong {
+  color: #f4fbf7;
 }
 
 .admin-shell .product-media,
