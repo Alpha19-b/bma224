@@ -3680,8 +3680,18 @@ textarea {
   border-radius: 8px;
   padding: 12px;
   background: #fff;
+  color: var(--ink);
   display: grid;
   gap: 10px;
+}
+
+.stock-ledger-note {
+  border: 1px solid rgba(15, 138, 95, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #edfdf5;
+  color: #0a6f4a;
+  font-weight: 800;
 }
 
 .stock-detail-card-head {

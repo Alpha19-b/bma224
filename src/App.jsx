@@ -27,6 +27,7 @@ import {
   fetchCurrentAdminContext,
   fetchCustomerOrders,
   fetchProducts,
+  fetchProductSalesLedger,
   fetchRolePermissions,
   fetchStaffMembers,
   fetchStockMovements,
@@ -561,12 +562,13 @@ function getProductGalleryForColor(product, colorValue = "") {
 function getProductStockForColor(product, colorValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const stockByColor = product.stockByColor ?? {};
+  let stockValue = Math.max(0, Number(product.stock || 0));
 
   if (colorKey && stockByColor[colorKey] !== undefined && stockByColor[colorKey] !== null) {
-    return Math.max(0, Number(stockByColor[colorKey]) || 0);
+    stockValue = Math.max(0, Number(stockByColor[colorKey]) || 0);
   }
 
-  return Math.max(0, Number(product.stock || 0));
+  return applyMissingSoldToStock(product, stockValue, colorValue);
 }
 
 function getVariantStockMap(product, colorValue = "") {
@@ -589,7 +591,12 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
     colorKey && sizeKey ? stockForColor[sizeKey] ?? stockForColor[sizeValue] : undefined;
 
   if (exactStock !== undefined && exactStock !== null) {
-    return Math.max(0, Number(exactStock) || 0);
+    return applyMissingSoldToStock(
+      product,
+      Math.max(0, Number(exactStock) || 0),
+      colorValue,
+      sizeValue
+    );
   }
 
   if (colorKey && sizeKey && hasTrackedVariantStock(product, colorValue)) {
@@ -597,6 +604,53 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
   }
 
   return getProductStockForColor(product, colorValue);
+}
+
+function getMissingSoldScale(product) {
+  const ledger = product?.salesLedger ?? {};
+  const soldTotal = Math.max(0, Number(ledger.soldTotal || 0));
+  const missingSoldTotal = Math.max(0, Number(ledger.missingSoldTotal || 0));
+
+  if (!soldTotal || !missingSoldTotal) return 0;
+  return Math.min(1, missingSoldTotal / soldTotal);
+}
+
+function scaleMissingSold(quantity, scale) {
+  if (!quantity || !scale) return 0;
+  return Math.min(Number(quantity || 0), Math.ceil(Number(quantity || 0) * scale));
+}
+
+function getMissingSoldForStock(product, colorValue = "", sizeValue = "") {
+  const ledger = product?.salesLedger ?? {};
+  const scale = getMissingSoldScale(product);
+  const colorKey = normalizeVariantKey(colorValue);
+  const sizeKey = normalizeVariantKey(sizeValue);
+
+  if (!scale) return 0;
+
+  if (colorKey && sizeKey) {
+    const rawVariantSold =
+      ledger.soldByVariant?.[colorKey]?.[sizeKey] ??
+      ledger.soldByVariant?.[colorValue]?.[sizeValue] ??
+      0;
+    return scaleMissingSold(rawVariantSold, scale);
+  }
+
+  if (colorKey) {
+    const rawColorSold = ledger.soldByColor?.[colorKey] ?? ledger.soldByColor?.[colorValue] ?? 0;
+    return scaleMissingSold(rawColorSold, scale);
+  }
+
+  return Math.max(0, Number(ledger.missingSoldTotal || 0));
+}
+
+function applyMissingSoldToStock(product, stockValue, colorValue = "", sizeValue = "") {
+  const nextStock = Math.max(
+    0,
+    Number(stockValue || 0) - getMissingSoldForStock(product, colorValue, sizeValue)
+  );
+
+  return nextStock;
 }
 
 function hasExactVariantStock(product, colorValue = "", sizeValue = "") {
@@ -725,7 +779,11 @@ function getProductStockBreakdown(product, limit = 3) {
     const sizes = getProductSizeOptions(product, color.value);
     const sizeParts = sizes
       .map((size) => {
-        const quantity = stockForColor[normalizeVariantKey(size)] ?? stockForColor[size];
+        const rawQuantity = stockForColor[normalizeVariantKey(size)] ?? stockForColor[size];
+        const quantity =
+          rawQuantity === undefined || rawQuantity === null
+            ? rawQuantity
+            : getProductStockForSelection(product, color.value, size);
         return quantity === undefined || quantity === null ? "" : `${size} ${quantity}`;
       })
       .filter(Boolean);
@@ -733,7 +791,7 @@ function getProductStockBreakdown(product, limit = 3) {
     if (sizeParts.length) {
       lines.push(`${color.value}: ${sizeParts.join(", ")}`);
     } else if (product.stockByColor?.[colorKey] !== undefined) {
-      lines.push(`${color.value}: ${product.stockByColor[colorKey]}`);
+      lines.push(`${color.value}: ${getProductStockForColor(product, color.value)}`);
     }
 
     usedKeys.add(colorKey);
@@ -741,7 +799,10 @@ function getProductStockBreakdown(product, limit = 3) {
 
   Object.entries(product.stockByVariant ?? {}).forEach(([colorKey, stockForColor]) => {
     if (usedKeys.has(colorKey)) return;
-    const parts = Object.entries(stockForColor).map(([sizeKey, quantity]) => `${sizeKey} ${quantity}`);
+    const parts = Object.entries(stockForColor).map(
+      ([sizeKey, quantity]) =>
+        `${sizeKey} ${applyMissingSoldToStock(product, quantity, colorKey, sizeKey)}`
+    );
     if (parts.length) lines.push(`${colorKey}: ${parts.join(", ")}`);
   });
 
@@ -761,10 +822,17 @@ function getProductStockDetailRows(product) {
     const colorKey = normalizeVariantKey(color.value);
     const stockForColor = getVariantStockMap(product, color.value);
     const sizeRows = getProductSizeOptions(product, color.value)
-      .map((size) => ({
-        size,
-        quantity: stockForColor[normalizeVariantKey(size)] ?? stockForColor[size],
-      }));
+      .map((size) => {
+        const rawQuantity = stockForColor[normalizeVariantKey(size)] ?? stockForColor[size];
+
+        return {
+          size,
+          quantity:
+            rawQuantity === undefined || rawQuantity === null
+              ? rawQuantity
+              : applyMissingSoldToStock(product, rawQuantity, color.value, size),
+        };
+      });
     const trackedSizeRows = sizeRows.filter(
       (row) => row.quantity !== undefined && row.quantity !== null
     );
@@ -772,12 +840,18 @@ function getProductStockDetailRows(product) {
     const colorTotal = hasExactSizeStock
       ? trackedSizeRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
       : product.stockByColor?.[colorKey] ?? null;
+    const adjustedColorTotal =
+      colorTotal === null
+        ? null
+        : hasExactSizeStock
+          ? colorTotal
+          : applyMissingSoldToStock(product, colorTotal, color.value);
 
     if (colorTotal !== null || sizeRows.length) {
       rows.push({
         color: color.value,
         hex: color.hex,
-        total: Math.max(0, Number(colorTotal || 0)),
+        total: Math.max(0, Number(adjustedColorTotal || 0)),
         sizes: sizeRows,
         hasExactSizeStock,
       });
@@ -791,7 +865,7 @@ function getProductStockDetailRows(product) {
     rows.push({
       color: colorKey,
       hex: getKnownColorHex(colorKey),
-      total: Math.max(0, Number(quantity || 0)),
+      total: applyMissingSoldToStock(product, Math.max(0, Number(quantity || 0)), colorKey),
       sizes: [],
       hasExactSizeStock: false,
     });
@@ -803,7 +877,7 @@ function getProductStockDetailRows(product) {
 
     const sizes = Object.entries(stockForColor).map(([size, quantity]) => ({
       size,
-      quantity,
+      quantity: applyMissingSoldToStock(product, quantity, colorKey, size),
     }));
 
     rows.push({
@@ -827,7 +901,7 @@ function getProductEffectiveStock(product) {
   );
 
   if (!hasDetailedColorStock && !hasDetailedVariantStock) {
-    return baseStock;
+    return applyMissingSoldToStock(product, baseStock);
   }
 
   return getProductStockDetailRows(product).reduce(
@@ -3115,7 +3189,9 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
   const rows = getProductStockDetailRows(product);
   const detailedRows = rows.filter((row) => row.hasExactSizeStock);
   const displayedColorTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
-  const productTotal = Math.max(0, Number(product.stock || 0));
+  const databaseProductTotal = Math.max(0, Number(product.stock || 0));
+  const productTotal = getProductEffectiveStock(product);
+  const ledgerAdjustment = Math.max(0, Number(product.salesLedger?.missingSoldTotal || 0));
   const stockIsInconsistent = Boolean(rows.length && displayedColorTotal !== productTotal);
   const reliableRows = stockIsInconsistent
     ? rows.filter((row) => row.hasExactSizeStock)
@@ -3206,8 +3282,8 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
       <div className="stock-detail-body">
         <div className="stock-detail-summary">
           <div>
-            <span>Total article</span>
-            <strong>{product.stock}</strong>
+            <span>Total reel</span>
+            <strong>{productTotal}</strong>
           </div>
           <div>
             <span>Détail par taille</span>
@@ -3319,6 +3395,11 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
 
         {rows.length && !isDistributing ? (
           <div className="stock-detail-list">
+            {ledgerAdjustment > 0 ? (
+              <div className="stock-ledger-note">
+                Stock base : {databaseProductTotal} - ventes retrouvees : {ledgerAdjustment} = {productTotal}
+              </div>
+            ) : null}
             {rows.map((row) => (
               <article className="stock-detail-card" key={row.color}>
                 <div className="stock-detail-card-head">
@@ -4037,6 +4118,7 @@ function AdminPage() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminProducts, setAdminProducts] = useState([]);
+  const [productSalesLedger, setProductSalesLedger] = useState({});
   const [accountingRecords, setAccountingRecords] = useState([]);
   const [stockMovements, setStockMovements] = useState([]);
   const [treasuryMovements, setTreasuryMovements] = useState([]);
@@ -4154,6 +4236,7 @@ function AdminPage() {
         setAdminContext(null);
         setAdminAccessStatus("idle");
         setAdminProducts([]);
+        setProductSalesLedger({});
         setAdminOrders([]);
         setAccountingRecords([]);
         setStockMovements([]);
@@ -4180,6 +4263,7 @@ function AdminPage() {
         setAdminContext(null);
         setAdminAccessStatus("denied");
         setAdminProducts([]);
+        setProductSalesLedger({});
         setAdminOrders([]);
         setAccountingRecords([]);
         setStockMovements([]);
@@ -4221,6 +4305,9 @@ function AdminPage() {
       const stockMovementsResult = canReadManagementData
         ? await fetchStockMovements()
         : { data: [], error: null };
+      const productSalesLedgerResult = canReadManagementData
+        ? await fetchProductSalesLedger()
+        : { data: {}, error: null };
       const treasuryMovementsResult = canReadManagementData
         ? await fetchTreasuryMovements()
         : { data: [], error: null, setupMissing: false };
@@ -4236,12 +4323,18 @@ function AdminPage() {
 
       if (productsResult.error) {
         setAdminProducts([]);
+        setProductSalesLedger({});
       } else {
+        const ledgerByProductId = productSalesLedgerResult.error
+          ? {}
+          : productSalesLedgerResult.data ?? {};
+        setProductSalesLedger(ledgerByProductId);
         setAdminProducts(
           productsResult.data.map((product) => ({
             ...product,
             purchasePrice: getPurchasePrice(product),
             costPrice: getCostPrice(product),
+            salesLedger: ledgerByProductId[product.id] ?? null,
           }))
         );
       }
@@ -5075,23 +5168,30 @@ function AdminPage() {
       ordersResult,
       accountingResult,
       stockMovementsResult,
+      productSalesLedgerResult,
       treasuryMovementsResult,
     ] = await Promise.all([
       canRefreshManagementData ? fetchAdminProducts() : fetchProducts(),
       canRefreshManagementData ? fetchAdminOrders() : { data: [], error: null },
       canRefreshManagementData ? fetchAccountingEntries() : { data: [], error: null },
       canRefreshManagementData ? fetchStockMovements() : { data: [], error: null },
+      canRefreshManagementData ? fetchProductSalesLedger() : { data: {}, error: null },
       canRefreshManagementData
         ? fetchTreasuryMovements()
         : { data: [], error: null, setupMissing: false },
     ]);
 
     if (!productsResult.error) {
+      const ledgerByProductId = productSalesLedgerResult.error
+        ? productSalesLedger
+        : productSalesLedgerResult.data ?? {};
+      setProductSalesLedger(ledgerByProductId);
       setAdminProducts(
         productsResult.data.map((product) => ({
           ...product,
           purchasePrice: getPurchasePrice(product),
           costPrice: getCostPrice(product),
+          salesLedger: ledgerByProductId[product.id] ?? null,
         }))
       );
     }
@@ -5378,9 +5478,9 @@ function AdminPage() {
     }
 
     requestAdminConfirm({
-      title: "Supprimer cet article ?",
+      title: "Retirer cet article ?",
       message: `"${product.name}" sera retiré de la boutique. Cette action est réservée au super admin.`,
-      confirmLabel: "Supprimer",
+      confirmLabel: "Retirer",
       tone: "danger",
       onConfirm: async () => {
         setDeletingActionId(`product:${product.id}`);
@@ -5388,7 +5488,7 @@ function AdminPage() {
         setDeletingActionId("");
 
         if (error) {
-          showToast(`Article non supprimé : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
+          showToast(`Article non retiré : ${getFriendlyErrorMessage(error, "delete")}`, "issue");
           return;
         }
 
@@ -5510,9 +5610,9 @@ function AdminPage() {
     }
 
     requestAdminConfirm({
-      title: "Supprimer les articles ?",
+      title: "Retirer les articles ?",
       message: `${selectedProducts.length} article(s) seront retirés de la boutique.`,
-      confirmLabel: "Supprimer",
+      confirmLabel: "Retirer",
       tone: "danger",
       onConfirm: async () => {
         setDeletingActionId("bulk:products");
@@ -5525,7 +5625,7 @@ function AdminPage() {
 
         if (failed.length) {
           showToast(
-            `${failed.length} article(s) non supprimé(s) : ${getFriendlyErrorMessage(
+            `${failed.length} article(s) non retiré(s) : ${getFriendlyErrorMessage(
               failed[0].error,
               "delete"
             )}`,
@@ -5535,7 +5635,7 @@ function AdminPage() {
           return;
         }
 
-        showToast(`${selectedProducts.length} article(s) supprimé(s).`);
+        showToast(`${selectedProducts.length} article(s) retiré(s) de la boutique.`);
         setSelectedProductIds([]);
         await refreshAdminLists({ keepSelected: true });
       },

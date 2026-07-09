@@ -282,6 +282,91 @@ function applyVariantNoteFallbacks(items, notes) {
   });
 }
 
+function getEmptyProductSalesLedger(productId) {
+  return {
+    productId,
+    soldTotal: 0,
+    soldByColor: {},
+    soldByVariant: {},
+    movementSoldTotal: 0,
+  };
+}
+
+function addProductLedgerQuantity(ledgerByProductId, productId, quantity, color = "", size = "") {
+  if (!productId || !Number(quantity)) return;
+
+  const normalizedQuantity = Math.max(0, Number(quantity || 0));
+  if (!normalizedQuantity) return;
+
+  const ledger =
+    ledgerByProductId[productId] || getEmptyProductSalesLedger(productId);
+  const colorKey = normalizeVariantKey(color);
+  const sizeKey = normalizeVariantKey(size);
+
+  ledger.soldTotal += normalizedQuantity;
+
+  if (colorKey) {
+    ledger.soldByColor[colorKey] = (ledger.soldByColor[colorKey] || 0) + normalizedQuantity;
+  }
+
+  if (colorKey && sizeKey) {
+    ledger.soldByVariant[colorKey] = ledger.soldByVariant[colorKey] || {};
+    ledger.soldByVariant[colorKey][sizeKey] =
+      (ledger.soldByVariant[colorKey][sizeKey] || 0) + normalizedQuantity;
+  }
+
+  ledgerByProductId[productId] = ledger;
+}
+
+function addProductLedgerMovement(ledgerByProductId, productId, quantityDelta) {
+  if (!productId || !Number(quantityDelta) || Number(quantityDelta) >= 0) return;
+
+  const ledger =
+    ledgerByProductId[productId] || getEmptyProductSalesLedger(productId);
+  ledger.movementSoldTotal += Math.abs(Number(quantityDelta || 0));
+  ledgerByProductId[productId] = ledger;
+}
+
+function parseManualSaleVariantLines(note, fallbackQuantity = 1) {
+  const text = String(note || "");
+  const detailMatch = text.match(/d[eé]tail couleurs\/tailles\s*:\s*([\s\S]+)/i);
+  const detailText = detailMatch?.[1] || "";
+  const directColor = text.match(/couleur\s*:\s*([^\n]+)/i)?.[1]?.trim() || "";
+  const directSize = text.match(/taille\s*:\s*([^\n]+)/i)?.[1]?.trim() || "";
+
+  const rows = detailText
+    .split(/[\n;]+/)
+    .map((line) => line.trim().replace(/^-+\s*/, ""))
+    .filter(Boolean)
+    .map((line) => {
+      const quantityMatch = line.match(/(?:x|\*)\s*(\d+)\s*$/i);
+      const quantity = Math.max(1, Number(quantityMatch?.[1] || 1));
+      const cleanLine = quantityMatch ? line.slice(0, quantityMatch.index).trim() : line;
+      const [colorPart, sizePart = ""] = cleanLine.split("/").map((part) => part.trim());
+
+      return {
+        color: colorPart || directColor,
+        size: sizePart || directSize,
+        quantity,
+      };
+    })
+    .filter((row) => row.color || row.size);
+
+  if (rows.length) return rows;
+
+  if (directColor || directSize) {
+    return [
+      {
+        color: directColor,
+        size: directSize,
+        quantity: Math.max(1, Number(fallbackQuantity || 1)),
+      },
+    ];
+  }
+
+  return [];
+}
+
 async function resolveCategoryId(categoryName) {
   const name = categoryName?.trim();
 
@@ -961,9 +1046,12 @@ export async function deleteProductAsOwner(productId) {
     return { data: null, error: new Error("Configuration de la boutique indisponible.") };
   }
 
-  const { data, error } = await supabase.rpc("bma_delete_product", {
-    p_product_id: productId,
-  });
+  const { data, error } = await supabase
+    .from("products")
+    .update({ is_active: false })
+    .eq("id", productId)
+    .select("id, is_active")
+    .single();
 
   return { data, error };
 }
@@ -1931,6 +2019,148 @@ export async function fetchStockMovements() {
       createdAt: movement.created_at,
       createdDate: movement.created_at?.slice(0, 10) ?? "",
     })),
+    error: null,
+  };
+}
+
+export async function fetchProductSalesLedger() {
+  if (!supabase) {
+    return { data: {}, error: new Error("Configuration de la boutique indisponible.") };
+  }
+
+  const ledgerByProductId = {};
+
+  const { data: orderRows, error: orderError } = await supabase
+    .from("orders")
+    .select("id, order_status")
+    .limit(5000);
+
+  if (orderError) {
+    return { data: {}, error: orderError };
+  }
+
+  const activeOrderIds = new Set(
+    (orderRows ?? [])
+      .filter((order) => !["cancelled", "delivery_failed"].includes(order.order_status))
+      .map((order) => order.id)
+  );
+
+  if (activeOrderIds.size) {
+    const { data: itemRows, error: itemError } = await supabase
+      .from("order_items")
+      .select("order_id, product_id, quantity, selected_color, selected_size")
+      .limit(5000);
+
+    if (itemError) {
+      return { data: {}, error: itemError };
+    }
+
+    (itemRows ?? [])
+      .filter((item) => activeOrderIds.has(item.order_id))
+      .forEach((item) => {
+        addProductLedgerQuantity(
+          ledgerByProductId,
+          item.product_id,
+          Number(item.quantity || 0),
+          item.selected_color,
+          item.selected_size
+        );
+      });
+  }
+
+  const { data: accountingRows, error: accountingError } = await supabase
+    .from("accounting_entries")
+    .select("product_id, quantity, order_number, note, source")
+    .limit(5000);
+
+  if (accountingError && !/product_id|quantity|source/i.test(accountingError.message || "")) {
+    return { data: {}, error: accountingError };
+  }
+
+  (accountingRows ?? []).forEach((entry) => {
+    if (!entry.product_id) return;
+
+    const source = String(entry.source || "").toLowerCase();
+    const orderNumber = String(entry.order_number || "");
+    const isManualSale =
+      source === "manual" ||
+      orderNumber.toUpperCase().startsWith("MANUEL") ||
+      (!source && !orderNumber.toUpperCase().startsWith("CMD-"));
+
+    if (!isManualSale) return;
+
+    const quantity = Math.max(1, Number(entry.quantity || 1));
+    const variants = parseManualSaleVariantLines(entry.note, quantity);
+
+    if (variants.length) {
+      variants.forEach((variant) => {
+        addProductLedgerQuantity(
+          ledgerByProductId,
+          entry.product_id,
+          variant.quantity,
+          variant.color,
+          variant.size
+        );
+      });
+      return;
+    }
+
+    addProductLedgerQuantity(ledgerByProductId, entry.product_id, quantity);
+  });
+
+  let movementQuantityColumn = "quantity_delta";
+  let { data: movementRows, error: movementError } = await supabase
+    .from("stock_movements")
+    .select("product_id, quantity_delta, reason")
+    .limit(5000);
+
+  if (movementError && /quantity_delta/i.test(movementError.message || "")) {
+    const fallbackMovements = await supabase
+      .from("stock_movements")
+      .select("product_id, quantity_change, reason")
+      .limit(5000);
+
+    movementRows = fallbackMovements.data;
+    movementError = fallbackMovements.error;
+    movementQuantityColumn = "quantity_change";
+  }
+
+  if (!movementError) {
+    (movementRows ?? []).forEach((movement) => {
+      const reason = String(movement.reason || "").toLowerCase();
+      const isSaleMovement =
+        reason.includes("manual_sale") ||
+        reason.includes("site_order") ||
+        reason.includes("order_item") ||
+        reason.includes("order");
+
+      if (isSaleMovement) {
+        addProductLedgerMovement(
+          ledgerByProductId,
+          movement.product_id,
+          Number(movement[movementQuantityColumn] || 0)
+        );
+      }
+    });
+  }
+
+  return {
+    data: Object.fromEntries(
+      Object.entries(ledgerByProductId).map(([productId, ledger]) => {
+        const missingSoldTotal = Math.max(
+          0,
+          Number(ledger.soldTotal || 0) - Number(ledger.movementSoldTotal || 0)
+        );
+
+        return [
+          productId,
+          {
+            ...ledger,
+            missingSoldTotal,
+          },
+        ];
+      })
+    ),
     error: null,
   };
 }
