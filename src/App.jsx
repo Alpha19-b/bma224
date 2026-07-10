@@ -3191,6 +3191,8 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
   const displayedColorTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
   const databaseProductTotal = Math.max(0, Number(product.stock || 0));
   const productTotal = getProductEffectiveStock(product);
+  const ledgerSoldTotal = Math.max(0, Number(product.salesLedger?.soldTotal || 0));
+  const ledgerMovementTotal = Math.max(0, Number(product.salesLedger?.movementSoldTotal || 0));
   const ledgerAdjustment = Math.max(0, Number(product.salesLedger?.missingSoldTotal || 0));
   const stockIsInconsistent = Boolean(rows.length && displayedColorTotal !== productTotal);
   const reliableRows = stockIsInconsistent
@@ -3395,9 +3397,10 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
 
         {rows.length && !isDistributing ? (
           <div className="stock-detail-list">
-            {ledgerAdjustment > 0 ? (
+            {ledgerSoldTotal > 0 ? (
               <div className="stock-ledger-note">
-                Stock base : {databaseProductTotal} - ventes retrouvees : {ledgerAdjustment} = {productTotal}
+                Ventes retrouvées : {ledgerSoldTotal} · déjà déduites : {ledgerMovementTotal} · correction appliquée : {ledgerAdjustment}
+                {ledgerAdjustment > 0 ? ` · stock calculé : ${productTotal}` : ""}
               </div>
             ) : null}
             {rows.map((row) => (

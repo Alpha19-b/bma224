@@ -367,6 +367,81 @@ function parseManualSaleVariantLines(note, fallbackQuantity = 1) {
   return [];
 }
 
+function parseSaleOptionRows(value = "", fallbackQuantity = 1) {
+  const rows = String(value || "")
+    .split(/\s*;\s*|\r?\n/)
+    .map((line) => line.trim().replace(/^-+\s*/, ""))
+    .filter(Boolean)
+    .map((line) => {
+      const quantityMatch = line.match(/(?:x|\*)\s*(\d+)\s*$/i);
+      const quantity = Math.max(1, Number(quantityMatch?.[1] || 1));
+      const cleanLine = quantityMatch ? line.slice(0, quantityMatch.index).trim() : line;
+      const colorSizeMatch = cleanLine.match(/^(.+?)\s*\/\s*(.+)$/);
+      const labeledMatch = cleanLine.match(
+        /^couleur\s*:?\s*(.+?)\s*(?:-|–)\s*taille\s*:?\s*(.+)$/i
+      );
+
+      if (labeledMatch) {
+        return {
+          color: labeledMatch[1].trim(),
+          size: labeledMatch[2].trim(),
+          quantity,
+        };
+      }
+
+      if (colorSizeMatch) {
+        return {
+          color: colorSizeMatch[1].trim(),
+          size: colorSizeMatch[2].trim(),
+          quantity,
+        };
+      }
+
+      const colorOnly = cleanLine.replace(/^couleur\s*:?\s*/i, "").trim();
+      return { color: colorOnly, size: "", quantity };
+    });
+
+  return rows.length ? rows : [{ color: "", size: "", quantity: Math.max(1, Number(fallbackQuantity || 1)) }];
+}
+
+function parseManualSaleCatalogLines(note = "") {
+  const text = String(note || "");
+  const articlesMatch = text.match(
+    /articles?\s*:\s*([\s\S]*?)(?=\n\s*(?:quantit[eé]|surplus|remise)\s*:|$)/i
+  );
+
+  return (articlesMatch?.[1] || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^-+\s*/, ""))
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(.+?)\s+x\s*(\d+)(?:\s*\((.*?)\))?\s*=\s*.+$/i);
+      if (!match) return null;
+
+      return {
+        productName: match[1].trim(),
+        quantity: Math.max(1, Number(match[2] || 1)),
+        options: match[3]?.trim() || "",
+      };
+    })
+    .filter(Boolean);
+}
+
+function resolveProductIdByName(productName, productRows = []) {
+  const key = normalizeVariantKey(productName);
+  if (!key) return "";
+
+  const exact = productRows.find((product) => normalizeVariantKey(product.name) === key);
+  if (exact?.id) return exact.id;
+
+  const partial = productRows.find((product) => {
+    const productKey = normalizeVariantKey(product.name);
+    return productKey && (key.includes(productKey) || productKey.includes(key));
+  });
+
+  return partial?.id || "";
+}
+
 async function resolveCategoryId(categoryName) {
   const name = categoryName?.trim();
 
@@ -2029,6 +2104,10 @@ export async function fetchProductSalesLedger() {
   }
 
   const ledgerByProductId = {};
+  const { data: productRows } = await supabase
+    .from("products")
+    .select("id, name")
+    .limit(5000);
 
   const { data: orderRows, error: orderError } = await supabase
     .from("orders")
@@ -2078,8 +2157,6 @@ export async function fetchProductSalesLedger() {
   }
 
   (accountingRows ?? []).forEach((entry) => {
-    if (!entry.product_id) return;
-
     const source = String(entry.source || "").toLowerCase();
     const orderNumber = String(entry.order_number || "");
     const isManualSale =
@@ -2090,6 +2167,36 @@ export async function fetchProductSalesLedger() {
     if (!isManualSale) return;
 
     const quantity = Math.max(1, Number(entry.quantity || 1));
+
+    // Les ventes de plusieurs articles sont enregistrées dans une seule ligne
+    // comptable, avec product_id vide. On reconstitue chaque article depuis la note.
+    if (!entry.product_id) {
+      parseManualSaleCatalogLines(entry.note).forEach((line) => {
+        const productId = resolveProductIdByName(line.productName, productRows ?? []);
+        if (!productId) return;
+
+        const optionRows = parseSaleOptionRows(line.options, line.quantity);
+        const optionQuantity = optionRows.reduce((sum, option) => sum + option.quantity, 0);
+
+        optionRows.forEach((option) => {
+          addProductLedgerQuantity(
+            ledgerByProductId,
+            productId,
+            option.quantity,
+            option.color,
+            option.size
+          );
+        });
+
+        if (!line.options || optionQuantity !== line.quantity) {
+          if (!line.options) return;
+          const remainder = Math.max(0, line.quantity - optionQuantity);
+          if (remainder) addProductLedgerQuantity(ledgerByProductId, productId, remainder);
+        }
+      });
+      return;
+    }
+
     const variants = parseManualSaleVariantLines(entry.note, quantity);
 
     if (variants.length) {
