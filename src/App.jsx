@@ -620,11 +620,57 @@ function scaleMissingSold(quantity, scale) {
   return Math.min(Number(quantity || 0), Math.ceil(Number(quantity || 0) * scale));
 }
 
+function getRawDetailedStockTotal(product) {
+  const colorTotals = Object.values(product?.stockByColor ?? {}).map((value) =>
+    Math.max(0, Number(value || 0))
+  );
+  const variantTotals = Object.values(product?.stockByVariant ?? {}).flatMap((stockForColor) =>
+    Object.values(stockForColor ?? {}).map((value) => Math.max(0, Number(value || 0)))
+  );
+
+  if (variantTotals.length) return variantTotals.reduce((sum, value) => sum + value, 0);
+  if (colorTotals.length) return colorTotals.reduce((sum, value) => sum + value, 0);
+  return null;
+}
+
+function hasDetailedStockMismatch(product) {
+  const rawDetailedTotal = getRawDetailedStockTotal(product);
+  if (rawDetailedTotal === null) return false;
+
+  return rawDetailedTotal !== Math.max(0, Number(product?.stock || 0));
+}
+
 function getMissingSoldForStock(product, colorValue = "", sizeValue = "") {
   const ledger = product?.salesLedger ?? {};
-  const scale = getMissingSoldScale(product);
   const colorKey = normalizeVariantKey(colorValue);
   const sizeKey = normalizeVariantKey(sizeValue);
+
+  // Quand le total global et les options détaillées ne correspondent plus,
+  // les options sont historiques. On déduit alors les ventes retrouvées
+  // directement des couleurs/tailles pour éviter qu'elles réapparaissent.
+  if (hasDetailedStockMismatch(product)) {
+    if (colorKey && sizeKey) {
+      return Math.max(
+        0,
+        Number(
+          ledger.soldByVariant?.[colorKey]?.[sizeKey] ??
+            ledger.soldByVariant?.[colorValue]?.[sizeValue] ??
+            0
+        )
+      );
+    }
+
+    if (colorKey) {
+      return Math.max(
+        0,
+        Number(ledger.soldByColor?.[colorKey] ?? ledger.soldByColor?.[colorValue] ?? 0)
+      );
+    }
+
+    return Math.max(0, Number(ledger.soldTotal || 0));
+  }
+
+  const scale = getMissingSoldScale(product);
 
   if (!scale) return 0;
 
@@ -3193,7 +3239,10 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
   const productTotal = getProductEffectiveStock(product);
   const ledgerSoldTotal = Math.max(0, Number(product.salesLedger?.soldTotal || 0));
   const ledgerMovementTotal = Math.max(0, Number(product.salesLedger?.movementSoldTotal || 0));
-  const ledgerAdjustment = Math.max(0, Number(product.salesLedger?.missingSoldTotal || 0));
+  const rawDetailedStockTotal = getRawDetailedStockTotal(product);
+  const ledgerAdjustment = hasDetailedStockMismatch(product)
+    ? Math.max(0, Number(rawDetailedStockTotal || 0) - productTotal)
+    : Math.max(0, Number(product.salesLedger?.missingSoldTotal || 0));
   const stockIsInconsistent = Boolean(rows.length && displayedColorTotal !== productTotal);
   const reliableRows = stockIsInconsistent
     ? rows.filter((row) => row.hasExactSizeStock)
@@ -3399,7 +3448,7 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
           <div className="stock-detail-list">
             {ledgerSoldTotal > 0 ? (
               <div className="stock-ledger-note">
-                Ventes retrouvées : {ledgerSoldTotal} · déjà déduites : {ledgerMovementTotal} · correction appliquée : {ledgerAdjustment}
+                Ventes retrouvées : {ledgerSoldTotal} · mouvements historiques : {ledgerMovementTotal} · correction appliquée : {ledgerAdjustment}
                 {ledgerAdjustment > 0 ? ` · stock calculé : ${productTotal}` : ""}
               </div>
             ) : null}

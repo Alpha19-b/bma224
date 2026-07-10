@@ -8979,6 +8979,77 @@ textarea {
   opacity: 1;
 }
 
+/* Stock detail : les anciennes cartes claires devenaient presque invisibles
+   quand le theme admin sombre appliquait son texte clair. */
+.admin-shell .stock-detail-summary > div,
+.admin-shell .stock-detail-card,
+.admin-shell .stock-distribution-editor,
+.admin-shell .stock-distribution-color,
+.admin-shell .stock-size-grid span {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: #f4fbf7;
+}
+
+.admin-shell .stock-detail-summary span,
+.admin-shell .stock-detail-card p,
+.admin-shell .stock-size-breakdown-label,
+.admin-shell .stock-size-missing span,
+.admin-shell .stock-consistency-alert span,
+.admin-shell .stock-distribution-head span {
+  color: #b7c8c0;
+}
+
+.admin-shell .stock-detail-summary strong,
+.admin-shell .stock-detail-card-head strong,
+.admin-shell .stock-size-missing strong,
+.admin-shell .stock-consistency-alert strong,
+.admin-shell .stock-distribution-head strong,
+.admin-shell .stock-distribution-color-name strong {
+  color: #f4fbf7;
+}
+
+.admin-shell .stock-detail-card-head b {
+  background: rgba(122, 167, 255, 0.16);
+  color: #9abaff;
+}
+
+.admin-shell .stock-detail-card-head b.low,
+.admin-shell .stock-size-grid span.low {
+  background: rgba(228, 174, 86, 0.16);
+  color: #f2c477;
+}
+
+.admin-shell .stock-detail-card-head b.out,
+.admin-shell .stock-size-grid span.out {
+  background: rgba(242, 116, 107, 0.15);
+  color: #ff9a93;
+}
+
+.admin-shell .stock-detail-card-head b.pending {
+  background: rgba(237, 245, 241, 0.1);
+  color: #b7c8c0;
+}
+
+.admin-shell .stock-size-grid b {
+  color: #8ff0c4;
+}
+
+.admin-shell .stock-consistency-alert {
+  border-color: rgba(228, 174, 86, 0.5);
+  background: #2a2113;
+}
+
+.admin-shell .stock-consistency-alert strong {
+  color: #f2c477;
+}
+
+.admin-shell .stock-ledger-note {
+  border-color: rgba(98, 217, 166, 0.35);
+  background: #142a21;
+  color: #8ff0c4;
+}
+
 .admin-shell .accounting-note-row span,
 .admin-shell .deposit-history-row small,
 .admin-shell .deposit-history-row em,
@@ -9225,7 +9296,7 @@ textarea {
   padding: 0 18px;
   border-radius: 6px;
   background: #fff;
-  color: var(--store-ink);
+  color: #0c0f0e;
 }
 
 .storefront-v2 .fashion-hero .btn:hover {
@@ -9493,7 +9564,7 @@ textarea {
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.95);
-  color: var(--store-ink);
+  color: #0c0f0e;
   border: 1px solid rgba(28, 33, 31, 0.12);
   box-shadow: none;
   transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
