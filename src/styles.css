@@ -8947,6 +8947,38 @@ textarea {
   color: var(--ink);
 }
 
+.admin-shell .calc-preview,
+.admin-shell .trace-box,
+.admin-shell .file-picker,
+.admin-shell .manual-sale-footer {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: var(--ink);
+}
+
+.admin-shell .calc-preview span,
+.admin-shell .trace-box span,
+.admin-shell .file-picker strong,
+.admin-shell .manual-sale-footer small,
+.admin-shell .manual-sale-footer em {
+  color: #b7c8c0;
+}
+
+.admin-shell .calc-preview strong,
+.admin-shell .trace-box strong,
+.admin-shell .manual-sale-footer strong {
+  color: #f4fbf7;
+}
+
+.admin-shell .trace-box small {
+  color: #8ff0c4;
+}
+
+.admin-shell .file-picker.disabled {
+  background: #111916;
+  opacity: 1;
+}
+
 .admin-shell .accounting-note-row span,
 .admin-shell .deposit-history-row small,
 .admin-shell .deposit-history-row em,
