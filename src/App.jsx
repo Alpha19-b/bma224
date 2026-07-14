@@ -564,10 +564,10 @@ function getProductStockForColor(product, colorValue = "") {
   const stockByColor = product.stockByColor ?? {};
   let stockValue = Math.max(0, Number(product.stock || 0));
 
-  // La boutique et le vendeur ne lisent pas le journal comptable. Si les
-  // options couleur sont historiques, le stock global est la seule valeur
-  // sûre pour éviter de remettre en vente des pièces déjà sorties.
-  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+  // Des que le total global et les options divergent, les options sont
+  // historiques ou incompletes. Le total global reste la valeur canonique
+  // jusqu'a ce que la repartition couleur/taille soit resynchronisee.
+  if (hasDetailedStockMismatch(product)) {
     return stockValue;
   }
 
@@ -595,7 +595,7 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
   const sizeKey = normalizeVariantKey(sizeValue);
   const stockForColor = getVariantStockMap(product, colorValue);
 
-  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+  if (hasDetailedStockMismatch(product)) {
     return Math.max(0, Number(product.stock || 0));
   }
 
@@ -650,10 +650,6 @@ function hasDetailedStockMismatch(product) {
   if (rawDetailedTotal === null) return false;
 
   return rawDetailedTotal !== Math.max(0, Number(product?.stock || 0));
-}
-
-function hasReconciliationLedger(product) {
-  return Boolean(product?.salesLedger && typeof product.salesLedger === "object");
 }
 
 function getMissingSoldForStock(product, colorValue = "", sizeValue = "") {
@@ -966,7 +962,7 @@ function getProductEffectiveStock(product) {
     return applyMissingSoldToStock(product, baseStock);
   }
 
-  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+  if (hasDetailedStockMismatch(product)) {
     return baseStock;
   }
 
@@ -3255,13 +3251,12 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
   const rows = getProductStockDetailRows(product);
   const detailedRows = rows.filter((row) => row.hasExactSizeStock);
   const displayedColorTotal = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
-  const databaseProductTotal = Math.max(0, Number(product.stock || 0));
   const productTotal = getProductEffectiveStock(product);
   const ledgerSoldTotal = Math.max(0, Number(product.salesLedger?.soldTotal || 0));
   const ledgerMovementTotal = Math.max(0, Number(product.salesLedger?.movementSoldTotal || 0));
-  const rawDetailedStockTotal = getRawDetailedStockTotal(product);
-  const ledgerAdjustment = hasDetailedStockMismatch(product)
-    ? Math.max(0, Number(rawDetailedStockTotal || 0) - productTotal)
+  const stockUsesGlobalSource = hasDetailedStockMismatch(product);
+  const ledgerAdjustment = stockUsesGlobalSource
+    ? 0
     : Math.max(0, Number(product.salesLedger?.missingSoldTotal || 0));
   const stockIsInconsistent = Boolean(rows.length && displayedColorTotal !== productTotal);
   const reliableRows = stockIsInconsistent
@@ -3468,8 +3463,10 @@ function ProductStockDetailPanel({ product, onClose, onSaveDistribution }) {
           <div className="stock-detail-list">
             {ledgerSoldTotal > 0 ? (
               <div className="stock-ledger-note">
-                Ventes retrouvées : {ledgerSoldTotal} · mouvements historiques : {ledgerMovementTotal} · correction appliquée : {ledgerAdjustment}
-                {ledgerAdjustment > 0 ? ` · stock calculé : ${productTotal}` : ""}
+                Ventes retrouvées : {ledgerSoldTotal} · mouvements historiques : {ledgerMovementTotal}
+                {stockUsesGlobalSource
+                  ? ` · stock global retenu : ${productTotal} · répartition couleur/taille à resynchroniser`
+                  : ` · correction appliquée : ${ledgerAdjustment}${ledgerAdjustment > 0 ? ` · stock calculé : ${productTotal}` : ""}`}
               </div>
             ) : null}
             {rows.map((row) => (
@@ -6489,14 +6486,9 @@ function AdminPage() {
       ...parseStockByColorText(productForm.stockByColor),
       ...exactStock.stockByColor,
     };
-    const hasStockByColor = Object.keys(stockByColor).length > 0;
-    const stockByColorTotal = Object.values(stockByColor).reduce(
-      (sum, quantity) => sum + Number(quantity || 0),
-      0
-    );
 
     const stockResult = parseGnfInput(productForm.stock, "Stock", {
-      required: !hasStockByColor,
+      required: true,
       fallback: 0,
     });
 
@@ -6554,7 +6546,7 @@ function AdminPage() {
       promoPrice: null,
       purchasePrice: purchasePriceResult.value,
       costPrice,
-      stock: hasStockByColor ? stockByColorTotal : stockResult.value,
+      stock: stockResult.value,
       image: coverImage,
       sizes: allSizes,
       globalSizes: sizes,
@@ -6625,7 +6617,7 @@ function AdminPage() {
       stockByColor,
       stockByVariant: exactStock.stockByVariant,
       colors,
-      stock: hasStockByColor ? stockByColorTotal : stockResult.value,
+      stock: stockResult.value,
     };
 
     setAdminProducts((current) =>
@@ -7893,13 +7885,16 @@ function AdminPage() {
               onChange={(value) => updateProductForm("extraCost", value)}
             />
             <Field
-              label="Stock"
+              label="Stock global reel"
               value={productForm.stock}
               type="number"
               min="0"
               step="1"
               onChange={(value) => updateProductForm("stock", value)}
             />
+            <small className="muted stock-form-help">
+              Reference physique de l'article. Les details couleur/taille doivent etre repartis a part.
+            </small>
             </div>
             <div className="calc-preview">
               <div>
