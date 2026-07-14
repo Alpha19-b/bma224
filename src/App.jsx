@@ -564,6 +564,13 @@ function getProductStockForColor(product, colorValue = "") {
   const stockByColor = product.stockByColor ?? {};
   let stockValue = Math.max(0, Number(product.stock || 0));
 
+  // La boutique et le vendeur ne lisent pas le journal comptable. Si les
+  // options couleur sont historiques, le stock global est la seule valeur
+  // sûre pour éviter de remettre en vente des pièces déjà sorties.
+  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+    return stockValue;
+  }
+
   if (colorKey && stockByColor[colorKey] !== undefined && stockByColor[colorKey] !== null) {
     stockValue = Math.max(0, Number(stockByColor[colorKey]) || 0);
   }
@@ -587,6 +594,11 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const sizeKey = normalizeVariantKey(sizeValue);
   const stockForColor = getVariantStockMap(product, colorValue);
+
+  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+    return Math.max(0, Number(product.stock || 0));
+  }
+
   const exactStock =
     colorKey && sizeKey ? stockForColor[sizeKey] ?? stockForColor[sizeValue] : undefined;
 
@@ -638,6 +650,10 @@ function hasDetailedStockMismatch(product) {
   if (rawDetailedTotal === null) return false;
 
   return rawDetailedTotal !== Math.max(0, Number(product?.stock || 0));
+}
+
+function hasReconciliationLedger(product) {
+  return Boolean(product?.salesLedger && typeof product.salesLedger === "object");
 }
 
 function getMissingSoldForStock(product, colorValue = "", sizeValue = "") {
@@ -948,6 +964,10 @@ function getProductEffectiveStock(product) {
 
   if (!hasDetailedColorStock && !hasDetailedVariantStock) {
     return applyMissingSoldToStock(product, baseStock);
+  }
+
+  if (hasDetailedStockMismatch(product) && !hasReconciliationLedger(product)) {
+    return baseStock;
   }
 
   return getProductStockDetailRows(product).reduce(
