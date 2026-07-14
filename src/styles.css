@@ -10625,3 +10625,145 @@ textarea {
     min-height: 300px !important;
   }
 }
+
+/* Dernier passage contraste : les panneaux admin restent lisibles meme si une
+   ancienne regle de la version claire est chargee avant le theme sombre. */
+.admin-shell .stock-detail-panel,
+.stock-detail-panel {
+  background: #101715 !important;
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .section-head,
+.stock-detail-panel .section-head {
+  background: #101715 !important;
+  border-bottom-color: rgba(237, 245, 241, 0.14) !important;
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .section-head h2,
+.admin-shell .stock-detail-panel .section-head .icon-btn,
+.stock-detail-panel .section-head h2,
+.stock-detail-panel .section-head .icon-btn {
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .section-head span,
+.stock-detail-panel .section-head span,
+.admin-shell .stock-detail-panel .stock-detail-summary span,
+.stock-detail-panel .stock-detail-summary span,
+.admin-shell .stock-detail-panel .stock-size-breakdown-label,
+.stock-detail-panel .stock-size-breakdown-label,
+.admin-shell .stock-detail-panel .stock-size-missing span,
+.stock-detail-panel .stock-size-missing span {
+  color: #b7c8c0 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-summary > div,
+.stock-detail-panel .stock-detail-summary > div,
+.admin-shell .stock-detail-panel .stock-detail-card,
+.stock-detail-panel .stock-detail-card,
+.admin-shell .stock-detail-panel .stock-distribution-editor,
+.stock-detail-panel .stock-distribution-editor,
+.admin-shell .stock-detail-panel .stock-distribution-color,
+.stock-detail-panel .stock-distribution-color,
+.admin-shell .stock-detail-panel .stock-size-grid span,
+.stock-detail-panel .stock-size-grid span {
+  border-color: rgba(237, 245, 241, 0.16) !important;
+  background: #16201d !important;
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-summary strong,
+.stock-detail-panel .stock-detail-summary strong,
+.admin-shell .stock-detail-panel .stock-detail-card-head strong,
+.stock-detail-panel .stock-detail-card-head strong,
+.admin-shell .stock-detail-panel .stock-size-missing strong,
+.stock-detail-panel .stock-size-missing strong,
+.admin-shell .stock-detail-panel .stock-distribution-color-name strong,
+.stock-detail-panel .stock-distribution-color-name strong {
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-ledger-note,
+.stock-detail-panel .stock-ledger-note {
+  border-color: rgba(98, 217, 166, 0.42) !important;
+  background: #142a21 !important;
+  color: #8ff0c4 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-consistency-alert,
+.stock-detail-panel .stock-consistency-alert {
+  border-color: rgba(228, 174, 86, 0.62) !important;
+  background: #2a2113 !important;
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-consistency-alert strong,
+.stock-detail-panel .stock-consistency-alert strong {
+  color: #f2c477 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-consistency-alert span,
+.stock-detail-panel .stock-consistency-alert span,
+.admin-shell .stock-detail-panel .stock-distribution-head span,
+.stock-detail-panel .stock-distribution-head span {
+  color: #d9c18f !important;
+}
+
+.admin-shell .stock-detail-panel .stock-size-grid b,
+.stock-detail-panel .stock-size-grid b {
+  color: #8ff0c4 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-card-head b,
+.stock-detail-panel .stock-detail-card-head b {
+  background: rgba(122, 167, 255, 0.18) !important;
+  color: #a9c3ff !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-card-head b.low,
+.stock-detail-panel .stock-detail-card-head b.low,
+.admin-shell .stock-detail-panel .stock-size-grid span.low,
+.stock-detail-panel .stock-size-grid span.low {
+  background: rgba(228, 174, 86, 0.18) !important;
+  color: #f2c477 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-card-head b.out,
+.stock-detail-panel .stock-detail-card-head b.out,
+.admin-shell .stock-detail-panel .stock-size-grid span.out,
+.stock-detail-panel .stock-size-grid span.out {
+  background: rgba(242, 116, 107, 0.18) !important;
+  color: #ffaaa4 !important;
+}
+
+.admin-shell .stock-detail-panel .stock-detail-card-head b.pending,
+.stock-detail-panel .stock-detail-card-head b.pending {
+  background: rgba(237, 245, 241, 0.12) !important;
+  color: #d9e5df !important;
+}
+
+.admin-shell .stock-detail-panel .stock-distribution-inputs input,
+.stock-detail-panel .stock-distribution-inputs input,
+.admin-shell .admin-action-overlay input,
+.admin-shell .admin-action-overlay select,
+.admin-shell .admin-action-overlay textarea {
+  border-color: rgba(237, 245, 241, 0.18) !important;
+  background: #090e0d !important;
+  color: #f4fbf7 !important;
+}
+
+.admin-shell .stock-detail-panel .btn:not(.ghost):not(.secondary),
+.stock-detail-panel .btn:not(.ghost):not(.secondary) {
+  color: #07100d !important;
+}
+
+.admin-shell .stock-detail-panel .btn.ghost,
+.admin-shell .stock-detail-panel .btn.secondary,
+.stock-detail-panel .btn.ghost,
+.stock-detail-panel .btn.secondary {
+  border-color: rgba(237, 245, 241, 0.18) !important;
+  background: rgba(237, 245, 241, 0.06) !important;
+  color: #f4fbf7 !important;
+}
