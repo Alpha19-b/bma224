@@ -511,8 +511,9 @@ function getProductColorOptions(product) {
       };
     })
     .filter((color) => {
-      if (!color.value || seen.has(color.value)) return false;
-      seen.add(color.value);
+      const key = normalizeVariantKey(color.value);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 }
@@ -563,6 +564,7 @@ function getProductStockForColor(product, colorValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const stockByColor = product.stockByColor ?? {};
   let stockValue = Math.max(0, Number(product.stock || 0));
+  const hasDetailedStock = getRawDetailedStockTotal(product) !== null;
 
   // Des que le total global et les options divergent, les options sont
   // historiques ou incompletes. Le total global reste la valeur canonique
@@ -575,7 +577,7 @@ function getProductStockForColor(product, colorValue = "") {
     stockValue = Math.max(0, Number(stockByColor[colorKey]) || 0);
   }
 
-  return applyMissingSoldToStock(product, stockValue, colorValue);
+  return hasDetailedStock ? stockValue : applyMissingSoldToStock(product, stockValue, colorValue);
 }
 
 function getVariantStockMap(product, colorValue = "") {
@@ -603,12 +605,7 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
     colorKey && sizeKey ? stockForColor[sizeKey] ?? stockForColor[sizeValue] : undefined;
 
   if (exactStock !== undefined && exactStock !== null) {
-    return applyMissingSoldToStock(
-      product,
-      Math.max(0, Number(exactStock) || 0),
-      colorValue,
-      sizeValue
-    );
+    return Math.max(0, Number(exactStock) || 0);
   }
 
   if (colorKey && sizeKey && hasTrackedVariantStock(product, colorValue)) {
@@ -888,7 +885,7 @@ function getProductStockDetailRows(product) {
           quantity:
             rawQuantity === undefined || rawQuantity === null
               ? rawQuantity
-              : applyMissingSoldToStock(product, rawQuantity, color.value, size),
+              : Math.max(0, Number(rawQuantity) || 0),
         };
       });
     const trackedSizeRows = sizeRows.filter(
@@ -901,9 +898,7 @@ function getProductStockDetailRows(product) {
     const adjustedColorTotal =
       colorTotal === null
         ? null
-        : hasExactSizeStock
-          ? colorTotal
-          : applyMissingSoldToStock(product, colorTotal, color.value);
+        : Math.max(0, Number(colorTotal) || 0);
 
     if (colorTotal !== null || sizeRows.length) {
       rows.push({
@@ -923,7 +918,7 @@ function getProductStockDetailRows(product) {
     rows.push({
       color: colorKey,
       hex: getKnownColorHex(colorKey),
-      total: applyMissingSoldToStock(product, Math.max(0, Number(quantity || 0)), colorKey),
+      total: Math.max(0, Number(quantity || 0)),
       sizes: [],
       hasExactSizeStock: false,
     });
@@ -935,7 +930,7 @@ function getProductStockDetailRows(product) {
 
     const sizes = Object.entries(stockForColor).map(([size, quantity]) => ({
       size,
-      quantity: applyMissingSoldToStock(product, quantity, colorKey, size),
+      quantity: Math.max(0, Number(quantity || 0)),
     }));
 
     rows.push({

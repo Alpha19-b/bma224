@@ -10767,3 +10767,69 @@ textarea {
   background: rgba(237, 245, 241, 0.06) !important;
   color: #f4fbf7 !important;
 }
+
+.stock-form-help {
+  grid-column: 1 / -1;
+  display: block;
+  margin-top: -6px;
+}
+
+@media (max-width: 760px) {
+  .stock-detail-panel .section-head {
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .stock-detail-panel .section-head h2 {
+    font-size: 18px;
+  }
+
+  .stock-detail-panel .section-head .icon-btn {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .stock-consistency-alert,
+  .stock-distribution-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stock-consistency-alert .btn,
+  .stock-distribution-actions .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .stock-distribution-editor {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .stock-distribution-color {
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .stock-distribution-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .stock-distribution-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 390px) {
+  .stock-distribution-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-detail-card-head strong {
+    font-size: 14px;
+  }
+}
