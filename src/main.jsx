@@ -6,6 +6,21 @@ import "./styles.css";
 
 function Root() {
   React.useEffect(() => {
+    const isAdmin = window.location.pathname.startsWith("/admin");
+    const manifest = document.querySelector('link[rel="manifest"]');
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+
+    if (manifest) {
+      manifest.setAttribute(
+        "href",
+        isAdmin ? "/admin-manifest.webmanifest" : "/manifest.webmanifest"
+      );
+    }
+
+    if (themeColor) {
+      themeColor.setAttribute("content", isAdmin ? "#070a09" : "#0a0d0c");
+    }
+
     if (!("serviceWorker" in navigator)) return undefined;
 
     const registerServiceWorker = () => {

@@ -1,5 +1,11 @@
-const CACHE_NAME = "bma-shell-v1";
-const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icon-bma.svg"];
+const CACHE_NAME = "bma-shell-v2";
+const SHELL = [
+  "/",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/admin-manifest.webmanifest",
+  "/icon-bma.svg",
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

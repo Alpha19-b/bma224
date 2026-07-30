@@ -20,11 +20,13 @@ export default function PwaInstallPrompt() {
   const [installEvent, setInstallEvent] = useState(null);
   const [visible, setVisible] = useState(false);
   const [ios, setIos] = useState(false);
+  const isAdmin = window.location.pathname.startsWith("/admin");
+  const dismissKey = `${DISMISS_KEY}:${isAdmin ? "admin" : "shop"}`;
 
   useEffect(() => {
-    if (window.location.pathname.startsWith("/admin") || isStandalone()) return undefined;
+    if (isStandalone()) return undefined;
 
-    const dismissedAt = Number(window.localStorage.getItem(DISMISS_KEY) || 0);
+    const dismissedAt = Number(window.localStorage.getItem(dismissKey) || 0);
     if (dismissedAt && Date.now() - dismissedAt < DISMISS_FOR) return undefined;
 
     const iosDevice = isIosDevice();
@@ -46,10 +48,10 @@ export default function PwaInstallPrompt() {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
       if (iosTimer) window.clearTimeout(iosTimer);
     };
-  }, []);
+  }, [dismissKey]);
 
   function dismiss() {
-    window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    window.localStorage.setItem(dismissKey, String(Date.now()));
     setVisible(false);
   }
 
@@ -65,14 +67,14 @@ export default function PwaInstallPrompt() {
   if (!visible) return null;
 
   return (
-    <aside className="pwa-install-prompt" role="dialog" aria-label="Installer BMA">
+    <aside className={`pwa-install-prompt ${isAdmin ? "is-admin" : ""}`} role="dialog" aria-label="Installer BMA">
       <div className="pwa-install-icon" aria-hidden="true">BMA</div>
       <div className="pwa-install-copy">
-        <strong>Garde BMA sous la main</strong>
+        <strong>{isAdmin ? "Installe BMA Admin" : "Garde BMA sous la main"}</strong>
         {ios ? (
-          <span><Share2 size={14} aria-hidden="true" /> Partager puis « Sur l'ecran d'accueil ».</span>
+          <span><Share2 size={14} aria-hidden="true" /> Partager puis "Sur l'ecran d'accueil".</span>
         ) : (
-          <span>Installe l'app pour retrouver tes articles plus vite.</span>
+          <span>{isAdmin ? "Retrouve la gestion BMA comme une app." : "Retrouve tes articles plus vite."}</span>
         )}
       </div>
       {installEvent ? (

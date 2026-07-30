@@ -10941,6 +10941,16 @@ textarea {
   color: #fff;
 }
 
+.pwa-install-prompt.is-admin .pwa-install-icon {
+  background: #62d9a6;
+  color: #07100d;
+}
+
+.pwa-install-prompt.is-admin .pwa-install-action {
+  background: #dffbef;
+  color: #07100d;
+}
+
 @keyframes pwaPromptIn {
   from {
     opacity: 0;
