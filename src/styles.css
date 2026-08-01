@@ -12197,6 +12197,19 @@ body {
     position: relative;
     flex: 0 0 auto;
     margin-top: 0;
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .storefront-v2 .cart-drawer > .checkout + .cart-total .cart-actions {
+    gap: 6px;
+  }
+
+  .storefront-v2 .cart-drawer > .checkout + .cart-total .btn {
+    min-height: 42px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .storefront-v2 .checkout .field-grid,
