@@ -10038,6 +10038,38 @@ textarea {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.storefront-v2 .cart-total {
+  border-top-color: rgba(246, 241, 232, 0.12);
+  background: #101412;
+  color: var(--store-ink);
+}
+
+.storefront-v2 .cart-total .total-line {
+  color: var(--store-ink);
+}
+
+.storefront-v2 .cart-total .total-line.muted-line {
+  color: var(--store-muted);
+}
+
+.storefront-v2 .cart-total .btn.ghost {
+  border-color: rgba(246, 241, 232, 0.14);
+  background: transparent;
+  color: var(--store-ink);
+}
+
+.storefront-v2 .btn.cart-remove-button {
+  border-color: rgba(244, 126, 117, 0.36);
+  background: rgba(244, 126, 117, 0.1);
+  color: #ffaaa4;
+}
+
+.storefront-v2 .btn.cart-remove-button:hover {
+  border-color: rgba(244, 126, 117, 0.62);
+  background: rgba(244, 126, 117, 0.18);
+  color: #ffd0cb;
+}
+
 .storefront-v2 .tabs button.active,
 .storefront-v2 .checkout-choice button.active,
 .storefront-v2 .auth-tabs button.active {
@@ -11961,7 +11993,7 @@ body {
   .storefront-v2 .auth-overlay {
     position: fixed;
     inset: 0;
-    width: 100vw;
+    width: auto;
     height: 100dvh;
     padding: 0;
     align-items: stretch;
@@ -11974,7 +12006,7 @@ body {
   .storefront-v2 .client-settings-panel,
   .storefront-v2 .client-orders-panel {
     width: 100%;
-    max-width: 100vw;
+    max-width: 100%;
     min-width: 0;
     height: 100dvh;
     max-height: 100dvh;
