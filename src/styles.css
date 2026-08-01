@@ -8841,8 +8841,20 @@ textarea {
 
 .admin-shell .btn:disabled,
 .admin-shell .action-icon-button:disabled {
-  opacity: 0.5;
-  color: #9aa8a3;
+  opacity: 0.68;
+  color: #b8c5c0;
+}
+
+.admin-shell .btn:not(.secondary):not(.ghost):not(.danger),
+.admin-login-screen .btn:not(.secondary):not(.ghost):not(.danger) {
+  background: #13855c;
+  color: #fff;
+}
+
+.admin-shell .btn:not(.secondary):not(.ghost):not(.danger):hover,
+.admin-login-screen .btn:not(.secondary):not(.ghost):not(.danger):hover {
+  background: #117a55;
+  color: #fff;
 }
 
 .admin-shell .btn.secondary:hover,
@@ -10103,6 +10115,34 @@ textarea {
 .storefront-v2 .btn,
 .storefront-v2 .checkout .btn {
   border-color: rgba(246, 241, 232, 0.12);
+}
+
+.storefront-v2 .btn.ghost {
+  border-color: rgba(246, 241, 232, 0.14);
+  background: transparent;
+  color: var(--store-ink);
+}
+
+.storefront-v2 .auth-tabs button:not(.active) {
+  color: #c7d0cb;
+}
+
+.storefront-v2 .option-head {
+  color: var(--store-muted);
+}
+
+.storefront-v2 .option-head strong {
+  color: var(--store-ink);
+}
+
+.storefront-v2 .btn:not(.secondary):not(.ghost):not(.danger):not(.cart-remove-button) {
+  background: #13855c;
+  color: #fff;
+}
+
+.storefront-v2 .btn:not(.secondary):not(.ghost):not(.danger):not(.cart-remove-button):hover {
+  background: #117a55;
+  color: #fff;
 }
 
 .storefront-v2 .client-orders-actions .btn.secondary,
