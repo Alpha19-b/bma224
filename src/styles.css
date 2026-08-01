@@ -8475,6 +8475,7 @@ textarea {
 .admin-shell .manual-sale-finance-grid,
 .admin-shell .order-detail-summary,
 .admin-shell .location-box,
+.admin-shell .order-location-card,
 .admin-shell .client-order-card,
 .admin-login-screen .section,
 .admin-login-screen .auth-panel {
@@ -8482,6 +8483,26 @@ textarea {
   background: rgba(16, 23, 21, 0.94);
   color: var(--ink);
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.2);
+}
+
+.admin-shell .order-location-card strong {
+  color: #e9fff4;
+}
+
+.admin-shell .order-location-card span {
+  color: #9fb3aa;
+}
+
+.admin-shell .order-location-card .maps-action {
+  border: 1px solid rgba(98, 217, 166, 0.35);
+  background: #16382b;
+  color: #e9fff4;
+}
+
+.admin-shell .order-location-card .maps-action:hover {
+  border-color: rgba(98, 217, 166, 0.62);
+  background: #20543e;
+  color: #f2fff8;
 }
 
 .admin-shell .section-head,
