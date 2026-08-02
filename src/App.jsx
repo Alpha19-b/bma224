@@ -7731,7 +7731,7 @@ function AdminPage() {
           <div className="section-head action-head">
             <div>
               <h2>{editingProductId ? "Modifier article" : "Ajouter article"}</h2>
-              <span>Photos, variantes, prix de revient et stock</span>
+              <span>L'essentiel d'abord, les variantes si nécessaire</span>
             </div>
             <button className="icon-btn" type="button" onClick={closeProductEditor}>
               Fermer
@@ -7740,18 +7740,24 @@ function AdminPage() {
           <form className="admin-form product-editor" onSubmit={addLocalProduct}>
             <div className="field photo-drop">
               <label>Photos de l'article</label>
-              <input
-                accept="image/*"
-                multiple
-                type="file"
-                onChange={(event) => {
-                  updateProductImages(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-              <span className="muted">
-                Ajoute autant de photos que nécessaire. Les nouvelles photos s'ajoutent à la galerie existante.
-              </span>
+              <label className="product-photo-picker">
+                <input
+                  accept="image/*"
+                  multiple
+                  type="file"
+                  onChange={(event) => {
+                    updateProductImages(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                <span>Ajouter des photos</span>
+                <small>
+                  {productForm.imagePreviews.length
+                    ? `${productForm.imagePreviews.length} photo${productForm.imagePreviews.length > 1 ? "s" : ""}`
+                    : "Aucune photo"}
+                </small>
+              </label>
+              <span className="muted">Ajoute toutes les vues utiles. Tu pourras les classer par couleur.</span>
               {productForm.imagePreviews.length ? (
                 <div className="image-preview-grid">
                   {productForm.imagePreviews.map((imageUrl, index) => (
@@ -7787,16 +7793,18 @@ function AdminPage() {
                 </div>
               ) : null}
             </div>
-            <Field
-              label="Nom"
-              value={productForm.name}
-              onChange={(value) => updateProductForm("name", value)}
-            />
-            <Field
-              label="Catégorie"
-              value={productForm.category}
-              onChange={(value) => updateProductForm("category", value)}
-            />
+            <div className="product-editor-basic-grid">
+              <Field
+                label="Nom"
+                value={productForm.name}
+                onChange={(value) => updateProductForm("name", value)}
+              />
+              <Field
+                label="Catégorie"
+                value={productForm.category}
+                onChange={(value) => updateProductForm("category", value)}
+              />
+            </div>
             <div className="field">
               <label>Description courte</label>
               <textarea
@@ -7805,91 +7813,39 @@ function AdminPage() {
                 onChange={(event) => updateProductForm("description", event.target.value)}
               />
             </div>
-            <div className="field">
-              <label>Tailles disponibles</label>
-              <textarea
-                placeholder="Vetement : S, M, L, XL. Chaussure : 39, 40, 41. Accessoire : laisser vide si taille unique."
-                value={productForm.sizes}
-                onChange={(event) => updateProductForm("sizes", event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>Couleurs disponibles</label>
-              <textarea
-                placeholder="Ex : Noir #111820, Bleu #2563eb, Beige #d8c3a5"
-                value={productForm.colors}
-                onChange={(event) => updateProductForm("colors", event.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>Tailles selon la couleur</label>
-              <textarea
-                placeholder={"Rouge: 40, 41, 42\nBleu: 39, 40\nNoir: S, M, L"}
-                value={productForm.sizesByColor}
-                onChange={(event) => updateProductForm("sizesByColor", event.target.value)}
-              />
-              <small className="muted">
-                Optionnel. Si une couleur a ses propres tailles, elle remplace la liste generale.
-              </small>
-            </div>
-            <div className="field">
-              <label>Quantite selon la couleur</label>
-              <textarea
-                placeholder={"Noir: 57\nBlanc: 40\nRose: 40"}
-                value={productForm.stockByColor}
-                onChange={(event) => updateProductForm("stockByColor", event.target.value)}
-              />
-              <small className="muted">
-                Optionnel. Si rempli, le stock total est calcule avec ces quantites.
-              </small>
-            </div>
-            <div className="field">
-              <label>Détail exact du stock</label>
-              <textarea
-                placeholder={"Noir: L 1, XL 1\nBlanc: L 2\nOrange: 2"}
-                value={productForm.stockDetails}
-                onChange={(event) => updateProductForm("stockDetails", event.target.value)}
-              />
-              <small className="muted">
-                Optionnel. Pour couleur + taille exacte. Si une couleur n'a qu'une taille, un simple nombre suffit.
-              </small>
-            </div>
             <div className="price-form-grid">
-            <Field
-              label="Prix de vente GNF"
-              value={productForm.price}
-              type="number"
-              min="1"
-              step="1"
-              onChange={(value) => updateProductForm("price", value)}
-            />
-            <Field
-              label="Prix d'achat GNF"
-              value={productForm.purchasePrice}
-              type="number"
-              min="0"
-              step="1"
-              onChange={(value) => updateProductForm("purchasePrice", value)}
-            />
-            <Field
-              label="Frais annexes GNF"
-              value={productForm.extraCost}
-              type="number"
-              min="0"
-              step="1"
-              onChange={(value) => updateProductForm("extraCost", value)}
-            />
-            <Field
-              label="Stock global reel"
-              value={productForm.stock}
-              type="number"
-              min="0"
-              step="1"
-              onChange={(value) => updateProductForm("stock", value)}
-            />
-            <small className="muted stock-form-help">
-              Reference physique de l'article. Les details couleur/taille doivent etre repartis a part.
-            </small>
+              <Field
+                label="Prix de vente GNF"
+                value={productForm.price}
+                type="number"
+                min="1"
+                step="1"
+                onChange={(value) => updateProductForm("price", value)}
+              />
+              <Field
+                label="Prix d'achat GNF"
+                value={productForm.purchasePrice}
+                type="number"
+                min="0"
+                step="1"
+                onChange={(value) => updateProductForm("purchasePrice", value)}
+              />
+              <Field
+                label="Stock total"
+                value={productForm.stock}
+                type="number"
+                min="0"
+                step="1"
+                onChange={(value) => updateProductForm("stock", value)}
+              />
+              <Field
+                label="Frais annexes GNF"
+                value={productForm.extraCost}
+                type="number"
+                min="0"
+                step="1"
+                onChange={(value) => updateProductForm("extraCost", value)}
+              />
             </div>
             <div className="calc-preview">
               <div>
@@ -7907,7 +7863,71 @@ function AdminPage() {
                 <strong>{getMarginRate(productSalePreview, productCostPreview)}%</strong>
               </div>
             </div>
-            <button className="btn" type="submit">
+            <details
+              className="product-editor-options"
+              defaultOpen={Boolean(productForm.sizes || productForm.colors)}
+            >
+              <summary>
+                <span>Tailles et couleurs</span>
+                <small>Optionnel pour un article unique</small>
+              </summary>
+              <div className="product-editor-options-body">
+                <div className="field">
+                  <label>Tailles disponibles</label>
+                  <textarea
+                    placeholder="Ex : S, M, L, XL ou 39, 40, 41"
+                    value={productForm.sizes}
+                    onChange={(event) => updateProductForm("sizes", event.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>Couleurs disponibles</label>
+                  <textarea
+                    placeholder="Ex : Noir #111820, Bleu #2563eb"
+                    value={productForm.colors}
+                    onChange={(event) => updateProductForm("colors", event.target.value)}
+                  />
+                </div>
+                <details
+                  className="product-editor-stock-options"
+                  defaultOpen={Boolean(
+                    productForm.sizesByColor || productForm.stockByColor || productForm.stockDetails
+                  )}
+                >
+                  <summary>
+                    <span>Répartition précise du stock</span>
+                    <small>Seulement si le stock varie par couleur ou taille</small>
+                  </summary>
+                  <div className="product-editor-stock-options-body">
+                    <div className="field">
+                      <label>Tailles selon la couleur</label>
+                      <textarea
+                        placeholder={"Rouge: 40, 41, 42\nNoir: S, M, L"}
+                        value={productForm.sizesByColor}
+                        onChange={(event) => updateProductForm("sizesByColor", event.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Quantité selon la couleur</label>
+                      <textarea
+                        placeholder={"Noir: 5\nBlanc: 3"}
+                        value={productForm.stockByColor}
+                        onChange={(event) => updateProductForm("stockByColor", event.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Détail couleur + taille</label>
+                      <textarea
+                        placeholder={"Noir: L 1, XL 1\nBlanc: L 2"}
+                        value={productForm.stockDetails}
+                        onChange={(event) => updateProductForm("stockDetails", event.target.value)}
+                      />
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </details>
+            <button className="btn product-editor-submit" type="submit">
               {editingProductId ? "Enregistrer les modifications" : "Ajouter"}
             </button>
           </form>
