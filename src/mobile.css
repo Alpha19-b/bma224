@@ -36,7 +36,8 @@ body {
   margin: 0;
 }
 
-.mobile-app-nav {
+.mobile-app-nav,
+.admin-mobile-taskbar {
   display: none;
 }
 
@@ -666,8 +667,7 @@ body {
     gap: 6px;
   }
 
-  .admin-shell .sidebar-head .sidebar-mobile-actions button,
-  .admin-shell .admin-menu-button {
+  .admin-shell .sidebar-head .sidebar-mobile-actions button {
     width: 40px;
     min-width: 40px;
     height: 40px;
@@ -681,8 +681,7 @@ body {
     color: #edf5f1;
   }
 
-  .admin-shell .sidebar-head svg,
-  .admin-shell .admin-menu-button svg {
+  .admin-shell .sidebar-head svg {
     width: 20px;
     height: 20px;
     stroke-width: 1.9;
@@ -698,7 +697,7 @@ body {
     right: 8px;
     left: 8px;
     max-height: calc(100dvh - 78px);
-    padding: 8px;
+    padding: 8px 8px calc(76px + env(safe-area-inset-bottom));
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
@@ -724,8 +723,73 @@ body {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    padding: 12px max(8px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    padding: 12px max(8px, env(safe-area-inset-right)) calc(82px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     overflow: visible;
+  }
+
+  .admin-shell .admin-menu-button {
+    display: none;
+  }
+
+  .admin-shell .admin-mobile-taskbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 86;
+    min-height: calc(64px + env(safe-area-inset-bottom));
+    padding: 5px max(6px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(6px, env(safe-area-inset-left));
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    border-top: 1px solid rgba(237, 245, 241, 0.14);
+    background: #08100f;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.44);
+  }
+
+  .admin-shell .admin-mobile-taskbar button {
+    min-width: 0;
+    min-height: 54px;
+    padding: 5px 2px 4px;
+    display: grid;
+    grid-template-rows: 24px 14px;
+    place-items: center;
+    gap: 2px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #9daca5;
+  }
+
+  .admin-shell .admin-mobile-taskbar button.active {
+    background: #11251d;
+    color: #7be0b4;
+  }
+
+  .admin-shell .admin-mobile-taskbar button.primary {
+    color: #d8b660;
+  }
+
+  .admin-shell .admin-mobile-taskbar button.primary.active {
+    background: #2c2514;
+    color: #f2cf73;
+  }
+
+  .admin-shell .admin-mobile-taskbar svg {
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.9;
+  }
+
+  .admin-shell .admin-mobile-taskbar span {
+    max-width: 100%;
+    overflow: hidden;
+    color: inherit;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .admin-shell .admin-main > *,
@@ -1042,6 +1106,10 @@ body {
   }
 
   .pwa-install-prompt:not(.is-admin) {
+    bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+
+  .pwa-install-prompt.is-admin {
     bottom: calc(74px + env(safe-area-inset-bottom));
   }
 

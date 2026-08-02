@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Boxes,
   Check,
   CircleUserRound,
   Download,
@@ -10007,6 +10008,60 @@ function AdminPage() {
 
         {renderActiveSection()}
       </main>
+
+      <nav className="admin-mobile-taskbar" aria-label="Tâches administration">
+        {canAccessAdminSection("dashboard") ? (
+          <button
+            className={activeSection === "dashboard" ? "active" : ""}
+            type="button"
+            onClick={() => navigateAdmin("dashboard")}
+          >
+            <House aria-hidden="true" />
+            <span>Accueil</span>
+          </button>
+        ) : null}
+        {canAccessAdminSection("orders") ? (
+          <button
+            className={activeSection === "orders" ? "active" : ""}
+            type="button"
+            onClick={() => navigateAdmin("orders")}
+          >
+            <Package aria-hidden="true" />
+            <span>Commandes</span>
+          </button>
+        ) : null}
+        <button
+          className={activeSection === "accounting" ? "active primary" : "primary"}
+          type="button"
+          onClick={() => {
+            navigateAdmin("accounting");
+            setManualSaleOpen(true);
+          }}
+        >
+          <WalletCards aria-hidden="true" />
+          <span>Vendre</span>
+        </button>
+        {canAccessAdminSection("products") ? (
+          <button
+            className={activeSection === "products" ? "active" : ""}
+            type="button"
+            onClick={() => navigateAdmin("products")}
+          >
+            <Boxes aria-hidden="true" />
+            <span>Articles</span>
+          </button>
+        ) : null}
+        <button
+          className={adminNavOpen ? "active" : ""}
+          type="button"
+          aria-expanded={adminNavOpen}
+          aria-controls="admin-mobile-nav"
+          onClick={() => setAdminNavOpen((current) => !current)}
+        >
+          {adminNavOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+          <span>Menu</span>
+        </button>
+      </nav>
     </div>
   );
 }
