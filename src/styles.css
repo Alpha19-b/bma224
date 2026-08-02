@@ -8961,6 +8961,27 @@ textarea {
   color: var(--muted);
 }
 
+.admin-shell .order-item-detail {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #16201d;
+  color: #f4fbf7;
+}
+
+.admin-shell .order-item-detail img {
+  border-color: rgba(237, 245, 241, 0.14);
+  background: #0b100f;
+}
+
+.admin-shell .order-item-detail strong,
+.admin-shell .order-item-detail b {
+  color: #f4fbf7;
+}
+
+.admin-shell .order-item-detail span,
+.admin-shell .order-item-detail small {
+  color: #b7c8c0;
+}
+
 .admin-shell .accounting-note-row,
 .admin-shell .deposit-history-row,
 .admin-shell .deposit-summary span,
@@ -9138,6 +9159,17 @@ textarea {
   border-color: rgba(242, 116, 107, 0.38);
   background: rgba(242, 116, 107, 0.13);
   color: #ff9a93;
+}
+
+@media (max-width: 760px) {
+  .admin-shell .order-detail-shell.open {
+    background: #070a09;
+  }
+
+  .admin-shell .order-detail-shell.open .inline-actions.vertical {
+    border-top: 1px solid rgba(237, 245, 241, 0.12);
+    background: linear-gradient(180deg, rgba(16, 23, 21, 0.9), #101715 24%);
+  }
 }
 
 /* Boutique BMA 2026: sobre, mobile-first et centree sur les produits. */
