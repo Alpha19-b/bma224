@@ -36,6 +36,10 @@ body {
   margin: 0;
 }
 
+.mobile-app-nav {
+  display: none;
+}
+
 .pwa-install-prompt {
   position: fixed;
   right: 18px;
@@ -157,9 +161,7 @@ body {
     backdrop-filter: none;
   }
 
-  .storefront-v2 .store-logo,
-  .storefront-v2 .store-actions,
-  .storefront-v2 .store-actions > * {
+  .storefront-v2 .store-logo {
     min-width: 0;
   }
 
@@ -170,56 +172,13 @@ body {
   }
 
   .storefront-v2 .store-actions {
-    margin-left: auto;
-    gap: 6px;
-    flex: 0 1 auto;
-  }
-
-  .storefront-v2 .store-actions > .btn.secondary,
-  .storefront-v2 .store-actions .account-button,
-  .storefront-v2 .store-actions .store-logout,
-  .storefront-v2 .cart-button {
-    width: 40px;
-    min-width: 40px;
-    max-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border-radius: 10px;
-  }
-
-  .storefront-v2 .history-label,
-  .storefront-v2 .client-login-button span,
-  .storefront-v2 .cart-label {
     display: none;
-  }
-
-  .storefront-v2 .history-count,
-  .storefront-v2 .cart-count {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    display: grid;
-    place-items: center;
-    border: 2px solid #080b0a;
-    border-radius: 999px;
-    font-size: 10px;
-  }
-
-  .storefront-v2 .history-button,
-  .storefront-v2 .cart-button {
-    position: relative;
   }
 
   .storefront-v2 .store-main {
     width: 100%;
     max-width: 100%;
-    padding: 14px max(10px, env(safe-area-inset-right)) calc(82px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    padding: 14px max(10px, env(safe-area-inset-right)) calc(88px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     overflow: visible;
   }
 
@@ -578,8 +537,8 @@ body {
   }
 
   .storefront-v2 .store-footer {
-    margin: 52px -10px -82px;
-    padding: 28px max(16px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    margin: 52px -10px -88px;
+    padding: 28px max(16px, env(safe-area-inset-right)) calc(104px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 
   .storefront-v2 .store-footer-grid {
@@ -591,18 +550,75 @@ body {
     grid-column: 1 / -1;
   }
 
-  .storefront-v2 .mobile-cart-bar {
+  .storefront-v2 .mobile-app-nav {
     position: fixed;
-    right: max(10px, env(safe-area-inset-right));
-    bottom: calc(10px + env(safe-area-inset-bottom));
-    left: max(10px, env(safe-area-inset-left));
-    z-index: 70;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 72;
+    min-height: calc(64px + env(safe-area-inset-bottom));
+    padding: 5px max(6px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(6px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-top: 1px solid rgba(237, 245, 241, 0.13);
+    background: #0a0f0d;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.42);
+  }
+
+  .storefront-v2 .mobile-app-nav button {
+    position: relative;
+    min-width: 0;
     min-height: 54px;
-    border: 1px solid rgba(98, 217, 166, 0.3);
-    border-radius: 12px;
-    background: #159a68;
-    color: #07100d;
-    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
+    padding: 5px 2px 4px;
+    display: grid;
+    grid-template-rows: 24px 14px;
+    place-items: center;
+    gap: 2px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #9dacA5;
+  }
+
+  .storefront-v2 .mobile-app-nav button:active,
+  .storefront-v2 .mobile-app-nav button:focus-visible,
+  .storefront-v2 .mobile-app-nav button.has-items {
+    background: #11251d;
+    color: #7be0b4;
+  }
+
+  .storefront-v2 .mobile-app-nav svg {
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.9;
+  }
+
+  .storefront-v2 .mobile-app-nav span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    color: inherit;
+    font-size: 10px;
+    font-weight: 750;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .storefront-v2 .mobile-app-nav b {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 8px);
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border: 2px solid #0a0f0d;
+    border-radius: 999px;
+    background: #d4aa4f;
+    color: #090b0a;
+    font-size: 9px;
   }
 
   /* Administration */
@@ -1025,6 +1041,10 @@ body {
     padding: 10px;
   }
 
+  .pwa-install-prompt:not(.is-admin) {
+    bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+
   .pwa-install-icon {
     width: 38px;
     height: 38px;
@@ -1046,21 +1066,6 @@ body {
 }
 
 @media (max-width: 420px) {
-  .storefront-v2 .store-actions {
-    gap: 4px;
-  }
-
-  .storefront-v2 .store-actions > .btn.secondary,
-  .storefront-v2 .store-actions .account-button,
-  .storefront-v2 .store-actions .store-logout,
-  .storefront-v2 .cart-button {
-    width: 38px;
-    min-width: 38px;
-    max-width: 38px;
-    height: 38px;
-    min-height: 38px;
-  }
-
   .storefront-v2 .store-catalog .catalog {
     gap: 18px 8px;
   }
@@ -1098,17 +1103,6 @@ body {
 @media (max-width: 360px) {
   .storefront-v2 .store-logo-mark {
     width: 60px;
-  }
-
-  .storefront-v2 .store-actions > .btn.secondary,
-  .storefront-v2 .store-actions .account-button,
-  .storefront-v2 .store-actions .store-logout,
-  .storefront-v2 .cart-button {
-    width: 36px;
-    min-width: 36px;
-    max-width: 36px;
-    height: 36px;
-    min-height: 36px;
   }
 
   .storefront-v2 .store-catalog .catalog {

@@ -5,6 +5,7 @@ import {
   Check,
   CircleUserRound,
   Download,
+  House,
   LogOut,
   Menu,
   Minus,
@@ -2817,23 +2818,68 @@ function ClientPage() {
             <span>Mode, accessoires et bons plans selectionnes.</span>
           </div>
         </footer>
-        {itemCount > 0 ? (
-          <button
-            className="mobile-cart-bar"
-            type="button"
-            onClick={() => {
-              setCartOpen(true);
-              setCheckoutStep("cart");
-            }}
-          >
-            <span>
-              {itemCount} article{itemCount > 1 ? "s" : ""}
-            </span>
-            <strong>{formatMoney(total)}</strong>
-            <span>Mon panier</span>
-          </button>
-        ) : null}
       </main>
+
+      <nav className="mobile-app-nav" aria-label="Navigation principale">
+        <button
+          type="button"
+          onClick={() => {
+            setMobileSearchOpen(false);
+            document.getElementById("articles")?.scrollIntoView({ behavior: "smooth" });
+          }}
+        >
+          <House aria-hidden="true" />
+          <span>Articles</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            document.getElementById("articles")?.scrollIntoView({ behavior: "smooth" });
+            setMobileSearchOpen(true);
+            window.setTimeout(() => catalogSearchRef.current?.focus(), 250);
+          }}
+        >
+          <Search aria-hidden="true" />
+          <span>Recherche</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (!customerSession) {
+              setClientAuthOpen(true);
+              return;
+            }
+            setClientOrdersOpen(true);
+            loadClientOrders();
+          }}
+        >
+          <Package aria-hidden="true" />
+          <span>Achats</span>
+          {clientOrders.length ? <b>{clientOrders.length}</b> : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (customerSession) setClientSettingsOpen(true);
+            else setClientAuthOpen(true);
+          }}
+        >
+          <CircleUserRound aria-hidden="true" />
+          <span>Compte</span>
+        </button>
+        <button
+          className={itemCount ? "has-items" : ""}
+          type="button"
+          onClick={() => {
+            setCartOpen(true);
+            setCheckoutStep("cart");
+          }}
+        >
+          <ShoppingBag aria-hidden="true" />
+          <span>Panier</span>
+          <b>{itemCount}</b>
+        </button>
+      </nav>
     </div>
   );
 }
