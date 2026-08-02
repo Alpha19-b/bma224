@@ -2968,7 +2968,22 @@ function ProductDetailModal({ product, onAdd, onClose }) {
   const selectedStock = getProductStockForSelection(product, selectedColor, selectedSize);
   const [quantity, setQuantity] = useState(1);
   const swipeStartRef = useRef(null);
+  const colorOptionsRef = useRef(null);
+  const sizeOptionsRef = useRef(null);
   const price = getProductPrice(product);
+  const needsColor = colorOptions.length > 0 && !selectedColor;
+  const needsSize = sizeOptions.length > 0 && !selectedSize;
+  const selectionIsReady = !needsColor && !needsSize;
+  const selectionIsSoldOut =
+    effectiveStock <= 0 || (selectionIsReady && selectedStock <= 0);
+  const quantityLimit = selectionIsReady ? selectedStock : 1;
+  const primaryActionLabel = selectionIsSoldOut
+    ? "Article épuisé"
+    : needsColor
+      ? "Choisir une couleur"
+      : needsSize
+        ? "Choisir une taille"
+        : "Ajouter au panier";
 
   function getPreferredAvailableSize(sizes, colorValue) {
     return (
@@ -3008,6 +3023,26 @@ function ProductDetailModal({ product, onAdd, onClose }) {
     if (Math.abs(deltaX) < 45 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
 
     moveGallery(deltaX < 0 ? 1 : -1);
+  }
+
+  function focusRequiredOption() {
+    const target = needsColor ? colorOptionsRef.current : sizeOptionsRef.current;
+
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => target?.querySelector("button:not(:disabled)")?.focus(), 280);
+  }
+
+  function handlePrimaryAction() {
+    if (!selectionIsReady) {
+      focusRequiredOption();
+      return;
+    }
+
+    onAdd(product, {
+      quantity,
+      size: selectedSize,
+      color: selectedColor,
+    });
   }
 
   useEffect(() => {
@@ -3120,7 +3155,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
           ) : null}
 
           {colorOptions.length ? (
-            <div className="option-group">
+            <div className="option-group" ref={colorOptionsRef}>
               <div className="option-head">
                 <strong>Couleur</strong>
                 <span>{selectedColor || "A choisir"}</span>
@@ -3142,7 +3177,7 @@ function ProductDetailModal({ product, onAdd, onClose }) {
           ) : null}
 
           {sizeOptions.length ? (
-            <div className="option-group">
+            <div className="option-group" ref={sizeOptionsRef}>
               <div className="option-head">
                 <strong>Taille</strong>
                 <span>{selectedSize}</span>
@@ -3182,25 +3217,19 @@ function ProductDetailModal({ product, onAdd, onClose }) {
             <p className="variant-note">Cet article est vendu comme présenté, sans option spéciale.</p>
           ) : null}
 
-          <div className="detail-actions">
+          <div className={`detail-actions ${selectionIsReady ? "" : "is-pending"}`.trim()}>
             <QuantityControl
               value={quantity}
-              max={selectedStock}
-              onChange={(value) => setQuantity(clampQuantity(value, selectedStock))}
+              max={quantityLimit}
+              onChange={(value) => setQuantity(clampQuantity(value, quantityLimit))}
             />
             <button
               className="btn"
               type="button"
-              disabled={effectiveStock <= 0 || (colorOptions.length > 0 && !selectedColor) || selectedStock <= 0}
-              onClick={() =>
-                onAdd(product, {
-                  quantity,
-                  size: selectedSize,
-                  color: selectedColor,
-                })
-              }
+              disabled={selectionIsSoldOut}
+              onClick={handlePrimaryAction}
             >
-              Ajouter au panier
+              {primaryActionLabel}
             </button>
           </div>
         </div>
