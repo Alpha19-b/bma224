@@ -868,6 +868,45 @@ body {
     flex: 0 0 auto;
   }
 
+  .admin-shell .product-admin-grid .section-head.action-head {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .admin-shell .product-admin-grid .section-head.action-head > div:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell .product-admin-grid .section-head.action-head h2 {
+    width: 100%;
+    white-space: nowrap;
+  }
+
+  .admin-shell .product-admin-grid .section-head .accounting-actions {
+    width: 100%;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 44px);
+    justify-content: end;
+    overflow: visible;
+  }
+
+  .admin-shell .product-admin-grid .section-head .accounting-actions > * {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .admin-shell .product-admin-grid .section-head .accounting-actions .action-label,
+  .admin-shell .product-admin-grid .section-head .product-add-button b {
+    display: none;
+  }
+
   .admin-shell .table-wrap,
   .admin-shell .orders-table-wrap {
     overflow: visible;
@@ -966,6 +1005,85 @@ body {
 
   .admin-shell .products-table .inline-actions .action-label {
     display: none;
+  }
+
+  .admin-shell .products-table tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+    padding: 12px;
+  }
+
+  .admin-shell .products-table td {
+    padding: 8px 0;
+  }
+
+  .admin-shell .products-table td:first-child {
+    grid-column: 1 / -1;
+    padding: 0 0 12px;
+    display: block;
+    border-bottom: 1px solid rgba(237, 245, 241, 0.1);
+  }
+
+  .admin-shell .products-table td:first-child::before {
+    display: none;
+  }
+
+  .admin-shell .products-table td:nth-child(2),
+  .admin-shell .products-table td:nth-child(3),
+  .admin-shell .products-table td:nth-child(4),
+  .admin-shell .products-table td:nth-child(5) {
+    display: block;
+  }
+
+  .admin-shell .products-table td:nth-child(2)::before,
+  .admin-shell .products-table td:nth-child(3)::before,
+  .admin-shell .products-table td:nth-child(4)::before,
+  .admin-shell .products-table td:nth-child(5)::before {
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .admin-shell .products-table td:nth-child(6),
+  .admin-shell .products-table td:nth-child(7) {
+    grid-column: 1 / -1;
+  }
+
+  .admin-shell .products-table td:nth-child(6) {
+    grid-template-columns: 64px auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid rgba(237, 245, 241, 0.08);
+  }
+
+  .admin-shell .products-table td:nth-child(6)::before {
+    align-self: center;
+  }
+
+  .admin-shell .products-table .stock-pill-button {
+    width: auto;
+    min-width: 46px;
+    max-width: 72px;
+    min-height: 34px;
+    padding: 0 12px;
+  }
+
+  .admin-shell .products-table .stock-detail-button {
+    min-width: 0;
+    max-width: 100%;
+    display: -webkit-box;
+    overflow: hidden;
+    color: #b8c8c0;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: left;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .admin-shell .products-table td:nth-child(7) {
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
   }
 
   .admin-shell .accounting-history-filters {
@@ -1163,9 +1281,6 @@ body {
     grid-column: 1;
   }
 
-  .admin-shell .products-table .inline-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 360px) {
