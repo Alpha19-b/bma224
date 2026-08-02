@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import PwaInstallPrompt from "./PwaInstallPrompt.jsx";
 import "./styles.css";
+import "./mobile.css";
 
 function Root() {
   React.useEffect(() => {

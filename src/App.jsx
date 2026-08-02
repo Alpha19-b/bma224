@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
   CircleUserRound,
+  Download,
   LogOut,
+  Menu,
+  Minus,
   Package,
+  Pencil,
+  Plus,
   Search,
   ShoppingBag,
+  SquareCheckBig,
+  Trash2,
   UserRound,
+  WalletCards,
+  X,
 } from "lucide-react";
 import {
   adjustProductColorStock,
@@ -286,118 +298,25 @@ function getSwatchStops(colors) {
     .join(", ");
 }
 
-function ActionIcon({ name }) {
-  const commonProps = {
-    className: "action-icon",
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "2",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": "true",
-    focusable: "false",
-  };
+const actionIcons = {
+  "arrow-left": ArrowLeft,
+  "arrow-right": ArrowRight,
+  check: Check,
+  download: Download,
+  edit: Pencil,
+  minus: Minus,
+  package: Package,
+  plus: Plus,
+  select: SquareCheckBig,
+  trash: Trash2,
+  user: UserRound,
+  wallet: WalletCards,
+  x: X,
+};
 
-  switch (name) {
-    case "trash":
-      return (
-        <svg {...commonProps}>
-          <path d="M3 6h18" />
-          <path d="M8 6V4h8v2" />
-          <path d="M6 6l1 15h10l1-15" />
-          <path d="M10 11v6" />
-          <path d="M14 11v6" />
-        </svg>
-      );
-    case "download":
-      return (
-        <svg {...commonProps}>
-          <path d="M12 3v12" />
-          <path d="M7 10l5 5 5-5" />
-          <path d="M5 21h14" />
-        </svg>
-      );
-    case "select":
-      return (
-        <svg {...commonProps}>
-          <rect x="4" y="4" width="16" height="16" rx="3" />
-          <path d="M8 12l3 3 5-6" />
-        </svg>
-      );
-    case "user":
-      return (
-        <svg {...commonProps}>
-          <path d="M20 21a8 8 0 0 0-16 0" />
-          <circle cx="12" cy="8" r="4" />
-        </svg>
-      );
-    case "plus":
-      return (
-        <svg {...commonProps}>
-          <path d="M12 5v14" />
-          <path d="M5 12h14" />
-        </svg>
-      );
-    case "minus":
-      return (
-        <svg {...commonProps}>
-          <path d="M5 12h14" />
-        </svg>
-      );
-    case "edit":
-      return (
-        <svg {...commonProps}>
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5l4 4L8 20H4v-4L16.5 3.5z" />
-        </svg>
-      );
-    case "package":
-      return (
-        <svg {...commonProps}>
-          <path d="M21 8l-9-5-9 5 9 5 9-5z" />
-          <path d="M3 8v8l9 5 9-5V8" />
-          <path d="M12 13v8" />
-        </svg>
-      );
-    case "check":
-      return (
-        <svg {...commonProps}>
-          <path d="M20 6L9 17l-5-5" />
-        </svg>
-      );
-    case "x":
-      return (
-        <svg {...commonProps}>
-          <path d="M18 6L6 18" />
-          <path d="M6 6l12 12" />
-        </svg>
-      );
-    case "arrow-left":
-      return (
-        <svg {...commonProps}>
-          <path d="M19 12H5" />
-          <path d="M11 18l-6-6 6-6" />
-        </svg>
-      );
-    case "arrow-right":
-      return (
-        <svg {...commonProps}>
-          <path d="M5 12h14" />
-          <path d="M13 6l6 6-6 6" />
-        </svg>
-      );
-    case "wallet":
-      return (
-        <svg {...commonProps}>
-          <path d="M4 7h16v12H4z" />
-          <path d="M16 12h4" />
-          <path d="M4 7l3-4h12" />
-        </svg>
-      );
-    default:
-      return null;
-  }
+function ActionIcon({ name }) {
+  const Icon = actionIcons[name];
+  return Icon ? <Icon className="action-icon" aria-hidden="true" /> : null;
 }
 
 function ActionButton({
@@ -9944,7 +9863,7 @@ function AdminPage() {
               title="Réglages du compte"
               onClick={() => setAdminAccountOpen(true)}
             >
-              <span className="account-icon" aria-hidden="true" />
+              <CircleUserRound aria-hidden="true" />
             </button>
             <button
               className="logout-icon-button"
@@ -9953,7 +9872,7 @@ function AdminPage() {
               title="Déconnexion"
               onClick={handleAdminSignOut}
             >
-              <span aria-hidden="true" />
+              <LogOut aria-hidden="true" />
             </button>
           </div>
           <button
@@ -9964,7 +9883,7 @@ function AdminPage() {
             aria-label="Ouvrir le menu administration"
             onClick={() => setAdminNavOpen((current) => !current)}
           >
-            <span aria-hidden="true" />
+            {adminNavOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
           </button>
         </div>
         <nav
@@ -9992,7 +9911,7 @@ function AdminPage() {
             title="Compte"
             onClick={() => setAdminAccountOpen(true)}
           >
-            <span className="account-icon" aria-hidden="true" />
+            <CircleUserRound aria-hidden="true" />
             <span>Compte</span>
           </button>
           <button
@@ -10002,7 +9921,7 @@ function AdminPage() {
             title="Sortir"
             onClick={handleAdminSignOut}
           >
-            <span aria-hidden="true" />
+            <LogOut aria-hidden="true" />
           </button>
         </div>
       </aside>
