@@ -194,16 +194,24 @@ body {
 
   .storefront-v2 .catalog-toolbar {
     display: block;
-    padding: 14px 2px;
+    padding: 10px 2px 12px;
   }
 
   .storefront-v2 .catalog-toolbar > div:first-child {
-    margin-bottom: 12px;
+    margin-bottom: 9px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
   }
 
   .storefront-v2 .catalog-toolbar h1 {
-    font-size: 25px;
+    font-size: 21px;
     line-height: 1.12;
+  }
+
+  .storefront-v2 .catalog-toolbar > div:first-child > span {
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   .storefront-v2 .catalog-controls {
@@ -248,13 +256,13 @@ body {
   }
 
   .storefront-v2 .style-filters {
-    grid-column: 1 / -1;
+    grid-column: 2;
     width: 100%;
     min-width: 0;
     display: flex;
     gap: 7px;
     overflow-x: auto;
-    padding: 2px 0 4px;
+    padding: 0;
     scrollbar-width: none;
     overscroll-behavior-x: contain;
   }
@@ -267,15 +275,17 @@ body {
 
   .storefront-v2 .style-filters button {
     flex: 0 0 auto;
-    min-height: 40px;
+    min-height: 38px;
+    padding: 7px 11px;
     white-space: nowrap;
   }
 
   .storefront-v2 .catalog-sort {
-    grid-column: 1 / -1;
-    width: 100%;
-    max-width: none;
-    min-height: 44px;
+    display: none;
+  }
+
+  .storefront-v2 .catalog-controls.search-open .style-filters {
+    display: none;
   }
 
   .storefront-v2 .store-catalog .catalog {
@@ -469,7 +479,30 @@ body {
   .storefront-v2 .client-orders-panel > .section-head {
     flex: 0 0 auto;
     padding-top: calc(12px + env(safe-area-inset-top));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
     background: #101614;
+  }
+
+  .storefront-v2 .client-settings-panel > .section-head h2,
+  .storefront-v2 .client-orders-panel > .section-head h2 {
+    font-size: 20px;
+    line-height: 1.15;
+  }
+
+  .storefront-v2 .client-orders-actions {
+    display: flex;
+    gap: 7px;
+  }
+
+  .storefront-v2 .panel-icon-button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
   }
 
   .storefront-v2 .cart-list {
@@ -535,6 +568,80 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+  }
+
+  .storefront-v2 .client-orders-body {
+    padding: 0 14px 18px;
+  }
+
+  .storefront-v2 .client-order-overview {
+    margin: 14px 0 0;
+    gap: 6px 14px;
+    font-size: 12px;
+  }
+
+  .storefront-v2 .client-order-overview strong {
+    font-size: 14px;
+  }
+
+  .storefront-v2 .client-order-tabs {
+    width: 100%;
+    margin: 12px 0 0;
+    padding: 0 0 3px;
+  }
+
+  .storefront-v2 .client-order-tabs button {
+    min-height: 40px;
+    padding: 7px 9px;
+  }
+
+  .storefront-v2 .client-order-list {
+    padding: 14px 0 0;
+  }
+
+  .storefront-v2 .client-orders-body > .empty-state {
+    min-height: 0;
+    margin: 44px 0 0;
+    padding: 20px 12px;
+  }
+
+  .storefront-v2 .settings-form {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .storefront-v2 .settings-fields-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 14px 16px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    grid-template-columns: 1fr;
+    gap: 11px;
+  }
+
+  .storefront-v2 .settings-fields-scroll input,
+  .storefront-v2 .settings-fields-scroll textarea {
+    min-height: 48px;
+  }
+
+  .storefront-v2 .settings-fields-scroll textarea {
+    min-height: 88px;
+  }
+
+  .storefront-v2 .settings-password-box {
+    padding-top: 12px;
+  }
+
+  .storefront-v2 .settings-form > .inline-actions {
+    flex: 0 0 auto;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: 1fr;
+    border-top: 1px solid var(--store-line);
+    background: #0d1110;
+    box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.3);
   }
 
   .storefront-v2 .store-footer {

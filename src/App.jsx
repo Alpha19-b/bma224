@@ -13,6 +13,7 @@ import {
   Package,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   ShoppingBag,
   SquareCheckBig,
@@ -3617,8 +3618,8 @@ function ClientSettingsPanel({
           <h2>Paramètres du compte</h2>
           <span>Infos, livraison et sécurité</span>
         </div>
-        <button className="btn ghost" type="button" onClick={onClose}>
-          Fermer
+        <button className="icon-btn panel-icon-button" type="button" aria-label="Fermer" title="Fermer" onClick={onClose}>
+          <X aria-hidden="true" />
         </button>
       </div>
       {message ? (
@@ -3627,7 +3628,8 @@ function ClientSettingsPanel({
         </div>
       ) : null}
       <form className="admin-form auth-form settings-form" onSubmit={onSubmit}>
-        <Field
+        <div className="settings-fields-scroll">
+          <Field
           autoComplete="given-name"
           label="Prénom"
           value={form.firstName}
@@ -3683,31 +3685,29 @@ function ClientSettingsPanel({
             </div>
           ) : null}
         </div>
-        <div className="field full settings-password-box">
-          <label>Nouveau mot de passe</label>
-          <div className="mini-grid">
-            <input
-              autoComplete="new-password"
-              placeholder="Laisser vide pour ne pas changer"
-              type="password"
-              value={form.newPassword}
-              onChange={(event) => onChange("newPassword", event.target.value)}
-            />
-            <input
-              autoComplete="new-password"
-              placeholder="Confirmer"
-              type="password"
-              value={form.passwordConfirm}
-              onChange={(event) => onChange("passwordConfirm", event.target.value)}
-            />
-          </div>
+          <details className="field full settings-password-box">
+            <summary>Changer mon mot de passe</summary>
+            <div className="mini-grid">
+              <input
+                autoComplete="new-password"
+                placeholder="Nouveau mot de passe"
+                type="password"
+                value={form.newPassword}
+                onChange={(event) => onChange("newPassword", event.target.value)}
+              />
+              <input
+                autoComplete="new-password"
+                placeholder="Confirmer"
+                type="password"
+                value={form.passwordConfirm}
+                onChange={(event) => onChange("passwordConfirm", event.target.value)}
+              />
+            </div>
+          </details>
         </div>
         <div className="inline-actions">
           <button className="btn" type="submit">
             Enregistrer
-          </button>
-          <button className="btn secondary" type="button" onClick={onClose}>
-            Fermer
           </button>
         </div>
       </form>
@@ -3739,54 +3739,57 @@ function ClientOrdersPanel({
           <span>Historique, paiement et suivi de commande</span>
         </div>
         <div className="client-orders-actions">
-          <button className="btn secondary" type="button" onClick={onRefresh} disabled={loading}>
-            Actualiser
-          </button>
-          <button className="btn ghost" type="button" onClick={onClose}>
-            Fermer
-          </button>
-        </div>
-      </div>
-
-      <div className="client-order-stats">
-        <div>
-          <span>Commandes</span>
-          <strong>{orders.length}</strong>
-        </div>
-        <div>
-          <span>Payées</span>
-          <strong>{paidCount}</strong>
-        </div>
-        <div>
-          <span>En cours</span>
-          <strong>{openCount}</strong>
-        </div>
-      </div>
-
-      {message ? (
-        <div className={`checkout-status ${message.tone}`}>
-          {message.text}
-        </div>
-      ) : null}
-
-      <div className="order-filter-tabs client-order-tabs" aria-label="Filtrer mes achats">
-        {clientOrderFilterOptions.map((filter) => (
           <button
-            className={clientOrderFilter === filter.value ? "active" : ""}
-            key={filter.value}
+            className="icon-btn panel-icon-button"
             type="button"
-            onClick={() => setClientOrderFilter(filter.value)}
+            aria-label="Actualiser"
+            title="Actualiser"
+            onClick={onRefresh}
+            disabled={loading}
           >
-            <span>{filter.label}</span>
-            <strong>{countOrdersByFilter(orders, filter.value)}</strong>
+            <RefreshCw aria-hidden="true" />
           </button>
-        ))}
+          <button className="icon-btn panel-icon-button" type="button" aria-label="Fermer" title="Fermer" onClick={onClose}>
+            <X aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="empty-state compact">Chargement de tes achats...</div>
-      ) : visibleOrders.length ? (
-        <div className="client-order-list">
+      <div className="client-orders-body">
+        {orders.length ? (
+          <div className="client-order-overview" aria-label="Résumé de mes achats">
+            <span><strong>{orders.length}</strong> commande{orders.length > 1 ? "s" : ""}</span>
+            <span><strong>{paidCount}</strong> payée{paidCount > 1 ? "s" : ""}</span>
+            <span><strong>{openCount}</strong> en cours</span>
+          </div>
+        ) : null}
+
+        {message ? (
+          <div className={`checkout-status ${message.tone}`}>
+            {message.text}
+          </div>
+        ) : null}
+
+        {orders.length ? (
+          <div className="order-filter-tabs client-order-tabs" aria-label="Filtrer mes achats">
+            {clientOrderFilterOptions.map((filter) => (
+              <button
+                className={clientOrderFilter === filter.value ? "active" : ""}
+                key={filter.value}
+                type="button"
+                onClick={() => setClientOrderFilter(filter.value)}
+              >
+                <span>{filter.label}</span>
+                <strong>{countOrdersByFilter(orders, filter.value)}</strong>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="empty-state compact">Chargement de tes achats...</div>
+        ) : visibleOrders.length ? (
+          <div className="client-order-list">
           {visibleOrders.map((order) => {
             const canPay =
               order.paymentTone !== "paid" &&
@@ -3839,14 +3842,15 @@ function ClientOrdersPanel({
               </article>
             );
           })}
-        </div>
-      ) : (
-        <div className="empty-state compact">
-          {orders.length
-            ? "Aucune commande dans cette vue."
-            : "Aucun achat pour le moment. Tes commandes connectées apparaîtront ici."}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="empty-state compact">
+            {orders.length
+              ? "Aucune commande dans cette vue."
+              : "Aucun achat pour le moment."}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

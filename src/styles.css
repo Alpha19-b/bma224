@@ -1215,37 +1215,41 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.client-order-stats {
-  padding: 18px 22px 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+.panel-icon-button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
 }
 
-.client-order-stats div {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  background: #16201d;
+.panel-icon-button svg {
+  width: 20px;
+  height: 20px;
 }
 
-.client-order-stats span {
-  display: block;
+.client-orders-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.client-order-overview {
+  margin: 16px 22px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  flex-wrap: wrap;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 13px;
 }
 
-.client-order-stats strong {
-  display: block;
-  margin-top: 6px;
+.client-order-overview strong {
   color: var(--ink);
-  font-size: 26px;
-  line-height: 1;
+  font-size: 15px;
 }
 
 .client-order-list {
@@ -1383,12 +1387,39 @@ main {
 }
 
 .settings-form {
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-fields-scroll {
+  min-height: 0;
+  padding: 18px 22px;
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-form > .inline-actions {
+  padding: 0 22px 22px;
+  grid-template-columns: 1fr;
 }
 
 .settings-password-box {
   border-top: 1px solid var(--line);
   padding-top: 14px;
+}
+
+.settings-password-box summary {
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 900;
+  list-style-position: inside;
+}
+
+.settings-password-box[open] summary {
+  margin-bottom: 12px;
 }
 
 .client-settings-panel .checkout-status {
@@ -5980,6 +6011,11 @@ textarea {
   }
 
   .settings-form {
+    padding: 0;
+  }
+
+  .settings-fields-scroll {
+    padding: 16px;
     grid-template-columns: 1fr;
   }
 
@@ -9382,7 +9418,6 @@ textarea {
 .storefront-v2 .delivery-row,
 .storefront-v2 .location-box,
 .storefront-v2 .client-order-card,
-.storefront-v2 .client-order-stats div,
 .storefront-v2 .client-orders-panel .order-item-detail {
   border-color: rgba(246, 241, 232, 0.12);
   background: rgba(255, 255, 255, 0.045);
@@ -9470,14 +9505,7 @@ textarea {
   color: #fff;
 }
 
-.storefront-v2 .client-orders-actions .btn.secondary,
-.storefront-v2 .client-orders-actions .btn.ghost {
-  border-color: rgba(246, 241, 232, 0.14);
-  background: rgba(255, 255, 255, 0.045);
-  color: var(--store-ink);
-}
-
-.storefront-v2 .client-order-stats strong,
+.storefront-v2 .client-order-overview strong,
 .storefront-v2 .client-order-head strong,
 .storefront-v2 .client-order-summary strong {
   color: var(--store-ink);
