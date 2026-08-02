@@ -868,21 +868,22 @@ body {
     flex: 0 0 auto;
   }
 
-  .admin-shell .product-admin-grid .section-head.action-head {
+  .admin-shell .section-head.action-head {
     width: 100%;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    gap: 10px;
   }
 
-  .admin-shell .product-admin-grid .section-head.action-head > div:first-child {
+  .admin-shell .section-head.action-head > div:first-child {
     width: 100%;
     min-width: 0;
   }
 
-  .admin-shell .product-admin-grid .section-head.action-head h2 {
+  .admin-shell .section-head.action-head h2 {
     width: 100%;
-    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   .admin-shell .product-admin-grid .section-head .accounting-actions {
@@ -905,6 +906,53 @@ body {
   .admin-shell .product-admin-grid .section-head .accounting-actions .action-label,
   .admin-shell .product-admin-grid .section-head .product-add-button b {
     display: none;
+  }
+
+  .admin-shell .audit-command-center > .section-head .accounting-actions {
+    padding: 0;
+    justify-content: flex-end;
+    overflow: visible;
+  }
+
+  .admin-shell .audit-command-center > .section-head .accounting-actions > * {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .admin-shell .audit-command-center > .section-head .action-label {
+    display: none;
+  }
+
+  .admin-shell .audit-money-summary {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .admin-shell .audit-money-main {
+    min-height: 0;
+    padding: 14px;
+    gap: 6px;
+  }
+
+  .admin-shell .audit-money-main strong {
+    font-size: clamp(30px, 9vw, 40px);
+    line-height: 1.05;
+  }
+
+  .admin-shell .audit-money-main small {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .admin-shell .audit-money-breakdown {
+    gap: 7px;
+  }
+
+  .admin-shell .audit-money-breakdown .audit-row {
+    padding: 10px 11px;
   }
 
   .admin-shell .table-wrap,
@@ -1141,6 +1189,26 @@ body {
     flex: 0 0 auto;
     padding-top: calc(12px + env(safe-area-inset-top));
     background: #0f1714 !important;
+  }
+
+  .admin-shell .product-editor-panel > .section-head.action-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .admin-shell .product-editor-panel > .section-head.action-head > .icon-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .admin-shell .product-editor-panel > .section-head.action-head > .icon-btn::before {
+    content: "\00d7";
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1;
   }
 
   .admin-shell .admin-action-panel > .admin-form,
