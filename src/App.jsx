@@ -518,20 +518,26 @@ function getProductStockForSelection(product, colorValue = "", sizeValue = "") {
   const colorKey = normalizeVariantKey(colorValue);
   const sizeKey = normalizeVariantKey(sizeValue);
   const stockForColor = getVariantStockMap(product, colorValue);
-
-  if (hasDetailedStockMismatch(product)) {
-    return Math.max(0, Number(product.stock || 0));
-  }
-
   const exactStock =
     colorKey && sizeKey ? stockForColor[sizeKey] ?? stockForColor[sizeValue] : undefined;
 
+  // La quantite couleur + taille est toujours plus fiable que le total global.
   if (exactStock !== undefined && exactStock !== null) {
     return Math.max(0, Number(exactStock) || 0);
   }
 
   if (colorKey && sizeKey && hasTrackedVariantStock(product, colorValue)) {
     return 0;
+  }
+
+  // Tant que la repartition exacte n'est pas renseignee, une taille ne doit
+  // jamais recuperer tout le stock de sa couleur. Cette limite evite la survente.
+  if (colorKey && sizeKey && getProductSizeOptions(product, colorValue).length) {
+    return getProductStockForColor(product, colorValue) > 0 ? 1 : 0;
+  }
+
+  if (hasDetailedStockMismatch(product)) {
+    return Math.max(0, Number(product.stock || 0));
   }
 
   return getProductStockForColor(product, colorValue);
@@ -4220,6 +4226,9 @@ function AdminPage() {
   const [stockDetailProductId, setStockDetailProductId] = useState("");
   const [productEditorOpen, setProductEditorOpen] = useState(false);
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
+  const [isManualSaleSubmitting, setIsManualSaleSubmitting] = useState(false);
+  const manualSaleSubmissionLock = useRef(false);
+  const manualSaleRequestKey = useRef("");
   const [depositPanelOpen, setDepositPanelOpen] = useState(false);
   const [treasuryPanelOpen, setTreasuryPanelOpen] = useState(false);
   const [isTreasurySubmitting, setIsTreasurySubmitting] = useState(false);
@@ -5596,13 +5605,13 @@ function AdminPage() {
     }
 
     requestAdminConfirm({
-      title: "Supprimer cette ligne ?",
-      message: `${record.orderId} sera retirée de l'historique comptable.`,
+      title: "Supprimer cette vente ?",
+      message: `${record.orderId} sera retirée de l'historique et son stock lié sera restauré.`,
       confirmLabel: "Supprimer",
       tone: "danger",
       onConfirm: async () => {
         setDeletingActionId(`accounting:${record.id}`);
-        const { error } = await deleteAccountingEntryAsOwner(record.id);
+        const { data, error } = await deleteAccountingEntryAsOwner(record.id);
         setDeletingActionId("");
 
         if (error) {
@@ -5611,7 +5620,10 @@ function AdminPage() {
         }
 
         setSelectedAccountingIds((current) => current.filter((recordId) => recordId !== record.id));
-        showToast("Ligne comptable supprimée.");
+        const restored = Array.isArray(data)
+          ? Boolean(data[0]?.restored_stock)
+          : Boolean(data?.restored_stock);
+        showToast(restored ? "Vente supprimée et stock restauré." : "Vente supprimée.");
         await refreshAdminLists({ keepSelected: true });
       },
     });
@@ -5815,8 +5827,8 @@ function AdminPage() {
     }
 
     requestAdminConfirm({
-      title: "Supprimer les lignes ?",
-      message: `${selectedAccountingRecords.length} ligne(s) comptable(s) seront supprimées.`,
+      title: "Supprimer les ventes ?",
+      message: `${selectedAccountingRecords.length} vente(s) seront supprimées et leurs stocks liés restaurés.`,
       confirmLabel: "Supprimer",
       tone: "danger",
       onConfirm: async () => {
@@ -5840,7 +5852,16 @@ function AdminPage() {
           return;
         }
 
-        showToast(`${selectedAccountingRecords.length} ligne(s) supprimée(s).`);
+        const restoredCount = results.filter((result) => {
+          const payload = result.data;
+          return Array.isArray(payload)
+            ? Boolean(payload[0]?.restored_stock)
+            : Boolean(payload?.restored_stock);
+        }).length;
+        showToast(
+          `${selectedAccountingRecords.length} vente(s) supprimée(s)` +
+            (restoredCount ? ` · ${restoredCount} stock(s) restauré(s).` : ".")
+        );
         setSelectedAccountingIds([]);
         await refreshAdminLists({ keepSelected: true });
       },
@@ -6350,10 +6371,13 @@ function AdminPage() {
   }
 
   function openManualSalePanel() {
+    manualSaleRequestKey.current = "";
     setManualSaleOpen(true);
   }
 
   function closeManualSalePanel() {
+    if (manualSaleSubmissionLock.current) return;
+    manualSaleRequestKey.current = "";
     setManualSaleOpen(false);
     setManualSaleItems([]);
     resetManualSaleDraft();
@@ -6745,6 +6769,13 @@ function AdminPage() {
   async function addAccountingRecord(event) {
     event.preventDefault();
 
+    if (manualSaleSubmissionLock.current) return;
+
+    manualSaleSubmissionLock.current = true;
+    setIsManualSaleSubmitting(true);
+
+    try {
+
     if (!accountingForm.customer.trim()) {
       showToast("Le nom du client est obligatoire.", "issue");
       return;
@@ -6837,7 +6868,10 @@ function AdminPage() {
 
     const costAmount = purchaseAmountResult.value + extraCostResult.value;
 
-    const generatedSaleReference = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
+    if (!manualSaleRequestKey.current) {
+      manualSaleRequestKey.current = `MANUEL-${Date.now().toString(36).toUpperCase()}`;
+    }
+    const generatedSaleReference = manualSaleRequestKey.current;
     const saleItemNotes = saleItems.map((item) => {
       const optionText = item.variantLines
         ? ` (${item.variantLines.replace(/\n/g, " ; ")})`
@@ -6848,6 +6882,32 @@ function AdminPage() {
       return `- ${item.productName} x${item.quantity}${optionText} = ${formatMoney(item.saleAmount)}`;
     });
     const singleItem = saleItems.length === 1 ? saleItems[0] : null;
+    const inventoryItems = saleItems.flatMap((item) => {
+      if (item.variantDeltas.length) {
+        return item.variantDeltas.map((variant) => ({
+          productId: item.productId,
+          quantity: variant.quantity,
+          color: variant.color,
+          size: variant.size,
+        }));
+      }
+
+      if (item.colorDeltas.length) {
+        return item.colorDeltas.map((color) => ({
+          productId: item.productId,
+          quantity: color.quantity,
+          color: color.color,
+          size: item.size || "",
+        }));
+      }
+
+      return [{
+        productId: item.productId,
+        quantity: item.quantity,
+        color: item.color || "",
+        size: item.size || "",
+      }];
+    });
     const saleNotes = [
       accountingForm.note?.trim(),
       saleItems.length > 1
@@ -6885,9 +6945,11 @@ function AdminPage() {
       receiptName: "",
       depositedAt: "",
       note: saleNotes.join("\n"),
+      requestKey: generatedSaleReference,
+      inventoryItems,
     };
 
-    const { data, error } = await createAccountingEntry(record);
+    const { data, error, inventoryApplied } = await createAccountingEntry(record);
 
     if (error && !data) {
       showToast(
@@ -6940,7 +7002,7 @@ function AdminPage() {
     let colorStockError = null;
     let variantStockError = null;
 
-    if (saleItems.length > 1 && !error) {
+    if (saleItems.length > 1 && !error && !inventoryApplied) {
       for (const productDelta of productDeltas.values()) {
         const stockResult = await adjustProductStock({
           productId: productDelta.productId,
@@ -6958,7 +7020,7 @@ function AdminPage() {
       }
     }
 
-    if (saleItems.length && !error && !baseStockError) {
+    if (saleItems.length && !error && !baseStockError && !inventoryApplied) {
       for (const [productId, groupedDeltas] of colorDeltasByProduct.entries()) {
         for (const colorDelta of groupedDeltas.values()) {
         const colorResult = await adjustProductColorStock({
@@ -7081,6 +7143,7 @@ function AdminPage() {
       paymentMethod: "Liquide",
     });
     setManualSaleItems([]);
+    manualSaleRequestKey.current = "";
     setManualSaleOpen(false);
     showToast(
       error
@@ -7094,6 +7157,10 @@ function AdminPage() {
           : "Vente enregistrée et stock mis à jour.",
       error || baseStockError || colorStockError || variantStockError ? "waiting" : "paid"
     );
+    } finally {
+      manualSaleSubmissionLock.current = false;
+      setIsManualSaleSubmitting(false);
+    }
   }
 
   async function saveOrangeMoneyDeposit(event) {
@@ -7812,7 +7879,7 @@ function AdminPage() {
                 onChange={(event) => updateProductForm("description", event.target.value)}
               />
             </div>
-            <div className="price-form-grid">
+            <div className="price-form-grid product-editor-main-numbers">
               <Field
                 label="Prix de vente GNF"
                 value={productForm.price}
@@ -7822,14 +7889,6 @@ function AdminPage() {
                 onChange={(value) => updateProductForm("price", value)}
               />
               <Field
-                label="Prix d'achat GNF"
-                value={productForm.purchasePrice}
-                type="number"
-                min="0"
-                step="1"
-                onChange={(value) => updateProductForm("purchasePrice", value)}
-              />
-              <Field
                 label="Stock total"
                 value={productForm.stock}
                 type="number"
@@ -7837,31 +7896,49 @@ function AdminPage() {
                 step="1"
                 onChange={(value) => updateProductForm("stock", value)}
               />
-              <Field
-                label="Frais annexes GNF"
-                value={productForm.extraCost}
-                type="number"
-                min="0"
-                step="1"
-                onChange={(value) => updateProductForm("extraCost", value)}
-              />
             </div>
-            <div className="calc-preview">
-              <div>
-                <span>Revient calculé</span>
-                <strong>{formatMoney(productCostPreview)}</strong>
+            <details className="product-editor-finance" defaultOpen={!editingProductId}>
+              <summary>
+                <span>Prix d'achat et marge</span>
+                <small>Informations internes</small>
+              </summary>
+              <div className="product-editor-finance-body">
+                <div className="price-form-grid">
+                  <Field
+                    label="Prix d'achat GNF"
+                    value={productForm.purchasePrice}
+                    type="number"
+                    min="0"
+                    step="1"
+                    onChange={(value) => updateProductForm("purchasePrice", value)}
+                  />
+                  <Field
+                    label="Frais annexes GNF"
+                    value={productForm.extraCost}
+                    type="number"
+                    min="0"
+                    step="1"
+                    onChange={(value) => updateProductForm("extraCost", value)}
+                  />
+                </div>
+                <div className="calc-preview">
+                  <div>
+                    <span>Prix de revient</span>
+                    <strong>{formatMoney(productCostPreview)}</strong>
+                  </div>
+                  <div>
+                    <span>Marge</span>
+                    <strong className={productMarginPreview < 0 ? "negative" : ""}>
+                      {formatMoney(productMarginPreview)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Taux</span>
+                    <strong>{getMarginRate(productSalePreview, productCostPreview)}%</strong>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span>Marge estimée</span>
-                <strong className={productMarginPreview < 0 ? "negative" : ""}>
-                  {formatMoney(productMarginPreview)}
-                </strong>
-              </div>
-              <div>
-                <span>Taux marge</span>
-                <strong>{getMarginRate(productSalePreview, productCostPreview)}%</strong>
-              </div>
-            </div>
+            </details>
             <details
               className="product-editor-options"
               defaultOpen={Boolean(productForm.sizes || productForm.colors)}
@@ -7887,43 +7964,9 @@ function AdminPage() {
                     onChange={(event) => updateProductForm("colors", event.target.value)}
                   />
                 </div>
-                <details
-                  className="product-editor-stock-options"
-                  defaultOpen={Boolean(
-                    productForm.sizesByColor || productForm.stockByColor || productForm.stockDetails
-                  )}
-                >
-                  <summary>
-                    <span>Répartition précise du stock</span>
-                    <small>Seulement si le stock varie par couleur ou taille</small>
-                  </summary>
-                  <div className="product-editor-stock-options-body">
-                    <div className="field">
-                      <label>Tailles selon la couleur</label>
-                      <textarea
-                        placeholder={"Rouge: 40, 41, 42\nNoir: S, M, L"}
-                        value={productForm.sizesByColor}
-                        onChange={(event) => updateProductForm("sizesByColor", event.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label>Quantité selon la couleur</label>
-                      <textarea
-                        placeholder={"Noir: 5\nBlanc: 3"}
-                        value={productForm.stockByColor}
-                        onChange={(event) => updateProductForm("stockByColor", event.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label>Détail couleur + taille</label>
-                      <textarea
-                        placeholder={"Noir: L 1, XL 1\nBlanc: L 2"}
-                        value={productForm.stockDetails}
-                        onChange={(event) => updateProductForm("stockDetails", event.target.value)}
-                      />
-                    </div>
-                  </div>
-                </details>
+                <p className="product-editor-stock-hint">
+                  Enregistre l'article, puis touche son nombre de stock pour repartir les pieces par couleur et taille.
+                </p>
               </div>
             </details>
             <button className="btn product-editor-submit" type="submit">
@@ -9071,9 +9114,14 @@ function AdminPage() {
                     <strong>{formatMoney(manualSaleFinalAmount)}</strong>
                     <em>Par {adminDisplayName}</em>
                   </span>
-                  <button className="btn" type="submit">
-                    <ActionIcon name="check" />
-                    Enregistrer la vente
+                  <button
+                    className={`btn${isManualSaleSubmitting ? " loading" : ""}`}
+                    type="submit"
+                    disabled={isManualSaleSubmitting}
+                    aria-busy={isManualSaleSubmitting}
+                  >
+                    {!isManualSaleSubmitting ? <ActionIcon name="check" /> : null}
+                    {isManualSaleSubmitting ? "Enregistrement..." : "Enregistrer la vente"}
                   </button>
                 </div>
               </form>

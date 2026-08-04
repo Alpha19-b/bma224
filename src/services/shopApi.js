@@ -2393,10 +2393,47 @@ export async function createTreasuryMovement(movement) {
 
 export async function createAccountingEntry(record) {
   if (!supabase) {
-    return { data: null, error: new Error("Configuration de la boutique indisponible.") };
+    return {
+      data: null,
+      error: new Error("Configuration de la boutique indisponible."),
+      inventoryApplied: false,
+    };
   }
 
   const currentUserId = await getCurrentUserId();
+  const inventoryItems = Array.isArray(record.inventoryItems) ? record.inventoryItems : [];
+  const requestKey = record.requestKey || record.orderId;
+  const v2Result = await supabase.rpc("record_manual_sale_v2", {
+    p_request_key: requestKey,
+    p_items: inventoryItems.map((item) => ({
+      product_id: item.productId,
+      quantity: Number(item.quantity || 1),
+      color: item.color || "",
+      size: item.size || "",
+    })),
+    p_order_number: record.orderId,
+    p_entry_date: record.date,
+    p_customer_name: record.customer,
+    p_sale_amount: Number(record.saleAmount),
+    p_purchase_amount: Number(record.purchaseAmount),
+    p_cost_amount: Number(record.costAmount),
+    p_collection_method: collectionMethodByLabel[record.paymentMethod] ?? "other",
+    p_collected_by_name: record.collectedBy,
+    p_note: record.note || null,
+  });
+
+  if (!v2Result.error) {
+    return {
+      data: mapAccountingEntry(v2Result.data),
+      error: null,
+      inventoryApplied: true,
+    };
+  }
+
+  if (!isMissingRpc(v2Result.error)) {
+    return { data: null, error: v2Result.error, inventoryApplied: false };
+  }
+
   const rpcPayload = {
     p_product_id: record.productId || null,
     p_quantity: Number(record.quantity || 1),
@@ -2414,11 +2451,11 @@ export async function createAccountingEntry(record) {
   const rpcResult = await supabase.rpc("record_manual_sale", rpcPayload);
 
   if (!rpcResult.error) {
-    return { data: mapAccountingEntry(rpcResult.data), error: null };
+    return { data: mapAccountingEntry(rpcResult.data), error: null, inventoryApplied: false };
   }
 
   if (!isMissingRpc(rpcResult.error)) {
-    return { data: null, error: rpcResult.error };
+    return { data: null, error: rpcResult.error, inventoryApplied: false };
   }
 
   const entryPayload = {
@@ -2509,11 +2546,15 @@ export async function createAccountingEntry(record) {
     });
 
     if (stockResult.error) {
-      return { data: mapAccountingEntry(data), error: stockResult.error };
+      return {
+        data: mapAccountingEntry(data),
+        error: stockResult.error,
+        inventoryApplied: false,
+      };
     }
   }
 
-  return { data: mapAccountingEntry(data), error: null };
+  return { data: mapAccountingEntry(data), error: null, inventoryApplied: false };
 }
 
 export async function adjustProductStock({

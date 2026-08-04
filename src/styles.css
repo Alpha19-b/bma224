@@ -4844,7 +4844,8 @@ textarea {
 }
 
 .product-editor-options,
-.product-editor-stock-options {
+.product-editor-stock-options,
+.product-editor-finance {
   border: 1px solid rgba(237, 245, 241, 0.14);
   border-radius: 8px;
   background: #121b18;
@@ -4852,7 +4853,8 @@ textarea {
 }
 
 .product-editor-options summary,
-.product-editor-stock-options summary {
+.product-editor-stock-options summary,
+.product-editor-finance summary {
   position: relative;
   min-height: 62px;
   padding: 12px 48px 12px 14px;
@@ -4865,12 +4867,14 @@ textarea {
 }
 
 .product-editor-options summary::-webkit-details-marker,
-.product-editor-stock-options summary::-webkit-details-marker {
+.product-editor-stock-options summary::-webkit-details-marker,
+.product-editor-finance summary::-webkit-details-marker {
   display: none;
 }
 
 .product-editor-options summary::after,
-.product-editor-stock-options summary::after {
+.product-editor-stock-options summary::after,
+.product-editor-finance summary::after {
   content: "+";
   position: absolute;
   top: 50%;
@@ -4882,24 +4886,28 @@ textarea {
 }
 
 .product-editor-options[open] > summary::after,
-.product-editor-stock-options[open] > summary::after {
+.product-editor-stock-options[open] > summary::after,
+.product-editor-finance[open] > summary::after {
   content: "−";
 }
 
 .product-editor-options summary span,
-.product-editor-stock-options summary span {
+.product-editor-stock-options summary span,
+.product-editor-finance summary span {
   font-weight: 900;
 }
 
 .product-editor-options summary small,
-.product-editor-stock-options summary small {
+.product-editor-stock-options summary small,
+.product-editor-finance summary small {
   color: #aebdb7;
   font-size: 12px;
   font-weight: 700;
 }
 
 .product-editor-options-body,
-.product-editor-stock-options-body {
+.product-editor-stock-options-body,
+.product-editor-finance-body {
   border-top: 1px solid rgba(237, 245, 241, 0.12);
   padding: 14px;
   display: grid;
@@ -4908,6 +4916,21 @@ textarea {
 
 .product-editor-stock-options {
   background: #0d1412;
+}
+
+.product-editor-finance-body {
+  background: #0d1412;
+}
+
+.product-editor-stock-hint {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(143, 240, 196, 0.18);
+  border-radius: 7px;
+  background: rgba(23, 61, 47, 0.42);
+  color: #c8d8d1;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .chart-grid {
